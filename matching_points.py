@@ -94,7 +94,13 @@ result = pd.concat([csv2.reset_index(drop=True),
 
 
 
+#Each row in result now has:
 
+#Original data from csv2
+
+#The closest point from csv1
+
+#The distance (in km) between the points
 
 
 
