@@ -9,10 +9,24 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     #map { height: 600px; width: 100%; }
+    .legend {
+      background: white;
+      line-height: 1.5em;
+      padding: 6px 8px;
+      font: 14px Arial, sans-serif;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+    .legend i {
+      width: 18px;
+      height: 18px;
+      float: left;
+      margin-right: 8px;
+      opacity: 0.8;
+    }
   </style>
 </head>
 <body>
-  <h2>New Zealand: Bruun Retreat (Colored by Value)</h2>
+  <h2>New Zealand: Bruun Retreat Visualization</h2>
   <div id="map"></div>
   
   <script>
@@ -22,11 +36,16 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     
-    // Function to return a color based on retreat value
+    // Color scale
     function getColor(value) {
-      return value > 20 ? '#d73027' :  // red
-             value > 10 ? '#fee08b' :  // yellow
+      return value > 10 ? '#d73027' :  // red
+             value > 5 ? '#fee08b' :  // yellow
              '#1a9850';               // green
+    }
+    
+    // Radius scale (adjust multiplier as needed)
+    function getRadius(value) {
+      return Math.max(4, value * 0.8);  // ensure min radius
     }
     
     fetch('shoreline_retreat.geojson')
@@ -36,7 +55,7 @@
           pointToLayer: function (feature, latlng) {
             var retreat = feature.properties.bruun_retreat;
             return L.circleMarker(latlng, {
-              radius: 8,
+              radius: getRadius(retreat),
               fillColor: getColor(retreat),
               color: '#000',
               weight: 1,
@@ -53,6 +72,27 @@
         
         map.fitBounds(geojsonLayer.getBounds());
       });
+    
+    // Add Legend
+    var legend = L.control({position: 'bottomright'});
+    legend.onAdd = function (map) {
+      var div = L.DomUtil.create('div', 'legend');
+      var grades = [0, 5, 10];
+      var labels = [];
+      var colors = ['#1a9850', '#fee08b', '#d73027'];
+      
+      div.innerHTML += '<b>Bruun Retreat (m)</b><br>';
+      for (var i = 0; i < grades.length; i++) {
+        var from = grades[i];
+        var to = grades[i + 1];
+        var label = (to ? from + '–' + to : from + '+');
+        div.innerHTML +=
+          '<i style="background:' + colors[i] + '"></i> ' + label + '<br>';
+      }
+      
+      return div;
+    };
+    legend.addTo(map);
   </script>
 </body>
 </html>

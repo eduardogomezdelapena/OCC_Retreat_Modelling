@@ -7,52 +7,116 @@ Created on Wed Aug  6 11:06:05 2025
 """
 
 #%% HTML - Leaflet
-
+import os
 url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
+os.chdir(url_sv_gj)
+'shoreline_retreat.geojson'
 
 import json
 
-# Load GeoJSON string (can also be from a file)
-with open(url_sv_gj+ 'shoreline_retreat.geojson', 'r') as f:
-    geojson_data = json.load(f)
-
-geojson_str = json.dumps(geojson_data)
-
-# HTML template with embedded GeoJSON
-html_template = f"""
+html_content = """
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Leaflet Map</title>
+  <title>Bruun Retreat Map</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <style>#map {{ height: 600px; }}</style>
+  <style>
+    #map { height: 600px; width: 100%; }
+    .legend {
+      background: white;
+      line-height: 1.5em;
+      padding: 6px 8px;
+      font: 14px Arial, sans-serif;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+    .legend i {
+      width: 18px;
+      height: 18px;
+      float: left;
+      margin-right: 8px;
+      opacity: 0.8;
+    }
+  </style>
 </head>
 <body>
-  <h2>Leaflet Map with GeoJSON</h2>
+  <h2>New Zealand: Bruun Retreat Visualization</h2>
   <div id="map"></div>
+
   <script>
     var map = L.map('map').setView([-40.9006, 174.8860], 5);
-    L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
-    }}).addTo(map);
+    }).addTo(map);
 
-    var geojsonData = {geojson_str};
+    // Color scale
+    function getColor(value) {
+      return value > 10 ? '#d73027' :  // red
+             value > 5 ? '#fee08b' :  // yellow
+             '#1a9850';               // green
+    }
 
-    L.geoJSON(geojsonData, {{
-      onEachFeature: function (feature, layer) {{
-        if (feature.properties && feature.properties.name) {{
-          layer.bindPopup(feature.properties.name);
-        }}
-      }}
-    }}).addTo(map);
+    // Radius scale (adjust multiplier as needed)
+    function getRadius(value) {
+      return Math.max(4, value * 0.8);  // ensure min radius
+    }
+
+    fetch('shoreline_retreat.geojson')
+      .then(response => response.json())
+      .then(data => {
+        var geojsonLayer = L.geoJSON(data, {
+          pointToLayer: function (feature, latlng) {
+            var retreat = feature.properties.bruun_retreat;
+            return L.circleMarker(latlng, {
+              radius: getRadius(retreat),
+              fillColor: getColor(retreat),
+              color: '#000',
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.8
+            });
+          },
+          onEachFeature: function (feature, layer) {
+            var name = feature.properties.name || "Unknown";
+            var retreat = feature.properties.bruun_retreat || "N/A";
+            layer.bindPopup("<strong>" + name + "</strong><br>Bruun Retreat: " + retreat + " m");
+          }
+        }).addTo(map);
+
+        map.fitBounds(geojsonLayer.getBounds());
+      });
+
+    // Add Legend
+    var legend = L.control({position: 'bottomright'});
+    legend.onAdd = function (map) {
+      var div = L.DomUtil.create('div', 'legend');
+      var grades = [0, 5, 10];
+      var labels = [];
+      var colors = ['#1a9850', '#fee08b', '#d73027'];
+
+      div.innerHTML += '<b>Bruun Retreat (m)</b><br>';
+      for (var i = 0; i < grades.length; i++) {
+        var from = grades[i];
+        var to = grades[i + 1];
+        var label = (to ? from + '–' + to : from + '+');
+        div.innerHTML +=
+          '<i style="background:' + colors[i] + '"></i> ' + label + '<br>';
+      }
+
+      return div;
+    };
+    legend.addTo(map);
   </script>
 </body>
 </html>
 """
+# Save HTML file
+with open("map.html", "w") as f:
+    f.write(html_content)
 
-# Save to file
-with open(url_sv_gj+"map.html", "w") as f:
-    f.write(html_template)
+print("✅ map.html and data.geojson generated. Open map.html in browser (preferably via a local server).")
+
+"http://localhost:8000/map.html"
