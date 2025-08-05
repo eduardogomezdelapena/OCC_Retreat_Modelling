@@ -17,8 +17,13 @@ from sklearn.neighbors import BallTree
 file_path = 'https://raw.githubusercontent.com/UoA-eResearch/CoastSat/d61c2052a4a0b9ed9763c6fb89fa7cabdba034ff/transects_extended.geojson'
 
 shore_df = gpd.read_file(file_path)
+# print(shore_df.head())
+
+#Trim it to just NZ, CoastSat is for the entire Pacific
+# Filter rows where 'id' contains 'nzd'
+shore_df = shore_df[shore_df['id'].str.contains('nzd', na=False)]
 print(shore_df.head())
-#Need to filter NZ locations only
+
 
 #Pick origin point (landward) coordinates
 #retrieves first point (index 0) of LineString 
@@ -80,7 +85,9 @@ nearest_nzrise.columns = [f'nzrise_{col}' for col in nearest_nzrise.columns]
 # --- Combine everything ---
 coastsat = coastsat.reset_index(drop=True)
 coastsat['distance_km'] = distances_km
-combined = pd.concat([coastsat, nearest_nzrise], axis=1)
+combined = pd.concat([nearest_nzrise, coastsat], axis=1)
+
+
 
 # # --- Save or inspect ---
 # combined.to_csv('coastsat_nearest_nzrise_balltree.csv', index=False)
