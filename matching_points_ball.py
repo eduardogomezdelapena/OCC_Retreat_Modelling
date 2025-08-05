@@ -58,6 +58,7 @@ nzrise = pd.DataFrame(nzsearise_coords)
 
 
 #%% Ball tree using Haversine metric
+#https://towardsdatascience.com/using-scikit-learns-binary-trees-to-efficiently-find-latitude-and-longitude-neighbors-909979bd929b/
 
 # --- Convert lat/lon to radians ---
 coastsat_radians = np.deg2rad(coastsat[['lat', 'lon']].values)
@@ -79,19 +80,66 @@ df_dis= pd.DataFrame(data=distances_km)
 # --- Get nearest nzrise rows ---
 nearest_nzrise = nzrise.iloc[nearest_indices].reset_index(drop=True)
 
-
 nearest_nzrise.columns = [f'nzrise_{col}' for col in nearest_nzrise.columns]
 
 # --- Combine everything ---
-coastsat = coastsat.reset_index(drop=True)
-coastsat['distance_km'] = distances_km
-combined = pd.concat([nearest_nzrise, coastsat], axis=1)
+coastsat_re = coastsat.reset_index(drop=True)
 
+combined = pd.concat([nearest_nzrise, coastsat_re], axis=1)
 
+combined['distance_km'] = distances_km
 
 # # --- Save or inspect ---
 # combined.to_csv('coastsat_nearest_nzrise_balltree.csv', index=False)
 # print(combined.head())
+
+
+threshold = 2
+# More than 2 km in difference
+count = (combined['distance_km'] > threshold).sum()
+
+
+#%% Coarse calculation Bruun Rule
+
+#Beach slope
+shore_df.beach_slope
+
+#SLR from nearest NZRise point
+#First retreive SiteID
+
+lol=df_latlon['Site ID'].iloc[nearest_indices]
+
+combined['site_ID_nzrise'] = df_latlon['Site ID'].iloc[nearest_indices].reset_index(drop=True)
+
+combined['beach_slope'] = shore_df.beach_slope.reset_index(drop=True)
+
+#%%
+#Download actual SLR and VLM csv
+url_slr="https://zenodo.org/records/14722058/files/NZ_Searise_noVLM-2005.csv"
+
+df_nzrise_slr= pd.read_csv(url_slr)
+print(df_nzrise_slr.head())
+
+#Filter year = 2030, and ssp1, then match site with siteId_NZrise
+
+lol = df_nzrise_slr[df_nzrise_slr['year']== 2030]
+
+lol = lol[lol['SSP'].str.contains('ssp1', na=False)]
+
+#50th percentile (mean value) for projections
+
+lol= lol.drop(['17','83'],axis=1)
+
+# Step 1: Remove duplicates in loldataframe based on 'site'
+lol_unique = lol.drop_duplicates(subset='site')
+
+# Step 2: Map the '50' column to combineddataframe based on matching site IDs
+combined['SLR_ssp1_2030_50p'] = combined['site_ID_nzrise'].map(
+    lol_unique.set_index('site')['50']
+)
+
+bruun_retreat= (1/ combined.beach_slope) * combined.SLR_ssp1_2030_50p
+
 
 
 
