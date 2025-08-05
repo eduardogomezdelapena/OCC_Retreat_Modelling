@@ -141,7 +141,24 @@ combined['SLR_ssp1_2030_50p'] = combined['site_ID_nzrise'].map(
 bruun_retreat= (1/ combined.beach_slope) * combined.SLR_ssp1_2030_50p
 
 
+combined['bruun_retreat'] = bruun_retreat
 
+#%% Convert to geojson
+import geopandas as gpd
+from shapely.geometry import Point
+
+# Convert to geometry
+geometry = [Point(xy) for xy in zip(combined['lon'], combined['lat'])]
+
+# Create GeoDataFrame
+gdf = gpd.GeoDataFrame(combined, geometry=geometry)
+
+# Set coordinate reference system (CRS)
+gdf.set_crs(epsg=4326, inplace=True)  # WGS84
+
+url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
+
+gdf.to_file(url_sv_gj+"shoreline_retreat.geojson", driver="GeoJSON")
 
 
 

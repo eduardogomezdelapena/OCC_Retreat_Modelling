@@ -1,0 +1,58 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Bruun Retreat Map</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    #map { height: 600px; width: 100%; }
+  </style>
+</head>
+<body>
+  <h2>New Zealand: Bruun Retreat (Colored by Value)</h2>
+  <div id="map"></div>
+  
+  <script>
+    var map = L.map('map').setView([-40.9006, 174.8860], 5);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    
+    // Function to return a color based on retreat value
+    function getColor(value) {
+      return value > 20 ? '#d73027' :  // red
+             value > 10 ? '#fee08b' :  // yellow
+             '#1a9850';               // green
+    }
+    
+    fetch('shoreline_retreat.geojson')
+      .then(response => response.json())
+      .then(data => {
+        var geojsonLayer = L.geoJSON(data, {
+          pointToLayer: function (feature, latlng) {
+            var retreat = feature.properties.bruun_retreat;
+            return L.circleMarker(latlng, {
+              radius: 8,
+              fillColor: getColor(retreat),
+              color: '#000',
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.8
+            });
+          },
+          onEachFeature: function (feature, layer) {
+            var name = feature.properties.name || "Unknown";
+            var retreat = feature.properties.bruun_retreat || "N/A";
+            layer.bindPopup("<strong>" + name + "</strong><br>Bruun Retreat: " + retreat + " m");
+          }
+        }).addTo(map);
+        
+        map.fitBounds(geojsonLayer.getBounds());
+      });
+  </script>
+</body>
+</html>
