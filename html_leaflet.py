@@ -118,5 +118,6 @@ with open("map.html", "w") as f:
     f.write(html_content)
 
 print("✅ map.html and data.geojson generated. Open map.html in browser (preferably via a local server).")
-
+#Run in bash
+"python -m http.server"
 "http://localhost:8000/map.html"
