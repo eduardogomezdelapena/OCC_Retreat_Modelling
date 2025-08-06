@@ -100,7 +100,8 @@ html_content = """
     <div class="leaflet-sidebar-content">
       <div class="leaflet-sidebar-pane" id="home">
         <div id="attribution">
-          <p>Code for shoreline detection provided by K. Vos, M. Harley, and K. Splinter (UNSW)</p>
+          <p> Shoreline retreat calculated using Bruun rule (paper here), data processed by Eduardo Gomez-de la Pena.
+          <p>CoastSat by K. Vos, M. Harley, and K. Splinter (UNSW)</p>
           <a href="https://www.unsw.edu.au/research/wrl/our-research/coastsat">CoastSat homepage</a><br><br>
 
           <p>Paper: <a href="https://doi.org/10.1016/j.envsoft.2019.104528">Vos et al. (2019) – Environmental Modelling & Software</a></p>
@@ -112,8 +113,6 @@ html_content = """
 
           <p>Questions? Contact <a href="https://profiles.auckland.ac.nz/g-coco">Giovanni Coco</a></p>
 
-          <p>To suggest a new site, draw a shoreline using the tool on the map and click below to email:</p>
-          <a id="mailto" target="_blank" class="btn btn-primary" disabled>Email Us</a>
         </div>
       </div>
     </div>
