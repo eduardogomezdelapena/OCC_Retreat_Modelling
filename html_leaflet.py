@@ -93,25 +93,19 @@ html_content = """
     <div class="leaflet-sidebar-tabs">
       <ul role="tablist">
         <li><a href="#home" role="tab"><i class="fa fa-bars"></i></a></li>
-        <li><a href="https://github.com/UoA-eResearch/CoastSat"><i class="fa fa-github"></i></a></li>
+        <li><a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling"><i class="fa fa-github"></i></a></li>
       </ul>
     </div>
 
     <div class="leaflet-sidebar-content">
       <div class="leaflet-sidebar-pane" id="home">
         <div id="attribution">
-          <p> Shoreline retreat calculated using Bruun rule (paper here), data processed by Eduardo Gomez-de la Pena.
-          <p>CoastSat by K. Vos, M. Harley, and K. Splinter (UNSW)</p>
-          <a href="https://www.unsw.edu.au/research/wrl/our-research/coastsat">CoastSat homepage</a><br><br>
 
-          <p>Paper: <a href="https://doi.org/10.1016/j.envsoft.2019.104528">Vos et al. (2019) – Environmental Modelling & Software</a></p>
+          <p> Shoreline retreat projections for Aotearoa New Zealand. Data processed by Eduardo Gomez-de la Pena. Retreat was estimated using the Bruun rule, see <a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling/blob/main/README.md">README</a> for more information.</p>
+          <p> This work is part of  <a href="https://searise.nz/">Our Changing Coasts</a> MBIE project, funded secured by Dr. Giovanni Coco and Karin Bryan, The University of Auckland. </p>
 
-          <p>NZ data processed by Nick Young using NIWA Tide API. Shorelines corrected to MSL. See the <a href="https://github.com/UoA-eResearch/CoastSat/blob/main/README.MD">README</a> for more info.</p>
-
-          <p>Download all data:<br>
-          <a href="https://zenodo.org/doi/10.5281/zenodo.13835882"><img src="https://zenodo.org/badge/829830765.svg"></a></p>
-
-          <p>Questions? Contact <a href="https://profiles.auckland.ac.nz/g-coco">Giovanni Coco</a></p>
+          <p><a href="https://uoa-eresearch.github.io/CoastSat/">NZ shoreline data</a> processed by Nick Young using the <a href="https://github.com/kvos/CoastSat/"> CoastSat </a> toolbox and the NIWA Tide API. Shorelines corrected to MSL.</p>
+          <p>Sea-Level Rise projections taken from the <a href="https://searise.takiwa.co/map/"> the NZ SeaRise</a> : Te Tai Pari O Aotearoa programme. </p>
 
         </div>
       </div>
