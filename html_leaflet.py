@@ -225,7 +225,7 @@ html_content = """
 </html>
 """
 # Save HTML file
-with open("map.html", "w") as f:
+with open("index.html", "w") as f:
     f.write(html_content)
 
 print("✅ map.html and data.geojson generated. Open map.html in browser (preferably via a local server).")
