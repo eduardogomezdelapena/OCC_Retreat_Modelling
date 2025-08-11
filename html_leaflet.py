@@ -8,7 +8,7 @@ Created on Wed Aug  6 11:06:05 2025
 
 #%% HTML - Leaflet
 import os
-url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
+url_sv_gj="/home/eegp/Documents/GitHub/OCC_Retreat_Modelling/"
 os.chdir(url_sv_gj)
 'shoreline_retreat.geojson'
 
@@ -102,7 +102,7 @@ html_content = """
         <div id="attribution">
 
           <p> Shoreline retreat projections for Aotearoa New Zealand. Data processed by Eduardo Gomez-de la Pena. Retreat was estimated using the Bruun rule, see <a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling/blob/main/README.md">README</a> for more information.</p>
-          <p> This work is part of  <a href="https://searise.nz/">Our Changing Coasts</a> MBIE project, funded secured by Dr. Giovanni Coco and Karin Bryan, The University of Auckland. </p>
+          <p> This work is part of  <a href="https://searise.nz/">Our Changing Coasts</a> MBIE project, funded secured by Dr. Giovanni Coco and Dr. Karin Bryan, The University of Auckland. </p>
 
           <p><a href="https://uoa-eresearch.github.io/CoastSat/">NZ shoreline data</a> processed by Nick Young using the <a href="https://github.com/kvos/CoastSat/"> CoastSat </a> toolbox and the NIWA Tide API. Shorelines corrected to MSL.</p>
           <p>Sea-Level Rise projections taken from the <a href="https://searise.takiwa.co/map/"> the NZ SeaRise</a> : Te Tai Pari O Aotearoa programme. </p>
@@ -178,9 +178,10 @@ html_content = """
     fetch('shoreline_retreat.geojson')
       .then(response => response.json())
       .then(data => {
-        var geojsonLayer = L.geoJSON(data, {
+        // Retreat layer 1
+        var retreatLayer1 = L.geoJSON(data, {
           pointToLayer: function (feature, latlng) {
-            var retreat = feature.properties.bruun_retreat;
+            var retreat = feature.properties.bruun_retreat1;
             return L.circleMarker(latlng, {
               radius: getRadius(retreat),
               fillColor: getColor(retreat),
@@ -192,14 +193,43 @@ html_content = """
           },
           onEachFeature: function (feature, layer) {
             var name = feature.properties.name || "Unknown";
-            var retreat = feature.properties.bruun_retreat || "N/A";
-            layer.bindPopup("<strong>" + name + "</strong><br>Bruun Retreat: " + retreat + " m");
+            var retreat = feature.properties.bruun_retreat1 || "N/A";
+            layer.bindPopup("<strong>" + name + "</strong><br>Bruun Retreat 1: " + retreat + " m");
           }
-        }).addTo(map);
-
-        map.fitBounds(geojsonLayer.getBounds());
+        });
+    
+        // Retreat layer 2
+        var retreatLayer2 = L.geoJSON(data, {
+          pointToLayer: function (feature, latlng) {
+            var retreat = feature.properties.bruun_retreat2;
+            return L.circleMarker(latlng, {
+              radius: getRadius(retreat),
+              fillColor: getColor(retreat),
+              color: '#000',
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.8
+            });
+          },
+          onEachFeature: function (feature, layer) {
+            var name = feature.properties.name || "Unknown";
+            var retreat = feature.properties.bruun_retreat2 || "N/A";
+            layer.bindPopup("<strong>" + name + "</strong><br>Bruun Retreat 2: " + retreat + " m");
+          }
+        });
+    
+        // Add one layer by default
+        retreatLayer1.addTo(map);
+    
+        // Add to overlays control
+        var overlayMaps = {
+          "Bruun Retreat 1": retreatLayer1,
+          "Bruun Retreat 2": retreatLayer2
+        };
+        L.control.layers(null, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
+    
+        map.fitBounds(retreatLayer1.getBounds());
       });
-
     // Legend
     var legend = L.control({ position: 'bottomright' });
     legend.onAdd = function (map) {
