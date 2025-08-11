@@ -261,4 +261,4 @@ with open("index.html", "w") as f:
 print("✅ map.html and data.geojson generated. Open map.html in browser (preferably via a local server).")
 #Run in bash
 "python -m http.server"
-"http://localhost:8000/map.html"
+"http://localhost:8000/index.html"

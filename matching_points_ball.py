@@ -122,6 +122,12 @@ print(df_nzrise_slr.head())
 
 #Filter year = 2030, and ssp1, then match site with siteId_NZrise
 
+unique_ssp_values = df_nzrise_slr['SSP'].unique()
+
+unique_scenarios = df_nzrise_slr['scenario'].unique()
+
+unique_years = df_nzrise_slr['year'].unique()
+
 lol = df_nzrise_slr[df_nzrise_slr['year']== 2030]
 
 lol = lol[lol['SSP'].str.contains('ssp1', na=False)]
