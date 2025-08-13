@@ -146,7 +146,32 @@ combined['SLR_ssp1_2030_50p'] = combined['site_ID_nzrise'].map(
 
 bruun_retreat= (1/ combined.beach_slope) * combined.SLR_ssp1_2030_50p
 
+#%% Calculate all retreat
 
+# Specify the columns to multiply
+columns_to_multiply = ['17', '50','83']
+
+multiplier = 1/ shore_df['beach_slope'].reset_index(drop=True)
+
+# Multiply selected columns
+df1_multiplied = df_nzrise_slr[columns_to_multiply].multiply(multiplier, axis=0)
+
+# Keep the rest of the columns unchanged
+remaining_columns = df_nzrise_slr.drop(columns=columns_to_multiply)
+
+# Concatenate the result
+result = pd.concat([df1_multiplied, remaining_columns], axis=1)
+
+# Optional: Reorder columns if needed
+result = result[df_nzrise_slr.columns]
+
+# (1/shore_df.beach_slope.reset_index(drop=True)) *
+
+ssp1_2030 = result[result['year']== 2030]
+ssp1_2030=  ssp1_2030[ssp1_2030['SSP'].str.contains('ssp1', na=False)]
+
+
+#%%
 combined['bruun_retreat1'] = bruun_retreat
 combined['bruun_retreat2'] = bruun_retreat
 
@@ -165,7 +190,7 @@ gdf.set_crs(epsg=4326, inplace=True)  # WGS84
 
 url_sv_gj="/home/eegp/Documents/GitHub/OCC_Retreat_Modelling/"
 
-gdf.to_file(url_sv_gj+"shoreline_retreat.geojson", driver="GeoJSON")
+# gdf.to_file(url_sv_gj+"shoreline_retreat.geojson", driver="GeoJSON")
 
 
 
