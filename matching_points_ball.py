@@ -99,7 +99,7 @@ threshold = 2
 count = (combined['distance_km'] > threshold).sum()
 
 
-#%% Coarse calculation Bruun Rule
+#%% 
 
 #Beach slope
 shore_df.beach_slope
@@ -113,12 +113,42 @@ combined['site_ID_nzrise'] = df_latlon['Site ID'].iloc[nearest_indices].reset_in
 
 combined['beach_slope'] = shore_df.beach_slope.reset_index(drop=True)
 
+#Adding coastsat id tag
+combined['coastsat_id'] = shore_df.id.reset_index(drop=True)
+
+
+
 #%%
 #Download actual SLR and VLM csv
 url_slr="https://zenodo.org/records/14722058/files/NZ_Searise_noVLM-2005.csv"
 
 df_nzrise_slr= pd.read_csv(url_slr)
 print(df_nzrise_slr.head())
+#%%
+#For each different tag in coastsat_id in df_combined, 
+#obtain the subset in df_nzrise_slr that matches the 
+#site_ID_nzrise tag in df_combined
+#Version without for loop, much faster with large datasets
+
+df_nzrise_slr.rename(columns={'site': 'site_ID_nzrise'},
+                                         inplace=True)
+
+# Merge df_combined with df_nzrise_slr using the site_ID_nzrise column
+merged_df = combined[['coastsat_id', 'site_ID_nzrise']].merge(
+    df_nzrise_slr,
+    on='site_ID_nzrise',
+    how='left'  # or 'inner' if you only want matching entries
+)
+
+# Dictionary to store the subsets
+subset_dict = {}
+subset_dict2 = dict(tuple(merged_df.groupby('coastsat_id')))
+
+# subset_dict['nzd0001-0000']
+
+
+#%%
+
 
 #Filter year = 2030, and ssp1, then match site with siteId_NZrise
 
@@ -140,11 +170,30 @@ lol= lol.drop(['17','83'],axis=1)
 lol_unique = lol.drop_duplicates(subset='site')
 
 # Step 2: Map the '50' column to combineddataframe based on matching site IDs
-combined['SLR_ssp1_2030_50p'] = combined['site_ID_nzrise'].map(
+combined['50'] = combined['site_ID_nzrise'].map(
     lol_unique.set_index('site')['50']
 )
 
+#Still need to add ssp1 and 2030 tags
+combined['SSP'] = combined['site_ID_nzrise'].map(
+    lol_unique.set_index('site')['SSP']
+    )
+
+combined['scenario'] = combined['site_ID_nzrise'].map(
+    lol_unique.set_index('site')['scenario']
+    )
+
+
+combined['year'] = combined['site_ID_nzrise'].map(
+    lol_unique.set_index('site')['year']
+    )
+
+
+#Coarse calculation Bruun Rule
+
 bruun_retreat= (1/ combined.beach_slope) * combined.SLR_ssp1_2030_50p
+
+combined['bruun_retreat'] = bruun_retreat
 
 #%% Calculate all retreat
 
@@ -171,9 +220,7 @@ ssp1_2030 = result[result['year']== 2030]
 ssp1_2030=  ssp1_2030[ssp1_2030['SSP'].str.contains('ssp1', na=False)]
 
 
-#%%
-combined['bruun_retreat1'] = bruun_retreat
-combined['bruun_retreat2'] = bruun_retreat
+
 
 #%% Convert to geojson
 import geopandas as gpd
