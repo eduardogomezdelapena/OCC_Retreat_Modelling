@@ -137,12 +137,6 @@ merged_df = combined.merge(
     how='left'  # or 'inner' if you only want matching entries
 )
 
-# Dictionary to store the subsets
-# subset_dict = {}
-# subset_dict2 = dict(tuple(merged_df.groupby('coastsat_id')))
-
-# subset_dict['nzd0001-0000']
-
 #%% Calculate all retreat
 #Multiply percentile columns 17, 50, 83
 
@@ -152,6 +146,7 @@ slr_cols = ['17', '50', '83']
 slr_df = merged_df[slr_cols]
 
 # Divide all columns in slr_df by beach_slope (row-wise)
+#Bruun rule
 retreat_df = slr_df.div(merged_df['beach_slope'], axis=0)
 
 # Rename columns
@@ -163,18 +158,6 @@ merged_df = pd.concat([merged_df, retreat_df], axis=1)
 # Add historic trend
 #%%Export separate files per scenario/year:
 
-# # Convert to geometry
-# geometry = [Point(xy) for xy in zip(combined['lon'], combined['lat'])]
-
-# # Create GeoDataFrame
-# gdf = gpd.GeoDataFrame(combined, geometry=geometry)
-
-# # Set coordinate reference system (CRS)
-# gdf.set_crs(epsg=4326, inplace=True)  # WGS84
-
-# # Ensure it's a GeoDataFrame
-# gdf = gpd.GeoDataFrame(merged_df, geometry='geometry', crs="EPSG:4326")  # adjust CRS as needed
-
 import geopandas as gpd
 from shapely.geometry import Point
 
@@ -182,7 +165,7 @@ from shapely.geometry import Point
 geometry = [Point(xy) for xy in zip(combined['lon'], combined['lat'])]
 
 # Get unique combinations
-unique_years = [2005]
+unique_years = merged_df['year'].unique()  #need to cut it to 2100 only for viz
 unique_scenarios = [1.9]
 
 # unique_years = merged_df['year'].unique()
@@ -211,7 +194,7 @@ for year in unique_years:
             gdf.set_crs(epsg=4326, inplace=True)  # WGS84
             # Export
             gdf.to_file(filename, driver="GeoJSON")
-
+            print(filename+' saved ')
 
 
 
