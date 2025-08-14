@@ -100,10 +100,6 @@ count = (combined['distance_km'] > threshold).sum()
 
 
 #%% 
-
-#Beach slope
-shore_df.beach_slope
-
 #SLR from nearest NZRise point
 #First retreive SiteID
 
@@ -116,7 +112,8 @@ combined['beach_slope'] = shore_df.beach_slope.reset_index(drop=True)
 #Adding coastsat id tag
 combined['coastsat_id'] = shore_df.id.reset_index(drop=True)
 
-
+#Adding historic trend
+combined['trend'] = shore_df.trend.reset_index(drop=True)
 
 #%%
 #Download actual SLR and VLM csv
@@ -134,29 +131,97 @@ df_nzrise_slr.rename(columns={'site': 'site_ID_nzrise'},
                                          inplace=True)
 
 # Merge df_combined with df_nzrise_slr using the site_ID_nzrise column
-merged_df = combined[['coastsat_id', 'site_ID_nzrise']].merge(
+merged_df = combined.merge(
     df_nzrise_slr,
     on='site_ID_nzrise',
     how='left'  # or 'inner' if you only want matching entries
 )
 
 # Dictionary to store the subsets
-subset_dict = {}
-subset_dict2 = dict(tuple(merged_df.groupby('coastsat_id')))
+# subset_dict = {}
+# subset_dict2 = dict(tuple(merged_df.groupby('coastsat_id')))
 
 # subset_dict['nzd0001-0000']
 
+#%% Calculate all retreat
+#Multiply percentile columns 17, 50, 83
+
+slr_cols = ['17', '50', '83']
+
+# Create a DataFrame of just the SLR columns
+slr_df = merged_df[slr_cols]
+
+# Divide all columns in slr_df by beach_slope (row-wise)
+retreat_df = slr_df.div(merged_df['beach_slope'], axis=0)
+
+# Rename columns
+retreat_df = retreat_df.rename(columns=lambda x: f'retreat_{x}')
+
+# Append to merged_df
+merged_df = pd.concat([merged_df, retreat_df], axis=1)
+
+# Add historic trend
+#%%Export separate files per scenario/year:
+
+# # Convert to geometry
+# geometry = [Point(xy) for xy in zip(combined['lon'], combined['lat'])]
+
+# # Create GeoDataFrame
+# gdf = gpd.GeoDataFrame(combined, geometry=geometry)
+
+# # Set coordinate reference system (CRS)
+# gdf.set_crs(epsg=4326, inplace=True)  # WGS84
+
+# # Ensure it's a GeoDataFrame
+# gdf = gpd.GeoDataFrame(merged_df, geometry='geometry', crs="EPSG:4326")  # adjust CRS as needed
+
+import geopandas as gpd
+from shapely.geometry import Point
+
+# Convert to geometry
+geometry = [Point(xy) for xy in zip(combined['lon'], combined['lat'])]
+
+# Get unique combinations
+unique_years = [2005]
+unique_scenarios = [1.9]
+
+# unique_years = merged_df['year'].unique()
+# unique_scenarios = merged_df['SSP'].dropna().unique()
+
+# Loop through all unique (SSP, year) combinations
+for year in unique_years:
+    for scenario in unique_scenarios:
+        
+        subset = merged_df[(merged_df['year'] == year) & (merged_df['scenario'] == scenario)]
+        
+        if not subset.empty:
+            # Drop other percentiles and keep only the median (50th)
+            subset = subset.drop(columns=['17', '83'], errors='ignore')
+            subset = subset.rename(columns={'50': 'retreat'})
+
+            # Optional: drop other columns if needed (like year, SSP) or keep them for metadata
+
+            # Create safe filename
+            safe_scenario = str(scenario)
+            filename = f"retreat_{safe_scenario}_{year}_50percentile.geojson"
+
+            #Transform to geopandas df
+            gdf = gpd.GeoDataFrame(subset, geometry=geometry)
+            # Set coordinate reference system (CRS)
+            gdf.set_crs(epsg=4326, inplace=True)  # WGS84
+            # Export
+            gdf.to_file(filename, driver="GeoJSON")
+
+
+
 
 #%%
-
 
 #Filter year = 2030, and ssp1, then match site with siteId_NZrise
 
 unique_ssp_values = df_nzrise_slr['SSP'].unique()
 
-unique_scenarios = df_nzrise_slr['scenario'].unique()
 
-unique_years = df_nzrise_slr['year'].unique()
 
 lol = df_nzrise_slr[df_nzrise_slr['year']== 2030]
 
@@ -170,14 +235,6 @@ lol= lol.drop(['17','83'],axis=1)
 lol_unique = lol.drop_duplicates(subset='site')
 
 # Step 2: Map the '50' column to combineddataframe based on matching site IDs
-combined['50'] = combined['site_ID_nzrise'].map(
-    lol_unique.set_index('site')['50']
-)
-
-#Still need to add ssp1 and 2030 tags
-combined['SSP'] = combined['site_ID_nzrise'].map(
-    lol_unique.set_index('site')['SSP']
-    )
 
 combined['scenario'] = combined['site_ID_nzrise'].map(
     lol_unique.set_index('site')['scenario']
@@ -187,40 +244,6 @@ combined['scenario'] = combined['site_ID_nzrise'].map(
 combined['year'] = combined['site_ID_nzrise'].map(
     lol_unique.set_index('site')['year']
     )
-
-
-#Coarse calculation Bruun Rule
-
-bruun_retreat= (1/ combined.beach_slope) * combined.SLR_ssp1_2030_50p
-
-combined['bruun_retreat'] = bruun_retreat
-
-#%% Calculate all retreat
-
-# Specify the columns to multiply
-columns_to_multiply = ['17', '50','83']
-
-multiplier = 1/ shore_df['beach_slope'].reset_index(drop=True)
-
-# Multiply selected columns
-df1_multiplied = df_nzrise_slr[columns_to_multiply].multiply(multiplier, axis=0)
-
-# Keep the rest of the columns unchanged
-remaining_columns = df_nzrise_slr.drop(columns=columns_to_multiply)
-
-# Concatenate the result
-result = pd.concat([df1_multiplied, remaining_columns], axis=1)
-
-# Optional: Reorder columns if needed
-result = result[df_nzrise_slr.columns]
-
-# (1/shore_df.beach_slope.reset_index(drop=True)) *
-
-ssp1_2030 = result[result['year']== 2030]
-ssp1_2030=  ssp1_2030[ssp1_2030['SSP'].str.contains('ssp1', na=False)]
-
-
-
 
 #%% Convert to geojson
 import geopandas as gpd
