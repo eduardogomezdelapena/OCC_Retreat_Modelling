@@ -162,89 +162,42 @@ import geopandas as gpd
 from shapely.geometry import Point
 
 # Convert to geometry
-geometry = [Point(xy) for xy in zip(combined['lon'], combined['lat'])]
+#change this from combined to merged
+
+url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
 
 # Get unique combinations
-unique_years = merged_df['year'].unique()  #need to cut it to 2100 only for viz
-unique_scenarios = [1.9]
+unique_years =  [2005, 2020, 2030]
+# unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
+unique_scenarios = [1.9,2.6]
+#Scenarios 2.6 and 8.5 seem to have duplicates?
 
 # unique_years = merged_df['year'].unique()
-# unique_scenarios = merged_df['SSP'].dropna().unique()
+# unique_scenarios = merged_df['scenario'].dropna().unique()
 
 # Loop through all unique (SSP, year) combinations
 for year in unique_years:
     for scenario in unique_scenarios:
         
         subset = merged_df[(merged_df['year'] == year) & (merged_df['scenario'] == scenario)]
+        #Calculate geometry here
+        #Drop duplicates, keep the second one, which is the one usually with medium confidence
+        subset = subset.drop_duplicates(subset='coastsat_id', keep='last')
+        geometry = [Point(xy) for xy in zip(subset['lon'], subset['lat'])]
         
         if not subset.empty:
-            # Drop other percentiles and keep only the median (50th)
-            subset = subset.drop(columns=['17', '83'], errors='ignore')
-            subset = subset.rename(columns={'50': 'retreat'})
 
-            # Optional: drop other columns if needed (like year, SSP) or keep them for metadata
-
-            # Create safe filename
-            safe_scenario = str(scenario)
-            filename = f"retreat_{safe_scenario}_{year}_50percentile.geojson"
+            # Create save filename
+            save_scenario = str(scenario)
+            filename = f"retreat_{save_scenario}_{year}_50percentile.geojson"
 
             #Transform to geopandas df
             gdf = gpd.GeoDataFrame(subset, geometry=geometry)
             # Set coordinate reference system (CRS)
             gdf.set_crs(epsg=4326, inplace=True)  # WGS84
             # Export
-            gdf.to_file(filename, driver="GeoJSON")
+            gdf.to_file(url_sv_gj+filename, driver="GeoJSON")
             print(filename+' saved ')
-
-
-
-#%%
-
-#Filter year = 2030, and ssp1, then match site with siteId_NZrise
-
-unique_ssp_values = df_nzrise_slr['SSP'].unique()
-
-
-
-lol = df_nzrise_slr[df_nzrise_slr['year']== 2030]
-
-lol = lol[lol['SSP'].str.contains('ssp1', na=False)]
-
-#50th percentile (mean value) for projections
-
-lol= lol.drop(['17','83'],axis=1)
-
-# Step 1: Remove duplicates in loldataframe based on 'site'
-lol_unique = lol.drop_duplicates(subset='site')
-
-# Step 2: Map the '50' column to combineddataframe based on matching site IDs
-
-combined['scenario'] = combined['site_ID_nzrise'].map(
-    lol_unique.set_index('site')['scenario']
-    )
-
-
-combined['year'] = combined['site_ID_nzrise'].map(
-    lol_unique.set_index('site')['year']
-    )
-
-#%% Convert to geojson
-import geopandas as gpd
-from shapely.geometry import Point
-
-# Convert to geometry
-geometry = [Point(xy) for xy in zip(combined['lon'], combined['lat'])]
-
-# Create GeoDataFrame
-gdf = gpd.GeoDataFrame(combined, geometry=geometry)
-
-# Set coordinate reference system (CRS)
-gdf.set_crs(epsg=4326, inplace=True)  # WGS84
-
-url_sv_gj="/home/eegp/Documents/GitHub/OCC_Retreat_Modelling/"
-
-# gdf.to_file(url_sv_gj+"shoreline_retreat.geojson", driver="GeoJSON")
-
 
 
 

@@ -8,7 +8,7 @@ Created on Wed Aug  6 11:06:05 2025
 
 #%% HTML - Leaflet
 import os
-url_sv_gj="/home/eegp/Documents/GitHub/OCC_Retreat_Modelling/"
+url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
 os.chdir(url_sv_gj)
 'shoreline_retreat.geojson'
 
@@ -25,6 +25,10 @@ html_content = """
   <!-- Leaflet core -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Grouped Layer Control -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.groupedlayercontrol@0.7.0/dist/leaflet.groupedlayercontrol.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.groupedlayercontrol@0.7.0/dist/leaflet.groupedlayercontrol.min.js"></script>
 
   <!-- Leaflet.draw -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
@@ -114,7 +118,7 @@ html_content = """
 
   <script>
     // Initialize map
-    var map = L.map('map', {
+    var map = L.mapuntitled0('map', {
       center: [-42, 1],
       zoom: 6
     });
@@ -174,82 +178,71 @@ html_content = """
       return Math.max(4, value * 0.8);
     }
 
-    // Load GeoJSON
-    fetch('shoreline_retreat.geojson')
-      .then(response => response.json())
-      .then(data => {
-        // Retreat layer 1
-        var retreatLayer1 = L.geoJSON(data, {
-          pointToLayer: function (feature, latlng) {
-            var retreat = feature.properties.bruun_retreat1;
-            return L.circleMarker(latlng, {
-              radius: getRadius(retreat),
-              fillColor: getColor(retreat),
-              color: '#000',
-              weight: 1,
-              opacity: 1,
-              fillOpacity: 0.8
-            });
-          },
-          onEachFeature: function (feature, layer) {
-            var name = feature.properties.name || "Unknown";
-            var retreat = feature.properties.bruun_retreat1 || "N/A";
-            layer.bindPopup("<strong>" + name + "</strong><br>Bruun Retreat 1: " + retreat + " m");
-          }
+    // Function to create GeoJSON layer using 'retreat_50'
+    function createGeoJsonLayer(url) {
+      return fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          return L.geoJSON(data, {
+            pointToLayer: function (feature, latlng) {
+              var retreat = feature.properties.retreat_50;
+              return L.circleMarker(latlng, {
+                radius: getRadius(retreat),
+                fillColor: getColor(retreat),
+                color: '#000',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+              });
+            },
+            onEachFeature: function (feature, layer) {
+              var name = feature.properties.name ;
+              var retreat = feature.properties.retreat_50 ;
+              layer.bindPopup(`<strong>${name}</strong><br>Retreat (50th percentile): ${retreat} m`);
+            }
+          });
         });
-    
-        // Retreat layer 2
-        var retreatLayer2 = L.geoJSON(data, {
-          pointToLayer: function (feature, latlng) {
-            var retreat = feature.properties.bruun_retreat2;
-            return L.circleMarker(latlng, {
-              radius: getRadius(retreat),
-              fillColor: getColor(retreat),
-              color: '#000',
-              weight: 1,
-              opacity: 1,
-              fillOpacity: 0.8
-            });
-          },
-          onEachFeature: function (feature, layer) {
-            var name = feature.properties.name || "Unknown";
-            var retreat = feature.properties.bruun_retreat2 || "N/A";
-            layer.bindPopup("<strong>" + name + "</strong><br>Bruun Retreat 2: " + retreat + " m");
-          }
-        });
-    
-        // Add one layer by default
-        retreatLayer1.addTo(map);
-    
-        // Add to overlays control
-        var overlayMaps = {
-          "Bruun Retreat 1": retreatLayer1,
-          "Bruun Retreat 2": retreatLayer2
-        };
-        L.control.layers(null, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
-    
-        map.fitBounds(retreatLayer1.getBounds());
-      });
-    // Legend
-    var legend = L.control({ position: 'bottomright' });
-    legend.onAdd = function (map) {
-      var div = L.DomUtil.create('div', 'legend');
-      var grades = [0, 5, 10];
-      var labels = [];
-      var colors = ['#1a9850', '#fee08b', '#d73027'];
+    }
 
-      div.innerHTML += '<b>Bruun Retreat (m)</b><br>';
-      for (var i = 0; i < grades.length; i++) {
-        var from = grades[i];
-        var to = grades[i + 1];
-        div.innerHTML +=
-          '<i style="background:' + colors[i] + '"></i> ' +
-          (to ? from + '–' + to : from + '+') + '<br>';
-      }
+    // Scenario-Year layer info
+    const layersInfo = [
+      { url: 'retreat_1.9_2005_50percentile.geojson', scenario: 'SLR 1.9', year: '2005' },
+      { url: 'retreat_1.9_2020_50percentile.geojson', scenario: 'SLR 1.9', year: '2020' },
+      { url: 'retreat_1.9_2030_50percentile.geojson', scenario: 'SLR 1.9', year: '2030' },
+      { url: 'retreat_2.6_2005_50percentile.geojson', scenario: 'SLR 2.6', year: '2005' },
+      { url: 'retreat_2.6_2020_50percentile.geojson', scenario: 'SLR 2.6', year: '2020' },
+      { url: 'retreat_2.6_2030_50percentile.geojson', scenario: 'SLR 2.6', year: '2030' }
+    ];
 
-      return div;
+    // Prepare grouped overlays object
+    const groupedOverlays = {
+      "SLR 1.9": {},
+      "SLR 2.6": {}
     };
-    legend.addTo(map);
+
+    // Build layers sequentially
+    Promise.all(
+      layersInfo.map(info =>
+        createGeoJsonLayer(info.url).then(layer => {
+          groupedOverlays[info.scenario][info.year] = layer;
+          return layer;
+        })
+      )
+    ).then(allLayers => {
+      // Add first layer to map and fit bounds
+      if (allLayers.length) {
+        allLayers[0].addTo(map);
+        map.fitBounds(allLayers[0].getBounds());
+      }
+    
+      // Now that groupedOverlays is complete, initialize the control
+      L.control.groupedLayers(null, groupedOverlays, {
+        position: 'topleft',
+        collapsed: false
+      }).addTo(map);
+    });
+
+  
   </script>
 </body>
 </html>
