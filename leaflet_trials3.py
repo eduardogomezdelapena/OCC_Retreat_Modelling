@@ -107,7 +107,7 @@ html_content = """
 
   <script>
   
-    const map = L.map('map').setView([-42, 172], 6);
+    const map = L.map('map').setView([-41, 178], 6);
     
     // Sidebar
     var sidebar = L.control.sidebar({
@@ -134,38 +134,32 @@ html_content = """
 
     //Legend
     
-    const legend = L.control({ position: 'bottomright' });
+ const legend = L.control({ position: 'bottomright' });
 
-    legend.onAdd = function(map) {
-      const div = L.DomUtil.create('div', 'info legend');
-      const grades = [0, 5, 10];
-      const labels = [];
-    
-      div.style.backgroundColor = 'white';
-      div.style.padding = '6px 8px';
-      div.style.fontSize = '14px';
-      div.style.borderRadius = '5px';
-      div.style.boxShadow = '0 0 15px rgba(0,0,0,0.2)';
-    
-      div.innerHTML += '<strong>Retreat (m)</strong><br>';
-    
-      for (let i = 0; i < grades.length; i++) {
-        const from = grades[i];
-        const to = grades[i + 1];
-    
-        const color = from > 10 ? '#d73027' :
-                      from > 5  ? '#fee08b' :
-                                  '#1a9850';
-    
-        const rangeText = to ? `${from} &ndash; ${to}` : `${from}+`;
-    
-        div.innerHTML +=
-          '<i style="background:' + color + '; width: 18px; height: 18px; display: inline-block; margin-right: 8px; opacity: 0.7;"></i> ' +
-          rangeText + '<br>';
-      }
-    
-      return div;
-    };
+legend.onAdd = function(map) {
+  const div = L.DomUtil.create('div', 'info legend');
+  div.style.backgroundColor = 'white';
+  div.style.padding = '6px 8px';
+  div.style.fontSize = '14px';
+  div.style.borderRadius = '5px';
+  div.style.boxShadow = '0 0 15px rgba(0,0,0,0.2)';
+  div.innerHTML = '<strong>Retreat (m)</strong><br>';
+
+  const grades = [0, 5, 10];
+  const colors = ['#1a9850', '#fee08b', '#d73027']; // green, yellow, red
+
+  for (let i = 0; i < grades.length; i++) {
+    const from = grades[i];
+    const to = grades[i + 1];
+
+    const rangeText = to ? `${from} &ndash; ${to}` : `${from}+`;
+
+    div.innerHTML +=
+      `<i style="background:${colors[i]}; width: 18px; height: 18px; display: inline-block; margin-right: 8px; opacity: 0.7;"></i> ${rangeText}<br>`;
+  }
+
+  return div;
+};
 
 legend.addTo(map);
 
@@ -221,11 +215,6 @@ legend.addTo(map);
 
               entry.layer.addTo(map);
 
-              // Zoom on first load only
-              if (!map._hasFitBounds) {
-                map.fitBounds(entry.layer.getBounds());
-                map._hasFitBounds = true;
-              }
             });
         }
       } else {
