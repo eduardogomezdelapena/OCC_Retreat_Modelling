@@ -19,12 +19,22 @@ html_content = """
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>CoastSat Transects - SLR Layers</title>
+  <title>Shoreline retreat Aoteroa NZ </title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Leaflet providers (Carto, ESRI, etc.) -->
+  <script src="https://unpkg.com/leaflet-providers@1.3.0/leaflet-providers.js"></script>
+  
+  <!-- Leaflet.sidebar -->
+  <link href="https://cdn.jsdelivr.net/npm/leaflet-sidebar-v2@3.2.3/css/leaflet-sidebar.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-sidebar-v2@3.2.3/js/leaflet-sidebar.min.js"></script>
+
+  <!-- Font Awesome (for icons in sidebar) -->
+  <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css" rel="stylesheet">
 
   <style>
     html, body, #map {
@@ -53,9 +63,11 @@ html_content = """
   </style>
 </head>
 <body>
+
+
   <div id="map"></div>
 
-  <!-- Custom toggle control -->
+  <!-- Layer toggles -->
   <div class="custom-control">
     <div class="group">
       <strong>SLR 1.9</strong>
@@ -68,15 +80,94 @@ html_content = """
       <label><input type="checkbox" id="layer26_2020"> 2020</label>
     </div>
   </div>
+  
+  <!-- Sidebar -->
+  <div id="sidebar" class="leaflet-sidebar collapsed">
+    <div class="leaflet-sidebar-tabs">
+      <ul role="tablist">
+        <li><a href="#home" role="tab"><i class="fa fa-bars"></i></a></li>
+        <li><a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling"><i class="fa fa-github"></i></a></li>
+      </ul>
+    </div>
+
+    <div class="leaflet-sidebar-content">
+      <div class="leaflet-sidebar-pane" id="home">
+        <div id="attribution">
+
+          <p> Shoreline retreat projections for Aotearoa New Zealand. Data processed by Eduardo Gomez-de la Pena. Retreat was estimated using the Bruun rule, see <a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling/blob/main/README.md">README</a> for more information.</p>
+          <p> This work is part of  <a href="https://searise.nz/">Our Changing Coasts</a> MBIE project, funded secured by Dr. Giovanni Coco and Dr. Karin Bryan, The University of Auckland. </p>
+
+          <p><a href="https://uoa-eresearch.github.io/CoastSat/">NZ shoreline data</a> processed by Nick Young using the <a href="https://github.com/kvos/CoastSat/"> CoastSat </a> toolbox and the NIWA Tide API. Shorelines corrected to MSL.</p>
+          <p>Sea-Level Rise projections taken from the <a href="https://searise.takiwa.co/map/"> the NZ SeaRise</a> : Te Tai Pari O Aotearoa programme. </p>
+
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
-    // Initialize map
+  
     const map = L.map('map').setView([-42, 172], 6);
-
-    // Basemap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+    
+    // Sidebar
+    var sidebar = L.control.sidebar({
+      autopan: false,
+      closeButton: true,
+      container: 'sidebar',
+      position: 'right'
     }).addTo(map);
+
+    // Open the "home" tab by default
+    sidebar.open('home');
+
+
+    // Basemaps
+    var baseMaps = {
+      "ESRI Imagery": L.tileLayer.provider("Esri.WorldImagery").addTo(map),
+      "ESRI Topo": L.tileLayer.provider("Esri.WorldTopoMap"),
+      "CartoDB Positron": L.tileLayer.provider("CartoDB.Positron"),
+      "CartoDB Dark": L.tileLayer.provider("CartoDB.DarkMatter"),
+      "OpenStreetMap": L.tileLayer.provider("OpenStreetMap.Mapnik")
+    };
+    
+    L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
+
+    //Legend
+    
+    const legend = L.control({ position: 'bottomright' });
+
+    legend.onAdd = function(map) {
+      const div = L.DomUtil.create('div', 'info legend');
+      const grades = [0, 5, 10];
+      const labels = [];
+    
+      div.style.backgroundColor = 'white';
+      div.style.padding = '6px 8px';
+      div.style.fontSize = '14px';
+      div.style.borderRadius = '5px';
+      div.style.boxShadow = '0 0 15px rgba(0,0,0,0.2)';
+    
+      div.innerHTML += '<strong>Retreat (m)</strong><br>';
+    
+      for (let i = 0; i < grades.length; i++) {
+        const from = grades[i];
+        const to = grades[i + 1];
+    
+        const color = from > 10 ? '#d73027' :
+                      from > 5  ? '#fee08b' :
+                                  '#1a9850';
+    
+        const rangeText = to ? `${from} &ndash; ${to}` : `${from}+`;
+    
+        div.innerHTML +=
+          '<i style="background:' + color + '; width: 18px; height: 18px; display: inline-block; margin-right: 8px; opacity: 0.7;"></i> ' +
+          rangeText + '<br>';
+      }
+    
+      return div;
+    };
+
+legend.addTo(map);
 
     // Color + radius
     function getColor(value) {
@@ -89,73 +180,69 @@ html_content = """
       return Math.max(4, value * 0.8);
     }
 
-    // Sublayers
-    const slr19_2005 = L.layerGroup();
-    const slr19_2020 = L.layerGroup();
-    const slr26_2005 = L.layerGroup();
-    const slr26_2020 = L.layerGroup();
+    // Track loaded layers
+    const layers = {
+      layer19_2005: { url: 'retreat_1.9_2005_50percentile.geojson', layer: null },
+      layer19_2020: { url: 'retreat_1.9_2020_50percentile.geojson', layer: null },
+      layer26_2005: { url: 'retreat_2.6_2005_50percentile.geojson', layer: null },
+      layer26_2020: { url: 'retreat_2.6_2020_50percentile.geojson', layer: null }
+    };
 
-    // Parent groups
-    const slr19Group = L.layerGroup([slr19_2005, slr19_2020]);
-    const slr26Group = L.layerGroup([slr26_2005, slr26_2020]);
+    function loadAndToggleLayer(key, checked) {
+      const entry = layers[key];
 
-    // Load GeoJSON and populate layer group
-    function loadGeoJsonToLayer(url, layerGroup, fit = false) {
-      fetch(url)
-        .then(res => res.json())
-        .then(data => {
-          const geoLayer = L.geoJSON(data, {
-            pointToLayer: function (feature, latlng) {
-              const retreat = feature.properties.retreat_50;
-              return L.circleMarker(latlng, {
-                radius: getRadius(retreat),
-                fillColor: getColor(retreat),
-                color: '#000',
-                weight: 1,
-                opacity: 1,
-                fillOpacity: 0.8
-              });
-            },
-            onEachFeature: function (feature, layer) {
-              const name = feature.properties.name;
-              const retreat = feature.properties.retreat_50;
-              layer.bindPopup(`<strong>${name}</strong><br>Retreat (50th percentile): ${retreat} m`);
-            }
-          });
-          geoLayer.addTo(layerGroup);
-
-          if (fit && !map._hasFitBounds) {
-            map.fitBounds(geoLayer.getBounds());
-            map._hasFitBounds = true;
-          }
-        });
-    }
-
-    // Load all files into their layer groups (do not add to map yet)
-    loadGeoJsonToLayer('retreat_1.9_2005_50percentile.geojson', slr19_2005, true);
-    loadGeoJsonToLayer('retreat_1.9_2020_50percentile.geojson', slr19_2020);
-    loadGeoJsonToLayer('retreat_2.6_2005_50percentile.geojson', slr26_2005);
-    loadGeoJsonToLayer('retreat_2.6_2020_50percentile.geojson', slr26_2020);
-
-    // Toggle handler
-    function setupCheckbox(id, parentGroup, sublayer) {
-      document.getElementById(id).addEventListener('change', function(e) {
-        if (e.target.checked) {
-          parentGroup.addLayer(sublayer);
-          if (!map.hasLayer(parentGroup)) {
-            parentGroup.addTo(map);
-          }
+      if (checked) {
+        if (entry.layer) {
+          // Already loaded, just add to map
+          map.addLayer(entry.layer);
         } else {
-          parentGroup.removeLayer(sublayer);
+          // Lazy-load GeoJSON
+          fetch(entry.url)
+            .then(res => res.json())
+            .then(data => {
+              entry.layer = L.geoJSON(data, {
+                pointToLayer: (feature, latlng) => {
+                  const retreat = feature.properties.retreat_50;
+                  return L.circleMarker(latlng, {
+                    radius: getRadius(retreat),
+                    fillColor: getColor(retreat),
+                    color: '#000',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                  });
+                },
+                onEachFeature: (feature, layer) => {
+                  const name = feature.properties.name;
+                  const retreat = feature.properties.retreat_50;
+                  layer.bindPopup(`<strong>${name}</strong><br>Retreat (50th percentile): ${retreat} m`);
+                }
+              });
+
+              entry.layer.addTo(map);
+
+              // Zoom on first load only
+              if (!map._hasFitBounds) {
+                map.fitBounds(entry.layer.getBounds());
+                map._hasFitBounds = true;
+              }
+            });
         }
-      });
+      } else {
+        // Turn off layer if it's loaded
+        if (entry.layer && map.hasLayer(entry.layer)) {
+          map.removeLayer(entry.layer);
+        }
+      }
     }
 
-    // Setup checkboxes
-    setupCheckbox('layer19_2005', slr19Group, slr19_2005);
-    setupCheckbox('layer19_2020', slr19Group, slr19_2020);
-    setupCheckbox('layer26_2005', slr26Group, slr26_2005);
-    setupCheckbox('layer26_2020', slr26Group, slr26_2020);
+    // Attach checkbox listeners
+    Object.keys(layers).forEach(key => {
+      const checkbox = document.getElementById(key);
+      checkbox.addEventListener('change', (e) => {
+        loadAndToggleLayer(key, e.target.checked);
+      });
+    });
   </script>
 </body>
 </html>
