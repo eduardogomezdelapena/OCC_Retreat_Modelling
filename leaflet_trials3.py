@@ -43,7 +43,7 @@ html_content = """
     }
     .custom-control {
       position: absolute;
-      top: 10px;
+      top: 10%;
       left: 10px;
       z-index: 1000;
       background: white;
@@ -68,19 +68,59 @@ html_content = """
   <div id="map"></div>
 
   <!-- Layer toggles -->
-  <div class="custom-control">
-    <div class="group">
-      <strong>SLR 1.9</strong>
-      <label><input type="checkbox" id="layer19_2005"> 2005</label>
-      <label><input type="checkbox" id="layer19_2020"> 2020</label>
+    <div class="custom-control">
+      <details>
+        <summary><strong>SLR 1.9</strong></summary>
+        <label><input type="checkbox" id="layer19_2005"> 2005</label>
+        <label><input type="checkbox" id="layer19_2020"> 2020</label>
+        <label><input type="checkbox" id="layer19_2030"> 2030</label>
+        <label><input type="checkbox" id="layer19_2050"> 2050</label>
+        <label><input type="checkbox" id="layer19_2080"> 2080</label>
+        <label><input type="checkbox" id="layer19_2100"> 2100</label>        
+      </details>
+    
+      <details>
+        <summary><strong>SLR 2.6</strong></summary>
+        <label><input type="checkbox" id="layer26_2005"> 2005</label>
+        <label><input type="checkbox" id="layer26_2020"> 2020</label>
+        <label><input type="checkbox" id="layer26_2030"> 2030</label>
+        <label><input type="checkbox" id="layer26_2050"> 2050</label>
+        <label><input type="checkbox" id="layer26_2080"> 2080</label>
+        <label><input type="checkbox" id="layer26_2100"> 2100</label>
+      </details>
+      
+      <details>
+        <summary><strong>SLR 4.5</strong></summary>
+        <label><input type="checkbox" id="layer45_2005"> 2005</label>
+        <label><input type="checkbox" id="layer45_2020"> 2020</label>
+        <label><input type="checkbox" id="layer45_2030"> 2030</label>
+        <label><input type="checkbox" id="layer45_2050"> 2050</label>
+        <label><input type="checkbox" id="layer45_2080"> 2080</label>
+        <label><input type="checkbox" id="layer45_2100"> 2100</label>
+      </details>
+       
+      <details>
+        <summary><strong>SLR 7</strong></summary>
+        <label><input type="checkbox" id="layer70_2005"> 2005</label>
+        <label><input type="checkbox" id="layer70_2020"> 2020</label>
+        <label><input type="checkbox" id="layer70_2030"> 2030</label>
+        <label><input type="checkbox" id="layer70_2050"> 2050</label>
+        <label><input type="checkbox" id="layer70_2080"> 2080</label>
+        <label><input type="checkbox" id="layer70_2100"> 2100</label>
+     </details>
+
+      <details>
+        <summary><strong>SLR 8.5</strong></summary>
+        <label><input type="checkbox" id="layer85_2005"> 2005</label>
+        <label><input type="checkbox" id="layer85_2020"> 2020</label>
+        <label><input type="checkbox" id="layer85_2030"> 2030</label>
+        <label><input type="checkbox" id="layer85_2050"> 2050</label>
+        <label><input type="checkbox" id="layer85_2080"> 2080</label>
+        <label><input type="checkbox" id="layer85_2100"> 2100</label>
+     </details>
+
     </div>
-    <div class="group">
-      <strong>SLR 2.6</strong>
-      <label><input type="checkbox" id="layer26_2005"> 2005</label>
-      <label><input type="checkbox" id="layer26_2020"> 2020</label>
-    </div>
-  </div>
-  
+      
   <!-- Sidebar -->
   <div id="sidebar" class="leaflet-sidebar collapsed">
     <div class="leaflet-sidebar-tabs">
@@ -178,8 +218,39 @@ legend.addTo(map);
     const layers = {
       layer19_2005: { url: 'retreat_1.9_2005_50percentile.geojson', layer: null },
       layer19_2020: { url: 'retreat_1.9_2020_50percentile.geojson', layer: null },
+      layer19_2030: { url: 'retreat_1.9_2030_50percentile.geojson', layer: null },
+      layer19_2050: { url: 'retreat_1.9_2050_50percentile.geojson', layer: null },
+      layer19_2080: { url: 'retreat_1.9_2080_50percentile.geojson', layer: null },
+      layer19_2100: { url: 'retreat_1.9_2100_50percentile.geojson', layer: null },      
+      
       layer26_2005: { url: 'retreat_2.6_2005_50percentile.geojson', layer: null },
-      layer26_2020: { url: 'retreat_2.6_2020_50percentile.geojson', layer: null }
+      layer26_2020: { url: 'retreat_2.6_2020_50percentile.geojson', layer: null },
+      layer26_2030: { url: 'retreat_2.6_2030_50percentile.geojson', layer: null },
+      layer26_2050: { url: 'retreat_2.6_2050_50percentile.geojson', layer: null },
+      layer26_2080: { url: 'retreat_2.6_2080_50percentile.geojson', layer: null },
+      layer26_2100: { url: 'retreat_2.6_2100_50percentile.geojson', layer: null },
+      
+      layer45_2005: { url: 'retreat_4.5_2005_50percentile.geojson', layer: null },
+      layer45_2020: { url: 'retreat_4.5_2020_50percentile.geojson', layer: null },
+      layer45_2030: { url: 'retreat_4.5_2030_50percentile.geojson', layer: null },
+      layer45_2050: { url: 'retreat_4.5_2050_50percentile.geojson', layer: null },
+      layer45_2080: { url: 'retreat_4.5_2080_50percentile.geojson', layer: null },
+      layer45_2100: { url: 'retreat_4.5_2100_50percentile.geojson', layer: null },
+
+      layer70_2005: { url: 'retreat_7_2005_50percentile.geojson', layer: null },
+      layer70_2020: { url: 'retreat_7_2020_50percentile.geojson', layer: null },
+      layer70_2030: { url: 'retreat_7_2030_50percentile.geojson', layer: null },
+      layer70_2050: { url: 'retreat_7_2050_50percentile.geojson', layer: null },
+      layer70_2080: { url: 'retreat_7_2080_50percentile.geojson', layer: null },
+      layer70_2100: { url: 'retreat_7_2100_50percentile.geojson', layer: null },
+
+      layer85_2005: { url: 'retreat_8.5_2005_50percentile.geojson', layer: null },
+      layer85_2020: { url: 'retreat_8.5_2020_50percentile.geojson', layer: null },
+      layer85_2030: { url: 'retreat_8.5_2030_50percentile.geojson', layer: null },
+      layer85_2050: { url: 'retreat_8.5_2050_50percentile.geojson', layer: null },
+      layer85_2080: { url: 'retreat_8.5_2080_50percentile.geojson', layer: null },
+      layer85_2100: { url: 'retreat_8.5_2100_50percentile.geojson', layer: null }      
+      
     };
 
     function loadAndToggleLayer(key, checked) {

@@ -167,9 +167,9 @@ from shapely.geometry import Point
 url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
 
 # Get unique combinations
-unique_years =  [2005, 2020, 2030]
+unique_years =  [2005, 2020, 2030, 2050, 2080, 2100]
 # unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
-unique_scenarios = [1.9,2.6]
+unique_scenarios = [1.9,2.6,4.5,7,8.5]
 #Scenarios 2.6 and 8.5 seem to have duplicates?
 
 # unique_years = merged_df['year'].unique()
