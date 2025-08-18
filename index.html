@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>CoastSat Transects - SLR 1.9</title>
+  <title>CoastSat Transects - SLR Layers</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Leaflet -->
@@ -25,10 +25,14 @@
       border-radius: 5px;
       box-shadow: 0 0 5px rgba(0,0,0,0.3);
       font-family: sans-serif;
+      font-size: 14px;
     }
     .custom-control label {
       display: block;
-      margin-bottom: 5px;
+      margin-left: 10px;
+    }
+    .custom-control .group {
+      margin-bottom: 10px;
     }
   </style>
 </head>
@@ -37,9 +41,16 @@
 
   <!-- Custom toggle control -->
   <div class="custom-control">
-    <strong>SLR 1.9</strong><br>
-    <label><input type="checkbox" id="layer2005" checked> 2005</label>
-    <label><input type="checkbox" id="layer2020" checked> 2020</label>
+    <div class="group">
+      <strong>SLR 1.9</strong>
+      <label><input type="checkbox" id="layer19_2005"> 2005</label>
+      <label><input type="checkbox" id="layer19_2020"> 2020</label>
+    </div>
+    <div class="group">
+      <strong>SLR 2.6</strong>
+      <label><input type="checkbox" id="layer26_2005"> 2005</label>
+      <label><input type="checkbox" id="layer26_2020"> 2020</label>
+    </div>
   </div>
 
   <script>
@@ -57,19 +68,23 @@
              value > 5  ? '#fee08b' :
                           '#1a9850';
     }
+
     function getRadius(value) {
       return Math.max(4, value * 0.8);
     }
 
-    // Layer groups for sublayers
-    const sublayer2005 = L.layerGroup();
-    const sublayer2020 = L.layerGroup();
+    // Sublayers
+    const slr19_2005 = L.layerGroup();
+    const slr19_2020 = L.layerGroup();
+    const slr26_2005 = L.layerGroup();
+    const slr26_2020 = L.layerGroup();
 
-    // Master group (parent layer)
-    const slr19Group = L.layerGroup([sublayer2005, sublayer2020]).addTo(map);
+    // Parent groups
+    const slr19Group = L.layerGroup([slr19_2005, slr19_2020]);
+    const slr26Group = L.layerGroup([slr26_2005, slr26_2020]);
 
-    // Load function
-    function loadGeoJsonToLayer(url, layerGroup) {
+    // Load GeoJSON and populate layer group
+    function loadGeoJsonToLayer(url, layerGroup, fit = false) {
       fetch(url)
         .then(res => res.json())
         .then(data => {
@@ -93,34 +108,38 @@
           });
           geoLayer.addTo(layerGroup);
 
-          // Fit only once
-          if (!map._hasFitBounds) {
+          if (fit && !map._hasFitBounds) {
             map.fitBounds(geoLayer.getBounds());
             map._hasFitBounds = true;
           }
         });
     }
 
-    // Load files into sublayers
-    loadGeoJsonToLayer('retreat_1.9_2005_50percentile.geojson', sublayer2005);
-    loadGeoJsonToLayer('retreat_1.9_2020_50percentile.geojson', sublayer2020);
+    // Load all files into their layer groups (do not add to map yet)
+    loadGeoJsonToLayer('retreat_1.9_2005_50percentile.geojson', slr19_2005, true);
+    loadGeoJsonToLayer('retreat_1.9_2020_50percentile.geojson', slr19_2020);
+    loadGeoJsonToLayer('retreat_2.6_2005_50percentile.geojson', slr26_2005);
+    loadGeoJsonToLayer('retreat_2.6_2020_50percentile.geojson', slr26_2020);
 
-    // Toggle logic
-    document.getElementById('layer2005').addEventListener('change', function(e) {
-      if (e.target.checked) {
-        slr19Group.addLayer(sublayer2005);
-      } else {
-        slr19Group.removeLayer(sublayer2005);
-      }
-    });
+    // Toggle handler
+    function setupCheckbox(id, parentGroup, sublayer) {
+      document.getElementById(id).addEventListener('change', function(e) {
+        if (e.target.checked) {
+          parentGroup.addLayer(sublayer);
+          if (!map.hasLayer(parentGroup)) {
+            parentGroup.addTo(map);
+          }
+        } else {
+          parentGroup.removeLayer(sublayer);
+        }
+      });
+    }
 
-    document.getElementById('layer2020').addEventListener('change', function(e) {
-      if (e.target.checked) {
-        slr19Group.addLayer(sublayer2020);
-      } else {
-        slr19Group.removeLayer(sublayer2020);
-      }
-    });
+    // Setup checkboxes
+    setupCheckbox('layer19_2005', slr19Group, slr19_2005);
+    setupCheckbox('layer19_2020', slr19Group, slr19_2020);
+    setupCheckbox('layer26_2005', slr26Group, slr26_2005);
+    setupCheckbox('layer26_2020', slr26Group, slr26_2020);
   </script>
 </body>
 </html>
