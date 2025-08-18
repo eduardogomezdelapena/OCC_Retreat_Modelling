@@ -118,7 +118,7 @@ html_content = """
 
   <script>
     // Initialize map
-    var map = L.mapuntitled0('map', {
+    var map = L.map('map', {
       center: [-42, 1],
       zoom: 6
     });

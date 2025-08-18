@@ -1,4 +1,20 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Aug 18 11:15:07 2025
 
+@author: egom802
+"""
+
+#%% HTML - Leaflet
+import os
+url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
+os.chdir(url_sv_gj)
+'shoreline_retreat.geojson'
+
+import json
+
+html_content = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -125,3 +141,12 @@
 </body>
 </html>
 
+"""
+# Save HTML file
+with open("index.html", "w") as f:
+    f.write(html_content)
+
+print("✅ map.html and data.geojson generated. Open map.html in browser (preferably via a local server).")
+#Run in bash
+"python -m http.server"
+"http://localhost:8000/index.html"
