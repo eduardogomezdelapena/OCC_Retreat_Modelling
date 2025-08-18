@@ -70,7 +70,7 @@ html_content = """
   <!-- Layer toggles -->
     <div class="custom-control">
       <details>
-        <summary><strong>SLR 1.9</strong></summary>
+        <summary><strong>RCP 1.9</strong></summary>
         <label><input type="checkbox" id="layer19_2005"> 2005</label>
         <label><input type="checkbox" id="layer19_2020"> 2020</label>
         <label><input type="checkbox" id="layer19_2030"> 2030</label>
@@ -80,7 +80,7 @@ html_content = """
       </details>
     
       <details>
-        <summary><strong>SLR 2.6</strong></summary>
+        <summary><strong>RCP 2.6</strong></summary>
         <label><input type="checkbox" id="layer26_2005"> 2005</label>
         <label><input type="checkbox" id="layer26_2020"> 2020</label>
         <label><input type="checkbox" id="layer26_2030"> 2030</label>
@@ -90,7 +90,7 @@ html_content = """
       </details>
       
       <details>
-        <summary><strong>SLR 4.5</strong></summary>
+        <summary><strong>RCP 4.5</strong></summary>
         <label><input type="checkbox" id="layer45_2005"> 2005</label>
         <label><input type="checkbox" id="layer45_2020"> 2020</label>
         <label><input type="checkbox" id="layer45_2030"> 2030</label>
@@ -100,7 +100,7 @@ html_content = """
       </details>
        
       <details>
-        <summary><strong>SLR 7</strong></summary>
+        <summary><strong>RCP 7</strong></summary>
         <label><input type="checkbox" id="layer70_2005"> 2005</label>
         <label><input type="checkbox" id="layer70_2020"> 2020</label>
         <label><input type="checkbox" id="layer70_2030"> 2030</label>
@@ -110,7 +110,7 @@ html_content = """
      </details>
 
       <details>
-        <summary><strong>SLR 8.5</strong></summary>
+        <summary><strong>RCP 8.5</strong></summary>
         <label><input type="checkbox" id="layer85_2005"> 2005</label>
         <label><input type="checkbox" id="layer85_2020"> 2020</label>
         <label><input type="checkbox" id="layer85_2030"> 2030</label>
