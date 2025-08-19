@@ -216,12 +216,12 @@ legend.addTo(map);
 
     // Track loaded layers
     const layers = {
-      layer19_2005: { url: 'retreat_1.9_2005_50percentile.geojson', layer: null },
-      layer19_2020: { url: 'retreat_1.9_2020_50percentile.geojson', layer: null },
-      layer19_2030: { url: 'retreat_1.9_2030_50percentile.geojson', layer: null },
-      layer19_2050: { url: 'retreat_1.9_2050_50percentile.geojson', layer: null },
-      layer19_2080: { url: 'retreat_1.9_2080_50percentile.geojson', layer: null },
-      layer19_2100: { url: 'retreat_1.9_2100_50percentile.geojson', layer: null },      
+      layer19_2005: { url: 'retreat_1.9_2005_50percentile_htrend.geojson', layer: null },
+      layer19_2020: { url: 'retreat_1.9_2020_50percentile_htrend.geojson', layer: null },
+      layer19_2030: { url: 'retreat_1.9_2030_50percentile_htrend.geojson', layer: null },
+      layer19_2050: { url: 'retreat_1.9_2050_50percentile_htrend.geojson', layer: null },
+      layer19_2080: { url: 'retreat_1.9_2080_50percentile_htrend.geojson', layer: null },
+      layer19_2100: { url: 'retreat_1.9_2100_50percentile_htrend.geojson', layer: null },      
       
       layer26_2005: { url: 'retreat_2.6_2005_50percentile.geojson', layer: null },
       layer26_2020: { url: 'retreat_2.6_2020_50percentile.geojson', layer: null },
@@ -309,7 +309,7 @@ legend.addTo(map);
 
 """
 # Save HTML file
-with open("index.html", "w") as f:
+with open("index_historic.html", "w") as f:
     f.write(html_content)
 
 print("✅ map.html and data.geojson generated. Open map.html in browser (preferably via a local server).")

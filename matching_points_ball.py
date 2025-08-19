@@ -153,11 +153,11 @@ retreat_df = slr_df.div(merged_df['beach_slope'], axis=0)
 retreat_df = retreat_df.rename(columns=lambda x: f'retreat_{x}')
 
 # Append to merged_df
-merged_df = pd.concat([merged_df, retreat_df], axis=1)
+# merged_df = pd.concat([merged_df, retreat_df], axis=1)
 
 # Add historic rate
 historic_retreat_df = retreat_df.add((merged_df['year'] - 2005)*merged_df['trend'], axis=0 )
-historic_retreat_df = historic_retreat_df.rename(columns=lambda x: f'hr_retreat_{x}')
+
 
 merged_df = pd.concat([merged_df, historic_retreat_df], axis=1)
 #%%Export separate files per scenario/year:
@@ -171,7 +171,7 @@ from shapely.geometry import Point
 url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
 
 # Get unique combinations
-unique_years =  [2005, 2020]
+unique_years =  [2005, 2020, 2030, 2050, 2080, 2100]
 # unique_years =  [2005, 2020, 2030, 2050, 2080, 2100]
 # unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
@@ -195,7 +195,7 @@ for year in unique_years:
 
             # Create save filename
             save_scenario = str(scenario)
-            filename = f"htrend/retreat_{save_scenario}_{year}_50percentile_htrend.geojson"
+            filename = f"retreat_{save_scenario}_{year}_50percentile_htrend.geojson"
 
             #Transform to geopandas df
             gdf = gpd.GeoDataFrame(subset, geometry=geometry)
