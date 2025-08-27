@@ -15,54 +15,107 @@ import math
 from shapely.geometry import Point, LineString, Polygon
 from shapely import line_interpolate_point, get_point
 import contextily as ctx
-
+from tqdm import tqdm  # progress bar
+from shapely.errors import GEOSException
+import matplotlib.pyplot as plt
 #%% #Coastsat data
-
 
 transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_extended.geojson")
 #Trim it to just NZ, CoastSat is for the entire Pacific
-# Filter rows where 'id' contains 'nzd'
+# Filter where 'id' contains 'nzd'
 transects = transects[transects.site_id.str.startswith("nzd")]
 transects
 
-
-
 #%%
-#Recalculate reference shoreline point in year 2005
+all_points_2005 = []
 
+# Make sure CRS is consistent (we'll use NZTM 2193)
+target_crs = 2193
+
+# Loop through all NZ site IDs
+for site_id in tqdm(transects.site_id.unique()):
+    try:
+        site = transects[transects.site_id == site_id].copy()
+        site.set_index("id", inplace=True)
+
+        # Read shoreline intersections
+        intersects_url = f"https://uoa-eresearch.github.io/CoastSat/data/{site_id}/transect_time_series_tidally_corrected.csv"
+        intersects = pd.read_csv(intersects_url)
+
+        # Filter to 2005
+        intersects['dates'] = pd.to_datetime(intersects['dates'])
+        mean_intersect = intersects[
+            intersects['dates'].between("2005-01-01", "2006-01-01")
+        ].drop(columns=["dates", "satname"]).mean()
+
+        # Project to NZTM
+        site = site.to_crs(target_crs)
+
+        # Interpolate points
+        for transect_id, transect in site.iterrows():
+            try:
+                dist = mean_intersect.get(transect_id, None)
+                if pd.notna(dist):
+                    pt = line_interpolate_point(transect.geometry, dist)
+                    all_points_2005.append({
+                        "site_id": site_id,
+                        "transect_id": transect_id,
+                        "geometry": pt
+                    })
+            except GEOSException:
+                print(f"GEOS error on transect {transect_id} at site {site_id}")
+    except Exception as e:
+        print(f"Skipping site {site_id} due to error: {e}")
+
+# Create GeoDataFrame
+shoreline_2005_gdf = gpd.GeoDataFrame(all_points_2005, crs=f"EPSG:{target_crs}")
+
+# Preview
+shoreline_2005_gdf.head()
+#%%
+
+fig, ax = plt.subplots(figsize=(12, 12))
+shoreline_2005_gdf.plot(ax=ax, color='red', markersize=5, label="2005 Shoreline Points")
+transects.to_crs(target_crs).plot(ax=ax, color='blue', linewidth=0.5, alpha=0.3, label="Transects")
+
+ctx.add_basemap(ax, crs=shoreline_2005_gdf.crs, source=ctx.providers.Esri.WorldImagery, zoom='auto')
+
+ax.set_title("2005 Shoreline Points Across All NZ Sites")
+ax.legend()
+ax.set_axis_off()
+plt.show()
 
 #% MWE for nzd0014
-site_id = "nzd0014"
-site = transects[transects.site_id == site_id]
-site.set_index("id", inplace=True)
+# site_id = "nzd0014"
+# site = transects[transects.site_id == site_id]
+# site.set_index("id", inplace=True)
 
-intersects = pd.read_csv(f"https://uoa-eresearch.github.io/CoastSat/data/{site_id}/transect_time_series_tidally_corrected.csv")
-intersects
+# #Read 
+# intersects = pd.read_csv(f"https://uoa-eresearch.github.io/CoastSat/data/{site_id}/transect_time_series_tidally_corrected.csv")
+# intersects
+# #%%
+# mean_intersect = intersects[intersects.dates.between("2005-01-01", "2006-01-01")].drop(columns=["dates", "satname"]).mean()
+
+# site.to_crs(2193, inplace=True)
+
+# points_2005 = []
+# # points_2100 = []
+# for transect_id, transect in site.iterrows():
+#     print(transect_id)
+#     print("transect:")
+#     print(transect)
+#     points_2005.append(line_interpolate_point(transect.geometry, mean_intersect[transect_id]))
+# points_2005
+
+
+
+
+# #%%
+# ax = site.plot(figsize=(10,10))
+# gpd.GeoSeries(points_2005, crs=2193).plot(ax=ax, color="blue")
+# ctx.add_basemap(ax, crs=site.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
+
 #%%
-mean_intersect = intersects[intersects.dates.between("2005-01-01", "2006-01-01")].drop(columns=["dates", "satname"]).mean()
-# distance = mean_intersect - ((site.retreat_50 / 25) * (2100 - 2005))
-# distance
-
-site.to_crs(2193, inplace=True)
-
-points_2005 = []
-# points_2100 = []
-for transect_id, transect in site.iterrows():
-    print(transect_id)
-    print("transect:")
-    print(transect)
-    points_2005.append(line_interpolate_point(transect.geometry, mean_intersect[transect_id]))
-    # points_2100.append(line_interpolate_point(transect.geometry, distance[transect_id]))
-points_2005#, points_2100
-
-
-
-
-#%%
-ax = site.plot(figsize=(10,10))
-gpd.GeoSeries(points_2005, crs=2193).plot(ax=ax, color="blue")
-ctx.add_basemap(ax, crs=site.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
-
 
 #Transform into coastsat df for next steps
 lol= gpd.GeoSeries(points_2005, crs=2193)
