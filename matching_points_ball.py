@@ -10,25 +10,69 @@ Created on Tue Aug  5 14:57:35 2025
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-from shapely import LineString, get_point
 from sklearn.neighbors import BallTree
+import math
+from shapely.geometry import Point, LineString, Polygon
+from shapely import line_interpolate_point, get_point
+import contextily as ctx
 
 #%% #Coastsat data
-file_path = 'https://raw.githubusercontent.com/UoA-eResearch/CoastSat/d61c2052a4a0b9ed9763c6fb89fa7cabdba034ff/transects_extended.geojson'
 
-shore_df = gpd.read_file(file_path)
-# print(shore_df.head())
 
+transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_extended.geojson")
 #Trim it to just NZ, CoastSat is for the entire Pacific
 # Filter rows where 'id' contains 'nzd'
-shore_df = shore_df[shore_df['id'].str.contains('nzd', na=False)]
-print(shore_df.head())
+transects = transects[transects.site_id.str.startswith("nzd")]
+transects
+
+
+
+#%%
+#Recalculate reference shoreline point in year 2005
+
+
+#% MWE for nzd0014
+site_id = "nzd0014"
+site = transects[transects.site_id == site_id]
+site.set_index("id", inplace=True)
+
+intersects = pd.read_csv(f"https://uoa-eresearch.github.io/CoastSat/data/{site_id}/transect_time_series_tidally_corrected.csv")
+intersects
+#%%
+mean_intersect = intersects[intersects.dates.between("2005-01-01", "2006-01-01")].drop(columns=["dates", "satname"]).mean()
+# distance = mean_intersect - ((site.retreat_50 / 25) * (2100 - 2005))
+# distance
+
+site.to_crs(2193, inplace=True)
+
+points_2005 = []
+# points_2100 = []
+for transect_id, transect in site.iterrows():
+    print(transect_id)
+    print("transect:")
+    print(transect)
+    points_2005.append(line_interpolate_point(transect.geometry, mean_intersect[transect_id]))
+    # points_2100.append(line_interpolate_point(transect.geometry, distance[transect_id]))
+points_2005#, points_2100
+
+
+
+
+#%%
+ax = site.plot(figsize=(10,10))
+gpd.GeoSeries(points_2005, crs=2193).plot(ax=ax, color="blue")
+ctx.add_basemap(ax, crs=site.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
+
+
+#Transform into coastsat df for next steps
+lol= gpd.GeoSeries(points_2005, crs=2193)
+lol.geometry
 
 
 #Pick origin point (landward) coordinates
 #retrieves first point (index 0) of LineString 
 #"geometry" is where coordinates are stored
-land_coord= get_point(shore_df.geometry, 0)
+land_coord= get_point(transects.geometry, 0)
 
 coastsat_coords = {
     'lon':land_coord.x ,
@@ -37,8 +81,6 @@ coastsat_coords = {
 #Create DataFrame
 coastsat=pd.DataFrame(coastsat_coords)
 
-#To extract beach slope
-# bs = gdf.beach_slope
 
 #%% Sea Level rise data
 #First read lat lon coordinates, only in VLM file, version 3 of zenodo rep
@@ -153,13 +195,13 @@ retreat_df = slr_df.div(merged_df['beach_slope'], axis=0)
 retreat_df = retreat_df.rename(columns=lambda x: f'retreat_{x}')
 
 # Append to merged_df
-# merged_df = pd.concat([merged_df, retreat_df], axis=1)
+merged_df = pd.concat([merged_df, retreat_df], axis=1)
 
 # Add historic rate
-historic_retreat_df = retreat_df.add((merged_df['year'] - 2005)*merged_df['trend'], axis=0 )
+# historic_retreat_df = retreat_df.add((merged_df['year'] - 2005)*merged_df['trend'], axis=0 )
+# merged_df = pd.concat([merged_df, historic_retreat_df], axis=1)
 
 
-merged_df = pd.concat([merged_df, historic_retreat_df], axis=1)
 #%%Export separate files per scenario/year:
 
 import geopandas as gpd
@@ -195,12 +237,12 @@ for year in unique_years:
 
             # Create save filename
             save_scenario = str(scenario)
-            filename = f"retreat_{save_scenario}_{year}_50percentile_htrend.geojson"
+            filename = f"retreat_{save_scenario}_{year}_50percentile.geojson"
 
             #Transform to geopandas df
             gdf = gpd.GeoDataFrame(subset, geometry=geometry)
             # Set coordinate reference system (CRS)
-            gdf.set_crs(epsg=4326, inplace=True)  # WGS84
+            gdf.set_crs(epsg=2193, inplace=True)  # WGS84
             # Export
             gdf.to_file(url_sv_gj+filename, driver="GeoJSON")
             print(filename+' saved ')
