@@ -60,41 +60,78 @@ shoreline_2005_gdf.describe()
 
 shoreline_2005_gdf.to_crs(4236).to_file('2005_ref_points.geojson')
 
-#%%Plot all transect groups in map
+#%% Plot all transects and ref points in map
+
+# Convert data to Web Mercator (EPSG:3857) for plotting with basemap
+shoreline_web_mercator = shoreline_2005_gdf.to_crs(epsg=3857)
+transects_web_mercator = transects.to_crs(epsg=3857)
+
+# Create the plot
 fig, ax = plt.subplots(figsize=(12, 12))
-shoreline_2005_gdf.plot(ax=ax, color='red', markersize=5, label="2005 Shoreline Points")
-transects.to_crs(target_crs).plot(ax=ax, color='blue', linewidth=0.5, alpha=0.3, label="Transects")
 
-ctx.add_basemap(ax, crs=shoreline_2005_gdf.crs, source=ctx.providers.Esri.WorldImagery, zoom='auto')
+# Plot shoreline and transects in the correct projection
+shoreline_web_mercator.plot(ax=ax, color='red', markersize=5, label="2005 Shoreline Points")
+transects_web_mercator.plot(ax=ax, color='blue', linewidth=0.5, alpha=0.3, label="Transects")
 
+# Add the basemap
+ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.Esri.WorldImagery)
+
+# Customize the plot
 ax.set_title("2005 Shoreline Points Across All NZ Sites")
 ax.legend()
 ax.set_axis_off()
+
+# Show the map
 plt.show()
-#%% Save as linestrings per id group
-# Extract group_id prefix from 'coastsat_id' (split by '-')
+#%%
 
-gdf = shoreline_2005_gdf
-gdf.crs
-shoreline_2005_gdf.head()
+# Step 1: Sort points (IMPORTANT — adjust based on how your data should be connected)
+# For example, you might sort by x, y or by an attribute like 'TransectID' or 'PointID'
+shoreline_sorted = shoreline_2005_gdf.sort_values(by=["some_ordering_field"]) 
 
-# Extract base route key from route_id
+# Step 2: Create a LineString from points
+line = LineString(shoreline_sorted.geometry.tolist())
 
-gdf['group_id'] = shoreline_2005_gdf['transect_id'].str.split('-').str[0]
+# Step 3: Create a new GeoDataFrame with that LineString
+line_gdf = gpd.GeoDataFrame(geometry=[line], crs=shoreline_2005_gdf.crs)
 
-# (Optional) sort if needed, e.g., by route_id
-gdf = gdf.sort_values(['group_id', 'transect_id'])
+# Step 4: Reproject to WGS84 for Leaflet/Google Earth compatibility
+line_gdf = line_gdf.to_crs(epsg=4326)
 
-geo_df = gdf.groupby('group_id')['geometry'].apply(lambda x: LineString(x.tolist()))
-
-geo_df = gpd.GeoDataFrame(geo_df2, geometry='geometry')
-
-lines_gdf.set_crs(epsg=2193, inplace=True)
-lines_gdf.to_crs(4236).to_file("2005_ref_line.geojson")
+# Step 5: Export to GeoJSON
+line_gdf.to_file("shoreline_2005_line.geojson", driver="GeoJSON")
 
 #%%
-line = LineString(all_tgroups_2005)
-gpd.GeoSeries(line, crs=2193).to_crs(4236).to_file("2005_ref_line.geojson")
+
+missing = shoreline_2005_gdf[shoreline_2005_gdf.geometry.isnull()]
+print(f"Missing geometries: {len(missing)}")
+
+shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=['geometry'])
+
+# Step 1: Extract group and order fields
+shoreline_2005_gdf["group_id"] = shoreline_2005_gdf["transect_id"].str.split("-").str[0]
+shoreline_2005_gdf["order_id"] = shoreline_2005_gdf["transect_id"].str.split("-").str[1].astype(int)
+
+# Step 2: Create LineStrings per group
+lines = []
+
+for group_id, group in shoreline_2005_gdf.groupby("group_id"):
+    sorted_group = group.sort_values(by="order_id")
+    coords = sorted_group.geometry.tolist()
+    
+    # Ensure we have at least 2 points to make a line
+    if len(coords) >= 2:
+        line = LineString(coords)
+        lines.append({"geometry": line, "group_id": group_id})
+
+# Step 3: Create GeoDataFrame of LineStrings
+lines_gdf = gpd.GeoDataFrame(lines, crs=shoreline_2005_gdf.crs)
+
+# Step 4: Reproject to WGS84 (EPSG:4326) for web tools like Leaflet / Google Earth
+lines_gdf = lines_gdf.to_crs(epsg=4326)
+
+# Step 5: Export to GeoJSON
+lines_gdf.to_file("shoreline_2005_lines.geojson", driver="GeoJSON")
 
 
 #%%
