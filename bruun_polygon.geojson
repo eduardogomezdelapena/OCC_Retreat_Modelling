@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "bruun_polygon",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::4236" } },
+"features": [
+{ "type": "Feature", "properties": { }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 173.092326725194368, -34.724590487606292 ], [ 173.089625856436356, -34.725850577131894 ], [ 173.098617399741386, -34.724135843635665 ], [ 173.098418841874974, -34.723428606247651 ], [ 173.092326725194368, -34.724590487606292 ] ] ] } }
+]
+}
