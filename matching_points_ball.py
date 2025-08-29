@@ -83,25 +83,7 @@ ax.set_axis_off()
 
 # Show the map
 plt.show()
-#%%
-
-# Step 1: Sort points (IMPORTANT — adjust based on how your data should be connected)
-# For example, you might sort by x, y or by an attribute like 'TransectID' or 'PointID'
-shoreline_sorted = shoreline_2005_gdf.sort_values(by=["some_ordering_field"]) 
-
-# Step 2: Create a LineString from points
-line = LineString(shoreline_sorted.geometry.tolist())
-
-# Step 3: Create a new GeoDataFrame with that LineString
-line_gdf = gpd.GeoDataFrame(geometry=[line], crs=shoreline_2005_gdf.crs)
-
-# Step 4: Reproject to WGS84 for Leaflet/Google Earth compatibility
-line_gdf = line_gdf.to_crs(epsg=4326)
-
-# Step 5: Export to GeoJSON
-line_gdf.to_file("shoreline_2005_line.geojson", driver="GeoJSON")
-
-#%%
+#%% From points to linestrings
 
 missing = shoreline_2005_gdf[shoreline_2005_gdf.geometry.isnull()]
 print(f"Missing geometries: {len(missing)}")
