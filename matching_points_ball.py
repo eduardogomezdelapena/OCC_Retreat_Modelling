@@ -58,7 +58,7 @@ shoreline_2005_gdf.head()
 
 shoreline_2005_gdf.describe()
 
-shoreline_2005_gdf.to_crs(4236).to_file('2005_ref_points.geojson')
+shoreline_2005_gdf.to_crs(4236).to_file('points_ref_shoreline_2005.geojson')
 
 #%% Plot all transects and ref points in map
 
@@ -113,27 +113,23 @@ lines_gdf = gpd.GeoDataFrame(lines, crs=shoreline_2005_gdf.crs)
 lines_gdf = lines_gdf.to_crs(epsg=4326)
 
 # Step 5: Export to GeoJSON
-lines_gdf.to_file("shoreline_2005_lines.geojson", driver="GeoJSON")
+lines_gdf.to_file("lines_ref_shoreline_2005.geojson", driver="GeoJSON")
 
 
 #%%
 
-#Transform into coastsat df for next steps
-lol= gpd.GeoSeries(points_2005, crs=target_crs)
-lol.geometry
+# #Transform into coastsat df for next steps
 
-
-#Pick origin point (landward) coordinates
-#retrieves first point (index 0) of LineString 
-#"geometry" is where coordinates are stored
-land_coord= get_point(transects.geometry, 0)
+#Reproject to Lat Lon (NZsearise data is in lat lon)
+# Convert to WGS84 (lat/lon) .to_crs('EPSG:4326')
 
 coastsat_coords = {
-    'lon':land_coord.x ,
-    'lat': land_coord.y
+    'lon':shoreline_2005_gdf.to_crs('EPSG:4326').geometry.x ,
+    'lat': shoreline_2005_gdf.to_crs('EPSG:4326').geometry.y
 }
 #Create DataFrame
 coastsat=pd.DataFrame(coastsat_coords)
+
 
 
 #%% Sea Level rise data
@@ -203,13 +199,13 @@ lol=df_latlon['Site ID'].iloc[nearest_indices]
 
 combined['site_ID_nzrise'] = df_latlon['Site ID'].iloc[nearest_indices].reset_index(drop=True)
 
-combined['beach_slope'] = shore_df.beach_slope.reset_index(drop=True)
+combined['beach_slope'] = transects.beach_slope.reset_index(drop=True)
 
 #Adding coastsat id tag
-combined['coastsat_id'] = shore_df.id.reset_index(drop=True)
+combined['coastsat_id'] = transects.id.reset_index(drop=True)
 
 #Adding historic trend
-combined['trend'] = shore_df.trend.reset_index(drop=True)
+combined['trend'] = transects.trend.reset_index(drop=True)
 
 #%%
 #Download actual SLR and VLM csv
