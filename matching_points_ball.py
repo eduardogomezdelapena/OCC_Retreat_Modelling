@@ -238,8 +238,13 @@ slr_cols = ['17', '50', '83']
 slr_df = merged_df[slr_cols]
 
 # Divide all columns in slr_df by beach_slope (row-wise)
-#Bruun rule
-retreat_df = slr_df.div(merged_df['beach_slope'], axis=0)
+#Bruun rule applied
+# Shoreface slope multiplied by 0.5 to obtain 
+# Bruun beach slope to half of the foreshore beach slope 
+# # a bit ad hoc, applied in Vitousek et al. (2023)
+#  but is somewhat consistent with Lidar profiles in California
+
+retreat_df = slr_df.div(merged_df['beach_slope'] * 0.5, axis=0)
 
 # Rename columns
 retreat_df = retreat_df.rename(columns=lambda x: f'retreat_{x}')
@@ -263,7 +268,7 @@ from shapely.geometry import Point
 url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
 
 # Get unique combinations
-unique_years =  [2005, 2020, 2030, 2050, 2080, 2100]
+unique_years =  [2005]
 # unique_years =  [2005, 2020, 2030, 2050, 2080, 2100]
 # unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
@@ -284,18 +289,93 @@ for year in unique_years:
         geometry = [Point(xy) for xy in zip(subset['lon'], subset['lat'])]
         
         if not subset.empty:
-
             # Create save filename
             save_scenario = str(scenario)
             filename = f"retreat_{save_scenario}_{year}_50percentile.geojson"
+
+            #Recalc retreated points from reference, along transects
+            subset.retreat_50
+
+            #First, merge subset (retreat dic) with transects and 2005 ref points
+
+            merged_df = pd.merge(subset, transects[['id','geometry']], left_on='coastsat_id',
+                                  right_on='id', how='inner')
+            merged_df.drop(columns=['id'], inplace=True)
+
+            #Reproject 2005 points to lon lat degrees
+            points_2005= shoreline_2005_gdf.to_crs('EPSG:4326')
+            points_2005.rename(columns={'geometry': 'points'}, inplace=True)
+            points_2005.set_geometry('points', inplace=True)
+            points_2005.crs
+
+            lol= pd.merge(merged_df,points_2005[['transect_id','points']], left_on='coastsat_id',
+                                  right_on='transect_id', how='inner')
+            lol.drop(columns=['transect_id'], inplace=True)
+
+            # Step 2: Move points along their corresponding transects
+            def move_point_along_transect(row):
+                transect = row['geometry']  # LineString
+                point = row['points']    # Original Point
+                offset = row['retreat_50']
+
+                # Get the distance along the line where the point lies
+                current_position = transect.project(point)
+
+                # Add the offset
+                new_position = current_position + offset
+
+                # Clip to line bounds to avoid errors
+                new_position = max(0, min(new_position, transect.length))
+
+                # Get new point
+                return transect.interpolate(new_position)
+
+            # Step 3: Apply the function
+            lol['moved_point'] = lol.apply(move_point_along_transect, axis=1)
+            
+            #%%
+            
+
+
+            shoreline_moved= gpd.GeoDataFrame(lol[['coastsat_id','moved_point']], geometry='moved_point')
+            shoreline_moved.set_geometry('moved_point', inplace=True)
+            shoreline_moved.set_crs('EPSG:4326',inplace=True)            
+
+            shoreline_moved.to_crs(4236).to_file('points_moved_shoreline.geojson')
+
+            #Plot to check
+            # Convert data to Web Mercator (EPSG:3857) for plotting with basemap
+            shoreline_web_mercator = shoreline_2005_gdf.to_crs(epsg=3857)
+            smoved_web_mercator = shoreline_moved.to_crs(epsg=3857,inplace=True)
+
+            # Create the plot
+            fig, ax = plt.subplots(figsize=(12, 12))
+
+            # Plot shoreline and transects in the correct projection
+            shoreline_web_mercator.plot(ax=ax, color='red', markersize=5, label="2005 Shoreline Points")
+            smoved_web_mercator.plot(ax=ax, color='blue',  markersize=0.5, alpha=0.3, label="Moved points")
+
+            # Add the basemap
+            ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.Esri.WorldImagery)
+
+            # Customize the plot
+            ax.set_title("2005 Shoreline Points Across All NZ Sites")
+            ax.legend()
+            ax.set_axis_off()
+
+            # Show the map
+            plt.show()
+            #%%
+            #subset 
+            line_interpolate_point(transect.geometry, distance[transect_id])
 
             #Transform to geopandas df
             gdf = gpd.GeoDataFrame(subset, geometry=geometry)
             # Set coordinate reference system (CRS)
             gdf.set_crs(epsg=target_crs, inplace=True)  # WGS84
             # Export
-            gdf.to_file(url_sv_gj+filename, driver="GeoJSON")
-            print(filename+' saved ')
+            # gdf.to_file(url_sv_gj+filename, driver="GeoJSON")
+            # print(filename+' saved ')
 
 
 
@@ -317,3 +397,5 @@ for year in unique_years:
 
 
 
+
+# %%
