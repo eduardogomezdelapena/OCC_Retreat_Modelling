@@ -195,8 +195,6 @@ count = (combined['distance_km'] > threshold).sum()
 #SLR from nearest NZRise point
 #First retreive SiteID
 
-lol=df_latlon['Site ID'].iloc[nearest_indices]
-
 combined['site_ID_nzrise'] = df_latlon['Site ID'].iloc[nearest_indices].reset_index(drop=True)
 
 combined['beach_slope'] = transects.beach_slope.reset_index(drop=True)
@@ -308,10 +306,47 @@ for year in unique_years:
             points_2005.set_geometry('points', inplace=True)
             points_2005.crs
 
-            lol= pd.merge(merged_df,points_2005[['transect_id','points']], left_on='coastsat_id',
+            lol= pd.merge(merged_df,points_2005[['site_id','transect_id','points']], left_on='coastsat_id',
                                   right_on='transect_id', how='inner')
             lol.drop(columns=['transect_id'], inplace=True)
 
+            lol.rename(columns={"coastsat_id": "id"}, inplace=True)
+
+            ref_points = points_2005
+            ref_points.rename(columns={"transect_id":"id"},inplace=True)
+
+
+#%%
+            #Intersect
+            # Rename column so it matches transect IDs
+            site_id = "nzd0001"
+            site
+            # Get all transects for the site
+            site = transects[transects.site_id == site_id]
+            site.set_index("id", inplace=True)
+            site
+            # Filter retreat distances for that site
+            distance = lol[lol.site_id == site_id]
+            distance.set_index("id", inplace=True)
+
+            ref_points = ref_points[ref_points.site_id == site_id]
+            ref_points.set_index("id", inplace=True)
+            
+            # Generate interpolated points
+            points_2100 = []
+            for transect_id, transect in site.iterrows():
+                if transect_id in distance.index:
+                    retreat_distance = distance.loc[transect_id, "retreat_50"]
+                    point = line_interpolate_point(transect.geometry, retreat_distance)
+                    points_2100.append(point)
+                else:
+                    print(f"Retreat value not found for transect {transect_id}")
+
+ax = site.plot(figsize=(10,10))
+gpd.GeoSeries(points_2100, crs=2193).plot(ax=ax, color="red")
+ctx.add_basemap(ax, crs=site.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
+
+#%%
             # Step 2: Move points along their corresponding transects
             def move_point_along_transect(row):
                 transect = row['geometry']  # LineString
@@ -333,7 +368,7 @@ for year in unique_years:
             # Step 3: Apply the function
             lol['moved_point'] = lol.apply(move_point_along_transect, axis=1)
             
-            #%%
+            #%% Plot
             
 
 
@@ -342,12 +377,12 @@ for year in unique_years:
             shoreline_moved.set_crs('EPSG:4326',inplace=True)            
 
             shoreline_moved.to_crs(4236).to_file('points_moved_shoreline.geojson')
-
+            shoreline_moved.head()
             #Plot to check
             # Convert data to Web Mercator (EPSG:3857) for plotting with basemap
             shoreline_web_mercator = shoreline_2005_gdf.to_crs(epsg=3857)
-            smoved_web_mercator = shoreline_moved.to_crs(epsg=3857,inplace=True)
-
+            shoreline_moved.to_crs(epsg=3857,inplace=True)
+            smoved_web_mercator = shoreline_moved
             # Create the plot
             fig, ax = plt.subplots(figsize=(12, 12))
 
@@ -367,12 +402,12 @@ for year in unique_years:
             plt.show()
             #%%
             #subset 
-            line_interpolate_point(transect.geometry, distance[transect_id])
+            # line_interpolate_point(transect.geometry, distance[transect_id])
 
             #Transform to geopandas df
-            gdf = gpd.GeoDataFrame(subset, geometry=geometry)
-            # Set coordinate reference system (CRS)
-            gdf.set_crs(epsg=target_crs, inplace=True)  # WGS84
+            # gdf = gpd.GeoDataFrame(subset, geometry=geometry)
+            # # Set coordinate reference system (CRS)
+            # gdf.set_crs(epsg=target_crs, inplace=True)  # WGS84
             # Export
             # gdf.to_file(url_sv_gj+filename, driver="GeoJSON")
             # print(filename+' saved ')
