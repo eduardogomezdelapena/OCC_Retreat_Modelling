@@ -27,38 +27,44 @@ transects = transects[transects.site_id.str.startswith("nzd")]
 transects
 
 #%%  Shoreline position for ref year 2005
-all_tgroups_2005 = []
-#  CRS consistent ( NZTM 2193)
-target_crs = 2193
+# all_tgroups_2005 = []
+# #  CRS consistent ( NZTM 2193)
+# target_crs = 2193
 
-#Loop through all NZ site id's
-for site_id in tqdm(transects.site_id.unique()):
-    site = transects[transects.site_id == site_id]
-    site.set_index("id", inplace=True)
+# #Loop through all NZ site id's
+# for site_id in tqdm(transects.site_id.unique()):
+#     site = transects[transects.site_id == site_id]
+#     site.set_index("id", inplace=True)
 
-    #Read tidally corrected ts for each transect
-    intersects = pd.read_csv(f"https://uoa-eresearch.github.io/CoastSat/data/{site_id}/transect_time_series_tidally_corrected.csv")
-    mean_intersect = intersects[intersects.dates.between("2005-01-01", "2006-01-01")].drop(columns=["dates", "satname"]).mean()
+#     #Read tidally corrected ts for each transect
+#     intersects = pd.read_csv(f"https://uoa-eresearch.github.io/CoastSat/data/{site_id}/transect_time_series_tidally_corrected.csv")
+#     mean_intersect = intersects[intersects.dates.between("2005-01-01", "2006-01-01")].drop(columns=["dates", "satname"]).mean()
 
-    site.to_crs(target_crs, inplace=True)
+#     site.to_crs(target_crs, inplace=True)
 
-    #All points in a single group transect
-    for transect_id, transect in site.iterrows():
-        all_tgroups_2005.append({
-                        "site_id": site_id,
-                        "transect_id": transect_id,
-                        "geometry": line_interpolate_point(transect.geometry, mean_intersect[transect_id])
-                    })
+#     #All points in a single group transect
+#     for transect_id, transect in site.iterrows():
+#         all_tgroups_2005.append({
+#                         "site_id": site_id,
+#                         "transect_id": transect_id,
+#                         "geometry": line_interpolate_point(transect.geometry, mean_intersect[transect_id])
+#                     })
 
-# Create GeoDataFrame
-shoreline_2005_gdf = gpd.GeoDataFrame(all_tgroups_2005, crs=target_crs)
+# # Create GeoDataFrame
+# shoreline_2005_gdf = gpd.GeoDataFrame(all_tgroups_2005, crs=target_crs)
 
-# Preview
-shoreline_2005_gdf.head()
+# # Preview
+# shoreline_2005_gdf.head()
 
-shoreline_2005_gdf.describe()
+# shoreline_2005_gdf.describe()
 
-shoreline_2005_gdf.to_crs(4236).to_file('points_ref_shoreline_2005.geojson')
+shoreline_2005_gdf.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
+
+shoreline_2005_gdf= gpd.read_file('points_ref_shoreline_2005.geojson')
+shoreline_2005_gdf = shoreline_2005_gdf.to_crs(epsg=2193)
+# shoreline_2005_gdf.crs
+# transects.crs   
+# ref_trial.to_crs(epsg=2193).crs
 
 #%% Plot all transects and ref points in map
 
@@ -115,6 +121,8 @@ lines_gdf = lines_gdf.to_crs(epsg=4326)
 # Step 5: Export to GeoJSON
 lines_gdf.to_file("lines_ref_shoreline_2005.geojson", driver="GeoJSON")
 
+lines_gdf.crs
+shoreline_2005_gdf.crs
 
 #%%
 

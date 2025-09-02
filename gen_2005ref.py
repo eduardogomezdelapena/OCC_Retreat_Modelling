@@ -55,7 +55,7 @@ shoreline_2005_gdf.head()
 
 shoreline_2005_gdf.describe()
 
-shoreline_2005_gdf.to_crs(4236).to_file('points_ref_shoreline_2005.geojson')
+shoreline_2005_gdf.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
 
 #%% Plot all transects and ref points in map
 
