@@ -111,3 +111,4 @@ lines_gdf = lines_gdf.to_crs(epsg=4326)
 
 # Step 5: Export to GeoJSON
 lines_gdf.to_file("lines_ref_shoreline_2005.geojson", driver="GeoJSON")
+# %%
