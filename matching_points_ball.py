@@ -207,9 +207,11 @@ combined['trend'] = transects.trend.reset_index(drop=True)
 
 #%%
 #Download actual SLR and VLM csv
-url_slr="https://zenodo.org/records/14722058/files/NZ_Searise_noVLM-2005.csv"
+# url_slr="https://zenodo.org/records/14722058/files/NZ_Searise_noVLM-2005.csv"
 
-df_nzrise_slr= pd.read_csv(url_slr)
+# df_nzrise_slr= pd.read_csv(url_slr)
+
+df_nzrise_slr= pd.read_csv('NZ_Searise_noVLM-2005.csv')
 print(df_nzrise_slr.head())
 #%%
 #For each different tag in coastsat_id in df_combined, 
@@ -335,14 +337,6 @@ for year in unique_years:
             # Generate interpolated points
             points_2100 = []
             for transect_id, transect in site.iterrows():
-                if transect_id in distance.index:
-                    retreat_distance = distance.loc[transect_id, "retreat_50"]
-                    point = line_interpolate_point(transect.geometry, retreat_distance)
-                    points_2100.append(point)
-                else:
-                    print(f"Retreat value not found for transect {transect_id}")
-
-            for transect_id, transect in site.iterrows():
                 if transect_id not in distance.index:
                     print(f"⚠️ Retreat value not found for transect {transect_id}")
                     continue
@@ -366,98 +360,29 @@ for year in unique_years:
                 points_2100.append(new_point)
 
 
+#%%Plot
+# 1. Create GeoDataFrame for 2100 points
+gdf_2100 = gpd.GeoDataFrame(geometry=points_2100, crs=ref_points.crs)
+
+# 2. Reproject everything to EPSG:2193 (NZTM2000)
+ref_points_nztm = ref_points.to_crs(epsg=2193)
+gdf_2100_nztm = gdf_2100.to_crs(epsg=2193)
+
+# Add basemap (Web Mercator reprojection)
+gdf_2100_web = gdf_2100_nztm.to_crs(epsg=3857)
+ref_points_web = ref_points_nztm.to_crs(epsg=3857)
+
+fig, ax = plt.subplots(figsize=(10, 10))
+ref_points_web.plot(ax=ax, color='blue', markersize=20, label='Reference Points')
+gdf_2100_web.plot(ax=ax, color='red', markersize=20, label='Projected 2100 Points')
+ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)  # or another basemap
 
 
-
-ax = site.plot(figsize=(10,10))
-gpd.GeoSeries(points_2100, crs=2193).plot(ax=ax, color="red")
-ctx.add_basemap(ax, crs=site.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
-
-#%%
-            # Step 2: Move points along their corresponding transects
-            def move_point_along_transect(row):
-                transect = row['geometry']  # LineString
-                point = row['points']    # Original Point
-                offset = row['retreat_50']
-
-                # Get the distance along the line where the point lies
-                current_position = transect.project(point)
-
-                # Add the offset
-                new_position = current_position + offset
-
-                # Clip to line bounds to avoid errors
-                new_position = max(0, min(new_position, transect.length))
-
-                # Get new point
-                return transect.interpolate(new_position)
-
-            # Step 3: Apply the function
-            lol['moved_point'] = lol.apply(move_point_along_transect, axis=1)
-            
-            #%% Plot
-            
-
-
-            shoreline_moved= gpd.GeoDataFrame(lol[['coastsat_id','moved_point']], geometry='moved_point')
-            shoreline_moved.set_geometry('moved_point', inplace=True)
-            shoreline_moved.set_crs('EPSG:4326',inplace=True)            
-
-            shoreline_moved.to_crs(4236).to_file('points_moved_shoreline.geojson')
-            shoreline_moved.head()
-            #Plot to check
-            # Convert data to Web Mercator (EPSG:3857) for plotting with basemap
-            shoreline_web_mercator = shoreline_2005_gdf.to_crs(epsg=3857)
-            shoreline_moved.to_crs(epsg=3857,inplace=True)
-            smoved_web_mercator = shoreline_moved
-            # Create the plot
-            fig, ax = plt.subplots(figsize=(12, 12))
-
-            # Plot shoreline and transects in the correct projection
-            shoreline_web_mercator.plot(ax=ax, color='red', markersize=5, label="2005 Shoreline Points")
-            smoved_web_mercator.plot(ax=ax, color='blue',  markersize=0.5, alpha=0.3, label="Moved points")
-
-            # Add the basemap
-            ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.Esri.WorldImagery)
-
-            # Customize the plot
-            ax.set_title("2005 Shoreline Points Across All NZ Sites")
-            ax.legend()
-            ax.set_axis_off()
-
-            # Show the map
-            plt.show()
-            #%%
-            #subset 
-            # line_interpolate_point(transect.geometry, distance[transect_id])
-
-            #Transform to geopandas df
-            # gdf = gpd.GeoDataFrame(subset, geometry=geometry)
-            # # Set coordinate reference system (CRS)
-            # gdf.set_crs(epsg=target_crs, inplace=True)  # WGS84
-            # Export
-            # gdf.to_file(url_sv_gj+filename, driver="GeoJSON")
-            # print(filename+' saved ')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ax.legend()
+ax.set_title("NZ Shoreline Retreat Projection - 2100", fontsize=14)
+ax.set_axis_off()
+plt.tight_layout()
+plt.show()
 
 
 # %%
