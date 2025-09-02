@@ -331,7 +331,7 @@ for year in unique_years:
 
             ref_points = ref_points[ref_points.site_id == site_id]
             ref_points.set_index("id", inplace=True)
-            
+
             # Generate interpolated points
             points_2100 = []
             for transect_id, transect in site.iterrows():
@@ -341,6 +341,33 @@ for year in unique_years:
                     points_2100.append(point)
                 else:
                     print(f"Retreat value not found for transect {transect_id}")
+
+            for transect_id, transect in site.iterrows():
+                if transect_id not in distance.index:
+                    print(f"⚠️ Retreat value not found for transect {transect_id}")
+                    continue
+
+                if transect_id not in ref_points.index:
+                    print(f"⚠️ Reference point not found for transect {transect_id}")
+                    continue
+
+                retreat_distance = distance.loc[transect_id, "retreat_50"]
+                ref_point = ref_points.loc[transect_id, "points"]
+                transect_line = transect.geometry  # This is a LineString
+
+                # Project reference point onto the transect line (get distance along the line)
+                ref_distance_along_line = transect_line.project(ref_point)
+
+                # Calculate new distance from start of line
+                new_distance = ref_distance_along_line + retreat_distance
+
+                # Interpolate point at new distance
+                new_point = transect_line.interpolate(new_distance)
+                points_2100.append(new_point)
+
+
+
+
 
 ax = site.plot(figsize=(10,10))
 gpd.GeoSeries(points_2100, crs=2193).plot(ax=ax, color="red")
