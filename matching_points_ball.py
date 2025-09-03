@@ -20,11 +20,11 @@ from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
 #%% #Coastsat data
 
-transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_extended.geojson")
+transects = gpd.read_file("transects_extended.geojson")
+## transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_extended.geojson")
 #Trim it to just NZ, CoastSat is for the entire Pacific
 # Filter where 'id' contains 'nzd'
 transects = transects[transects.site_id.str.startswith("nzd")]
-transects
 
 #%%  Shoreline position for ref year 2005
 
@@ -35,14 +35,10 @@ shoreline_2005_gdf = shoreline_2005_gdf.to_crs(epsg=2193)
 
 #%% From points to linestrings
 
-# missing = shoreline_2005_gdf[shoreline_2005_gdf.geometry.isnull()]
-# print(f"Missing geometries: {len(missing)}")
+missing = shoreline_2005_gdf[shoreline_2005_gdf.geometry.isnull()]
+print(f"Missing geometries: {len(missing)}")
 
-# shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=['geometry'])
-
-# # Step 1: Extract group and order fields
-# shoreline_2005_gdf["group_id"] = shoreline_2005_gdf["transect_id"].str.split("-").str[0]
-# shoreline_2005_gdf["order_id"] = shoreline_2005_gdf["transect_id"].str.split("-").str[1].astype(int)
+shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=['geometry'])
 
 #EPSG:4326
 lines_gdf= gpd.read_file("lines_ref_shoreline_2005.geojson")
@@ -66,11 +62,10 @@ coastsat=pd.DataFrame(coastsat_coords)
 #%% Sea Level rise data
 #First read lat lon coordinates, only in VLM file, version 3 of zenodo rep
 
-url_latlon= "https://zenodo.org/records/11398538/files/NZ_VLM_final_May24.csv"
-df_latlon= pd.read_csv(url_latlon)
-print(df_latlon.head())
+# url_latlon= "https://zenodo.org/records/11398538/files/NZ_VLM_final_May24.csv"
+# df_latlon= pd.read_csv(url_latlon)
 
-df_latlon.iloc[0]
+df_latlon= pd.read_csv("NZ_VLM_final_May24.csv")
 
 nzsearise_coords = {
     'lon': df_latlon['Lon'],    
@@ -143,7 +138,7 @@ combined['trend'] = transects.trend.reset_index(drop=True)
 # df_nzrise_slr= pd.read_csv(url_slr)
 
 df_nzrise_slr= pd.read_csv('NZ_Searise_noVLM-2005.csv')
-print(df_nzrise_slr.head())
+
 #%%
 #For each different tag in coastsat_id in df_combined, 
 #obtain the subset in df_nzrise_slr that matches the 
@@ -175,7 +170,8 @@ slr_df = merged_df[slr_cols]
 # # a bit ad hoc, applied in Vitousek et al. (2023)
 #  but is somewhat consistent with Lidar profiles in California
 
-retreat_df = slr_df.div(merged_df['beach_slope'] * 0.5, axis=0)
+c_adjust = 0.5
+retreat_df = slr_df.div(np.tan(merged_df['beach_slope'] * c_adjust), axis=0)
 
 # Rename columns
 retreat_df = retreat_df.rename(columns=lambda x: f'retreat_{x}')
@@ -199,7 +195,7 @@ from shapely.geometry import Point
 url_sv_gj="/home/egom802/Documents/GitHub/OCC_Retreat_Modelling/"
 
 # Get unique combinations
-unique_years =  [2005]
+unique_years =  [2020]
 # unique_years =  [2005, 2020, 2030, 2050, 2080, 2100]
 # unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
@@ -253,7 +249,7 @@ for year in unique_years:
             #Intersect
             # Rename column so it matches transect IDs
             site_id = "nzd0001"
-            site
+            
             # Get all transects for the site
             site = transects[transects.site_id == site_id]
             site.set_index("id", inplace=True)
@@ -284,7 +280,7 @@ for year in unique_years:
                 ref_distance_along_line = transect_line.project(ref_point)
 
                 # Calculate new distance from start of line
-                new_distance = ref_distance_along_line + retreat_distance
+                new_distance = ref_distance_along_line - retreat_distance
 
                 # Interpolate point at new distance
                 new_point = transect_line.interpolate(new_distance)
