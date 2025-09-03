@@ -18,81 +18,43 @@ import contextily as ctx
 from tqdm import tqdm  # progress bar
 from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
-#%% #Coastsat data
 
+# Constants
+EARTH_RADIUS_KM = 6371.0
+
+# %% Load transects (NZ only)
 transects = gpd.read_file("transects_extended.geojson")
-## transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_extended.geojson")
-#Trim it to just NZ, CoastSat is for the entire Pacific
-# Filter where 'id' contains 'nzd'
 transects = transects[transects.site_id.str.startswith("nzd")]
 
-#%%  Shoreline position for ref year 2005
+# %% Shoreline position for ref year 2005
+shoreline_2005_gdf = gpd.read_file("points_ref_shoreline_2005.geojson").to_crs(epsg=2193)
 
-# 2005 ref points are in CRS:4326
-shoreline_2005_gdf= gpd.read_file('points_ref_shoreline_2005.geojson')
-#Transform to EPSG: 2193
-shoreline_2005_gdf = shoreline_2005_gdf.to_crs(epsg=2193)
+# Drop missing geometries directly
+shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=["geometry"])
 
-#%% From points to linestrings
+# %% Convert shoreline points -> lat/lon DataFrame
+shoreline_latlon = shoreline_2005_gdf.to_crs(epsg=4326)
+coastsat = pd.DataFrame({
+    "lon": shoreline_latlon.geometry.x,
+    "lat": shoreline_latlon.geometry.y
+})
 
-missing = shoreline_2005_gdf[shoreline_2005_gdf.geometry.isnull()]
-print(f"Missing geometries: {len(missing)}")
+# %% Sea Level Rise data (NZ SeaRise lat/lon)
+df_latlon = pd.read_csv("NZ_VLM_final_May24.csv")
+nzrise = df_latlon[["Lon", "Lat"]].rename(columns={"Lon": "lon", "Lat": "lat"})
 
-shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=['geometry'])
+# %% Nearest neighbor search with BallTree
+# Convert to radians
+coastsat_rad = np.deg2rad(coastsat[["lat", "lon"]].values)
+nzrise_rad = np.deg2rad(nzrise[["lat", "lon"]].values)
 
-#EPSG:4326
-lines_gdf= gpd.read_file("lines_ref_shoreline_2005.geojson")
+# Build BallTree
+tree = BallTree(nzrise_rad, metric="haversine")
 
-#%%
-
-# #Transform into coastsat df for next steps
-
-#Reproject to Lat Lon (NZsearise data is in lat lon)
-# Convert to WGS84 (lat/lon) .to_crs('EPSG:4326')
-
-coastsat_coords = {
-    'lon':shoreline_2005_gdf.to_crs('EPSG:4326').geometry.x ,
-    'lat': shoreline_2005_gdf.to_crs('EPSG:4326').geometry.y
-}
-#Create DataFrame
-coastsat=pd.DataFrame(coastsat_coords)
-
-
-
-#%% Sea Level rise data
-#First read lat lon coordinates, only in VLM file, version 3 of zenodo rep
-
-# url_latlon= "https://zenodo.org/records/11398538/files/NZ_VLM_final_May24.csv"
-# df_latlon= pd.read_csv(url_latlon)
-
-df_latlon= pd.read_csv("NZ_VLM_final_May24.csv")
-
-nzsearise_coords = {
-    'lon': df_latlon['Lon'],    
-    'lat':df_latlon['Lat'] 
-}
-
-nzrise = pd.DataFrame(nzsearise_coords)
-
-
-#%% Ball tree using Haversine metric
-#https://towardsdatascience.com/using-scikit-learns-binary-trees-to-efficiently-find-latitude-and-longitude-neighbors-909979bd929b/
-
-# --- Convert lat/lon to radians ---
-coastsat_radians = np.deg2rad(coastsat[['lat', 'lon']].values)
-nzrise_radians = np.deg2rad(nzrise[['lat', 'lon']].values)
-
-# --- Build BallTree using nzrise coordinates ---
-tree = BallTree(nzrise_radians, metric='haversine')
-
-# --- Query nearest neighbor for each coastsat point ---
-distances, indices = tree.query(coastsat_radians, k=1)  # k=1 for nearest
-
-# --- Convert radians to meters (Earth radius = ~6371 km) ---
-distances_km = distances * 6371  # Convert to km
-nearest_indices = indices[:, 0]
-
-df_dis= pd.DataFrame(data=distances_km)
+# Query nearest neighbor
+distances, indices = tree.query(coastsat_rad, k=1)
+distances_km = distances.flatten() * EARTH_RADIUS_KM
+nearest_indices = indices.flatten()
 
 #%%
 # --- Get nearest nzrise rows ---
