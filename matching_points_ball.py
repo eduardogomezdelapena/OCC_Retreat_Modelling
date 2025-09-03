@@ -22,15 +22,23 @@ import matplotlib.pyplot as plt
 # Constants
 EARTH_RADIUS_KM = 6371.0
 
-# %% Load transects (NZ only)
+# % Load transects (NZ only)
 transects = gpd.read_file("transects_extended.geojson")
 transects = transects[transects.site_id.str.startswith("nzd")]
 
-# %% Shoreline position for ref year 2005
+# % Shoreline position for ref year 2005
 shoreline_2005_gdf = gpd.read_file("points_ref_shoreline_2005.geojson").to_crs(epsg=2193)
 
-# Drop missing geometries directly
+# Drop missing geometries 
 shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=["geometry"])
+
+# Keep only transects that have a shoreline and vice versa
+common_ids = set(transects["id"]) & set(shoreline_2005_gdf["transect_id"])
+
+transects = transects[transects["id"].isin(common_ids)].reset_index(drop=True)
+shoreline_2005_gdf = shoreline_2005_gdf[shoreline_2005_gdf["transect_id"].isin(common_ids)].reset_index(drop=True)
+
+print(len(transects), len(shoreline_2005_gdf))  # should match
 
 # %% Convert shoreline points -> lat/lon DataFrame
 shoreline_latlon = shoreline_2005_gdf.to_crs(epsg=4326)
@@ -39,7 +47,7 @@ coastsat = pd.DataFrame({
     "lat": shoreline_latlon.geometry.y
 })
 
-# %% Sea Level Rise data (NZ SeaRise lat/lon)
+# % Sea Level Rise data (NZ SeaRise lat/lon)
 df_latlon = pd.read_csv("NZ_VLM_final_May24.csv")
 nzrise = df_latlon[["Lon", "Lat"]].rename(columns={"Lon": "lon", "Lat": "lat"})
 
@@ -55,49 +63,34 @@ tree = BallTree(nzrise_rad, metric="haversine")
 distances, indices = tree.query(coastsat_rad, k=1)
 distances_km = distances.flatten() * EARTH_RADIUS_KM
 nearest_indices = indices.flatten()
-
 #%%
-# --- Get nearest nzrise rows ---
-nearest_nzrise = nzrise.iloc[nearest_indices].reset_index(drop=True)
+# %% Get nearest NZRise rows and combine
+nearest_nzrise = (
+    nzrise.iloc[nearest_indices]
+    .reset_index(drop=True)
+    .add_prefix("nzrise_")
+)
 
-nearest_nzrise.columns = [f'nzrise_{col}' for col in nearest_nzrise.columns]
+combined = (
+    coastsat.reset_index(drop=True)
+    .assign(
+        distance_km=distances_km,
+        site_ID_nzrise=df_latlon["Site ID"].iloc[nearest_indices].values,
+        beach_slope=transects.beach_slope.values,
+        coastsat_id=transects.id.values,
+        trend=transects.trend.values,
+    )
+)
 
-# --- Combine everything ---
-coastsat_re = coastsat.reset_index(drop=True)
-
-combined = pd.concat([nearest_nzrise, coastsat_re], axis=1)
-
-combined['distance_km'] = distances_km
-
-# # --- Save or inspect ---
-# combined.to_csv('coastsat_nearest_nzrise_balltree.csv', index=False)
-# print(combined.head())
-
-
+# Flag cases farther than threshold
 threshold = 2
-# More than 2 km in difference
-count = (combined['distance_km'] > threshold).sum()
+count = (combined["distance_km"] > threshold).sum()
+print(f"Points farther than {threshold} km: {count}")
 
-
-#%% 
-#SLR from nearest NZRise point
-#First retreive SiteID
-
-combined['site_ID_nzrise'] = df_latlon['Site ID'].iloc[nearest_indices].reset_index(drop=True)
-
-combined['beach_slope'] = transects.beach_slope.reset_index(drop=True)
-
-#Adding coastsat id tag
-combined['coastsat_id'] = transects.id.reset_index(drop=True)
-
-#Adding historic trend
-combined['trend'] = transects.trend.reset_index(drop=True)
 
 #%%
 #Download actual SLR and VLM csv
-# url_slr="https://zenodo.org/records/14722058/files/NZ_Searise_noVLM-2005.csv"
-
-# df_nzrise_slr= pd.read_csv(url_slr)
+# df_nzrise_slr= pd.read_csv("https://zenodo.org/records/14722058/files/NZ_Searise_noVLM-2005.csv")
 
 df_nzrise_slr= pd.read_csv('NZ_Searise_noVLM-2005.csv')
 
