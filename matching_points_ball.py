@@ -63,7 +63,6 @@ tree = BallTree(nzrise_rad, metric="haversine")
 distances, indices = tree.query(coastsat_rad, k=1)
 distances_km = distances.flatten() * EARTH_RADIUS_KM
 nearest_indices = indices.flatten()
-#%%
 # %% Get nearest NZRise rows and combine
 nearest_nzrise = (
     nzrise.iloc[nearest_indices]
@@ -91,52 +90,34 @@ print(f"Points farther than {threshold} km: {count}")
 #%%
 #Download actual SLR and VLM csv
 # df_nzrise_slr= pd.read_csv("https://zenodo.org/records/14722058/files/NZ_Searise_noVLM-2005.csv")
-
-df_nzrise_slr= pd.read_csv('NZ_Searise_noVLM-2005.csv')
-
-#%%
-#For each different tag in coastsat_id in df_combined, 
-#obtain the subset in df_nzrise_slr that matches the 
-#site_ID_nzrise tag in df_combined
-#Version without for loop, much faster with large datasets
-
-df_nzrise_slr.rename(columns={'site': 'site_ID_nzrise'},
-                                         inplace=True)
-
-# Merge df_combined with df_nzrise_slr using the site_ID_nzrise column
-merged_df = combined.merge(
-    df_nzrise_slr,
-    on='site_ID_nzrise',
-    how='left'  # or 'inner' if you only want matching entries
+# %% Load Sea Level Rise (SLR) data
+df_nzrise_slr = (
+    pd.read_csv("NZ_Searise_noVLM-2005.csv")
+    .rename(columns={"site": "site_ID_nzrise"})
 )
 
-#%% Calculate all retreat
-#Multiply percentile columns 17, 50, 83
+# Merge combined data with SLR dataset
+merged_df = combined.merge(df_nzrise_slr, on="site_ID_nzrise", how="left")
 
-slr_cols = ['17', '50', '83']
+# %% Retreat calculation (Bruun rule)
+slr_cols = ["17", "50", "83"]
 
-# Create a DataFrame of just the SLR columns
-slr_df = merged_df[slr_cols]
+C_ADJUST= 0.5
+# Apply Bruun rule (beach slope * c_adjust)
+retreat_df = (
+    merged_df[slr_cols]
+    .div(np.tan(merged_df["beach_slope"] * C_ADJUST), axis=0)
+    .rename(columns=lambda c: f"retreat_{c}")
+)
 
-# Divide all columns in slr_df by beach_slope (row-wise)
-#Bruun rule applied
-# Shoreface slope multiplied by 0.5 to obtain 
-# Bruun beach slope to half of the foreshore beach slope 
-# # a bit ad hoc, applied in Vitousek et al. (2023)
-#  but is somewhat consistent with Lidar profiles in California
+# Append retreat columns
+merged_retreat_df = pd.concat([merged_df, retreat_df], axis=1)
 
-c_adjust = 0.5
-retreat_df = slr_df.div(np.tan(merged_df['beach_slope'] * c_adjust), axis=0)
-
-# Rename columns
-retreat_df = retreat_df.rename(columns=lambda x: f'retreat_{x}')
-
-# Append to merged_df
-merged_df = pd.concat([merged_df, retreat_df], axis=1)
-
-# Add historic rate
-# historic_retreat_df = retreat_df.add((merged_df['year'] - 2005)*merged_df['trend'], axis=0 )
-# merged_df = pd.concat([merged_df, historic_retreat_df], axis=1)
+#  (Optional) Historic rate adjustment
+# historic_retreat_df = retreat_df.add(
+#     (merged_df["year"] - 2005) * merged_df["trend"], axis=0
+# )
+# merged_retreat_df = pd.concat([merged_df, historic_retreat_df], axis=1)
 
 
 #%%Export separate files per scenario/year:
@@ -159,12 +140,12 @@ unique_scenarios = [1.9]
 
 # unique_years = merged_df['year'].unique()
 # unique_scenarios = merged_df['scenario'].dropna().unique()
-
+#%%
 # Loop through all unique (SSP, year) combinations
 for year in unique_years:
     for scenario in unique_scenarios:
         
-        subset = merged_df[(merged_df['year'] == year) & (merged_df['scenario'] == scenario)]
+        subset = merged_retreat_df[(merged_retreat_df['year'] == year) & (merged_retreat_df['scenario'] == scenario)]
         #Calculate geometry here
         #Drop duplicates, keep the second one, which is the one usually with medium confidence
         subset = subset.drop_duplicates(subset='coastsat_id', keep='last')
@@ -180,9 +161,9 @@ for year in unique_years:
 
             #First, merge subset (retreat dic) with transects and 2005 ref points
 
-            merged_df = pd.merge(subset, transects[['id','geometry']], left_on='coastsat_id',
+            merged_subset = pd.merge(subset, transects[['id','geometry']], left_on='coastsat_id',
                                   right_on='id', how='inner')
-            merged_df.drop(columns=['id'], inplace=True)
+            merged_subset.drop(columns=['id'], inplace=True)
 
             #Reproject 2005 points to lon lat degrees
             points_2005= shoreline_2005_gdf.to_crs('EPSG:4326')
@@ -190,7 +171,7 @@ for year in unique_years:
             points_2005.set_geometry('points', inplace=True)
             points_2005.crs
 
-            lol= pd.merge(merged_df,points_2005[['site_id','transect_id','points']], left_on='coastsat_id',
+            lol= pd.merge(merged_subset,points_2005[['site_id','transect_id','points']], left_on='coastsat_id',
                                   right_on='transect_id', how='inner')
             lol.drop(columns=['transect_id'], inplace=True)
 
@@ -198,7 +179,6 @@ for year in unique_years:
 
             ref_points = points_2005
             ref_points.rename(columns={"transect_id":"id"},inplace=True)
-
 
 #%%
             #Intersect
