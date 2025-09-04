@@ -51,7 +51,7 @@ def rename_columns(transects: gpd.GeoDataFrame,
 
 def load_and_merge_coastsat_data(transects_fp: str,
                                  shoreline_fp: str,
-                                 crs_nztm: int,
+                                 crs_str: int,
                                  col_merge_label: str = "coastsat_transect_id"):
     """Wrapper: load, clean, and merge coastsat data."""
     transects = load_transects(transects_fp)
@@ -63,12 +63,12 @@ def load_and_merge_coastsat_data(transects_fp: str,
                       shoreline[[
                           c for c in shoreline.columns if c not in transects.columns or c == col_merge_label]],
                       on= col_merge_label,  how="inner")
-    merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{crs_nztm}", geometry= 'geom_points_ref2005')
+    merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{crs_str}", geometry= 'geom_points_ref2005')
 
     print(f"Merged {len(merged)} transects/shorelines")
     return merged.reset_index(drop=True)
 # %%
-def load_metadata_nzrise(filepath:str):
+def load_metadata_nzrise(filepath:str, crs_str: int):
     """Load metadata for NZRise. Return GeoDataFrame"""
     df = (
         pd.read_csv(filepath)
@@ -81,31 +81,16 @@ def load_metadata_nzrise(filepath:str):
     meta_data = gpd.GeoDataFrame(df, geometry=geometry)
     meta_data.drop(columns=["Lon","Lat"], inplace=True)
     meta_data.rename_geometry("geom_nzrise",inplace=True)
-    meta_data.set_crs(epsg=CRS_NZTM,inplace=True)
+    meta_data.set_crs(epsg=crs_str,inplace=True)
     return meta_data
 
 def load_slrdata_nzrise(filepath:str):
-    """Load SLR data from NZRise project"""
+    """Load SLR data from NZRise project. Returns pd.DataFrame"""
     slr_data = (
         pd.read_csv(filepath)
         .rename(columns={"site": "nzrise_site_id"})
     )
     return slr_data
-
-meta_data_fp = "NZ_VLM_final_May24.csv"
-slr_fp = "NZ_Searise_noVLM-2005.csv"
-meta_data = load_metadata_nzrise(meta_data_fp)
-slr_data  = load_slrdata_nzrise(slr_fp)
-
-merged= pd.merge(meta_data,slr_data,
-                        on='nzrise_site_id', how='outer')
-nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_NZTM}", geometry= 'geom_nzrise')
-
-coastsat_merged = load_and_merge_coastsat_data(
-    "transects_extended.geojson",
-    "points_ref_shoreline_2005.geojson",
-    CRS_NZTM
-)
 
 #%%
 def nearest_points(meta_data, coastsat_merged):
@@ -136,8 +121,28 @@ def nearest_points(meta_data, coastsat_merged):
 
     return distances, nearest_indices
 
-distances, nearest_indices = nearest_points(meta_data.to_crs(CRS_WGS84),
-                                             coastsat_merged.to_crs(CRS_WGS84))
+
+#%%
+
+#CRS_NZTM , CRS_WGS84
+meta_data_fp = "NZ_VLM_final_May24.csv"
+slr_fp = "NZ_Searise_noVLM-2005.csv"
+meta_data = load_metadata_nzrise(meta_data_fp, crs_str= CRS_WGS84 ) # gpd.DataFrame
+slr_data  = load_slrdata_nzrise(slr_fp) #pd.DataFrame
+
+merged= pd.merge(meta_data,slr_data,
+                        on='nzrise_site_id', how='outer')
+nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_WGS84}", geometry= 'geom_nzrise')
+
+coastsat_merged = load_and_merge_coastsat_data(
+    "transects_extended.geojson",
+    "points_ref_shoreline_2005.geojson",
+    CRS_WGS84
+)
+
+#Calculate distances to nearest NZRise points
+distances, nearest_indices = nearest_points(meta_data,
+                                             coastsat_merged)
 
 #%% Plot all transects and ref points in map
 
@@ -152,7 +157,7 @@ fig, ax = plt.subplots(figsize=(12, 12))
 
 # Plot shoreline and transects in the correct projection
 nzrise_web_mercator.plot(ax=ax, color='red', markersize=5, label="NZRise Points")
-#coastsat_web_mercator.plot(ax=ax, color='blue', markersize=0.5, alpha=0.3, label="Coastsat Points")
+coastsat_web_mercator.plot(ax=ax, color='blue', markersize=0.5, alpha=0.3, label="Coastsat Points")
 
 # Add the basemap
 ctx.add_basemap(ax, crs=CRS_WEB_MERCATOR, source=ctx.providers.Esri.WorldImagery)

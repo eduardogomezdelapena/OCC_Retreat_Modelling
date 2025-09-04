@@ -3,7 +3,7 @@
 """
 Create 2005 reference shoreline in points and polyline
 """
-
+#%%
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -55,7 +55,7 @@ shoreline_2005_gdf.head()
 
 shoreline_2005_gdf.describe()
 
-shoreline_2005_gdf.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
+# shoreline_2005_gdf.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
 
 #%% Plot all transects and ref points in map
 
@@ -110,5 +110,5 @@ lines_gdf = gpd.GeoDataFrame(lines, crs=shoreline_2005_gdf.crs)
 lines_gdf = lines_gdf.to_crs(epsg=4326)
 
 # Step 5: Export to GeoJSON
-lines_gdf.to_file("lines_ref_shoreline_2005.geojson", driver="GeoJSON")
+# lines_gdf.to_file("lines_ref_shoreline_2005.geojson", driver="GeoJSON")
 # %%
