@@ -21,35 +21,37 @@ import matplotlib.pyplot as plt
 
 # Constants
 EARTH_RADIUS_KM = 6371.0
+CRS_NZTM = 2193  # NZ Transverse Mercator
+CRS_WGS84 = 4326 # Lat/Lon
 
 # % Load transects (NZ only)
 transects = gpd.read_file("transects_extended.geojson")
 transects = transects[transects.site_id.str.startswith("nzd")]
 
 # % Shoreline position for ref year 2005
-shoreline_2005_gdf = gpd.read_file("points_ref_shoreline_2005.geojson").to_crs(epsg=2193)
+shoreline_2005 = gpd.read_file("points_ref_shoreline_2005.geojson").to_crs(epsg=CRS_NZTM)
 
 # Drop missing geometries 
-shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=["geometry"])
+shoreline_2005 = shoreline_2005.dropna(subset=["geometry"])
 
 # Keep only transects that have a shoreline and vice versa
-common_ids = set(transects["id"]) & set(shoreline_2005_gdf["transect_id"])
+common_ids = set(transects["id"]) & set(shoreline_2005["transect_id"])
 
 transects = transects[transects["id"].isin(common_ids)].reset_index(drop=True)
-shoreline_2005_gdf = shoreline_2005_gdf[shoreline_2005_gdf["transect_id"].isin(common_ids)].reset_index(drop=True)
+shoreline_2005 = shoreline_2005[shoreline_2005["transect_id"].isin(common_ids)].reset_index(drop=True)
 
-print(len(transects), len(shoreline_2005_gdf))  # should match
+print(len(transects), len(shoreline_2005))  # should match
 
 # %% Convert shoreline points -> lat/lon DataFrame
-shoreline_latlon = shoreline_2005_gdf.to_crs(epsg=4326)
+shoreline_latlon = shoreline_2005.to_crs(epsg=CRS_WGS84)
 coastsat = pd.DataFrame({
     "lon": shoreline_latlon.geometry.x,
     "lat": shoreline_latlon.geometry.y
 })
 
 # % Sea Level Rise data (NZ SeaRise lat/lon)
-df_latlon = pd.read_csv("NZ_VLM_final_May24.csv")
-nzrise = df_latlon[["Lon", "Lat"]].rename(columns={"Lon": "lon", "Lat": "lat"})
+nzrise_raw = pd.read_csv("NZ_VLM_final_May24.csv")
+nzrise = nzrise_raw[["Lon", "Lat"]].rename(columns={"Lon": "lon", "Lat": "lat"})
 
 # %% Nearest neighbor search with BallTree
 # Convert to radians
@@ -74,7 +76,7 @@ combined = (
     coastsat.reset_index(drop=True)
     .assign(
         distance_km=distances_km,
-        site_ID_nzrise=df_latlon["Site ID"].iloc[nearest_indices].values,
+        site_ID_nzrise=nzrise_raw["Site ID"].iloc[nearest_indices].values,
         beach_slope=transects.beach_slope.values,
         coastsat_id=transects.id.values,
         trend=transects.trend.values,
@@ -100,12 +102,12 @@ df_nzrise_slr = (
 merged_df = combined.merge(df_nzrise_slr, on="site_ID_nzrise", how="left")
 
 # %% Retreat calculation (Bruun rule)
-slr_cols = ["17", "50", "83"]
+slr_quantiles = ["17", "50", "83"]
 
 C_ADJUST= 0.5
 # Apply Bruun rule (beach slope * c_adjust)
 retreat_df = (
-    merged_df[slr_cols]
+    merged_df[slr_quantiles]
     .div(np.tan(merged_df["beach_slope"] * C_ADJUST), axis=0)
     .rename(columns=lambda c: f"retreat_{c}")
 )
@@ -156,9 +158,6 @@ for year in unique_years:
             save_scenario = str(scenario)
             filename = f"retreat_{save_scenario}_{year}_50percentile.geojson"
 
-            #Recalc retreated points from reference, along transects
-            subset.retreat_50
-
             #First, merge subset (retreat dic) with transects and 2005 ref points
 
             merged_subset = pd.merge(subset, transects[['id','geometry']], left_on='coastsat_id',
@@ -166,7 +165,7 @@ for year in unique_years:
             merged_subset.drop(columns=['id'], inplace=True)
 
             #Reproject 2005 points to lon lat degrees
-            points_2005= shoreline_2005_gdf.to_crs('EPSG:4326')
+            points_2005= shoreline_2005.to_crs('EPSG:4326')
             points_2005.rename(columns={'geometry': 'points'}, inplace=True)
             points_2005.set_geometry('points', inplace=True)
             points_2005.crs
