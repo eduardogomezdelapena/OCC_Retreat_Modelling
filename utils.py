@@ -97,8 +97,6 @@ def nearest_points(meta_data, coastsat_merged):
     """ Find nearest NZRise points to CoastSat data"""
 
     #  Nearest neighbor search with BallTree
-    #Check projection before, both should be WGS84
-
     # Extract lon/lat from geometries
     coastsat_coords   = np.column_stack((coastsat_merged.geometry.y, coastsat_merged.geometry.x))    
     nzrise_coords = np.column_stack((meta_data.geometry.y, meta_data.geometry.x))
@@ -115,12 +113,37 @@ def nearest_points(meta_data, coastsat_merged):
     distances_km = distances.flatten() * EARTH_RADIUS_KM
     nearest_indices = indices.flatten()
 
-    # Flag cases farther than 2 km 
+    # Flag cases farther than 2 km (should be zero!)
     threshold = 2; count = (distances > threshold).sum()
     print(f"Points farther than {threshold} km: {count}")
 
     return distances, nearest_indices
 
+def calc_retreat(all_merged, c_adjust = 0.5):
+    """ Shoreline retreat calculation. Bruun rule"""
+
+    slr_quantiles = ["17", "50", "83"]
+
+    # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
+    # a bit ad hoc, matches with some lidar measurements
+
+    # Apply Bruun rule (beach slope * c_adjust)
+    retreat_df = (
+        all_merged[slr_quantiles]
+        .div(np.tan(all_merged["beach_slope"] * c_adjust), axis=0)
+        .rename(columns=lambda c: f"retreat_{c}")
+    )
+
+    # Append retreat columns
+    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+
+    #  (Optional) Historic rate adjustment
+    # historic_retreat_df = retreat_df.add(
+    #     (merged_df["year"] - 2005) * merged_df["trend"], axis=0
+    # )
+    # merged_retreat_df = pd.concat([merged_df, historic_retreat_df], axis=1)
+
+    return merged_retreat_df
 
 #%%
 
@@ -143,6 +166,31 @@ coastsat_merged = load_and_merge_coastsat_data(
 #Calculate distances to nearest NZRise points
 distances, nearest_indices = nearest_points(meta_data,
                                              coastsat_merged)
+
+#Merge nzrise_merged & coastsat_merged, based on nearest_indices
+#to each coastsat_transect_id there is a matching nzrise_site_id
+#nzrise_site_id is repeated, repeat also coastsat_transect_id as many times needed
+
+#nearest_indices 
+#add column of nzrise_site_id to coastsat_merged
+
+coastsat_merged["nzrise_site_id"]=meta_data["nzrise_site_id"].iloc[nearest_indices].values
+
+#Now merge based on nzrise_site_id
+all_merged = pd.merge( coastsat_merged, nzrise_merged,
+                      on='nzrise_site_id', how='outer')
+#Print all columns, there should be 3 geometry columns (points ref 2005, coastsat transects
+# and nzrise points).
+
+print(all_merged.columns)
+#Transform into geopandas? A geometry column needs to be picked, points ref 2005.
+
+all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
+                               geometry= 'geom_points_ref2005')
+
+#Now calc retreat
+retreat = calc_retreat(all_merged)
+
 
 #%% Plot all transects and ref points in map
 
