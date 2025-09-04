@@ -113,8 +113,8 @@ def nearest_points(meta_data, coastsat_merged):
     distances_km = distances.flatten() * EARTH_RADIUS_KM
     nearest_indices = indices.flatten()
 
-    # Flag cases farther than 2 km (should be zero!)
-    threshold = 2; count = (distances > threshold).sum()
+    # Flag cases farther than 2 km 
+    threshold = 2; count = (distances_km > threshold).sum()
     print(f"Points farther than {threshold} km: {count}")
 
     return distances, nearest_indices
@@ -170,8 +170,6 @@ distances, nearest_indices = nearest_points(meta_data,
 #Merge nzrise_merged & coastsat_merged, based on nearest_indices
 #to each coastsat_transect_id there is a matching nzrise_site_id
 #nzrise_site_id is repeated, repeat also coastsat_transect_id as many times needed
-
-#nearest_indices 
 #add column of nzrise_site_id to coastsat_merged
 
 coastsat_merged["nzrise_site_id"]=meta_data["nzrise_site_id"].iloc[nearest_indices].values
@@ -191,6 +189,7 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 #Now calc retreat
 retreat = calc_retreat(all_merged)
 
+#MWE of retreat polyline in one site
 
 #%% Plot all transects and ref points in map
 
