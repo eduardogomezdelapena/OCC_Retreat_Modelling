@@ -18,6 +18,8 @@ from tqdm import tqdm  # progress bar
 from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
 #%%
+# Constants
+EARTH_RADIUS_KM = 6371.0
 CRS_NZTM = 2193  # NZ Transverse Mercator
 CRS_WGS84 = 4326 # Lat/Lon
 #%%
@@ -65,14 +67,6 @@ def load_and_merge_coastsat_data(transects_fp: str,
 
     print(f"Merged {len(merged)} transects/shorelines")
     return merged.reset_index(drop=True)
-#%%
-
-coastsat_merged = load_and_merge_coastsat_data(
-    "transects_extended.geojson",
-    "points_ref_shoreline_2005.geojson",
-    2193
-)
-
 # %%
 def load_metadata_nzrise(filepath:str):
     """Load metadata for NZRise. Return GeoDataFrame"""
@@ -86,7 +80,8 @@ def load_metadata_nzrise(filepath:str):
     geometry = [Point(xy) for xy in zip(df['Lon'], df['Lat'])]
     meta_data = gpd.GeoDataFrame(df, geometry=geometry)
     meta_data.drop(columns=["Lon","Lat"], inplace=True)
-
+    meta_data.rename_geometry("geom_nzrise",inplace=True)
+    meta_data.set_crs(epsg=CRS_NZTM,inplace=True)
     return meta_data
 
 def load_slrdata_nzrise(filepath:str):
@@ -102,5 +97,71 @@ slr_fp = "NZ_Searise_noVLM-2005.csv"
 meta_data = load_metadata_nzrise(meta_data_fp)
 slr_data  = load_slrdata_nzrise(slr_fp)
 
-nzrise_merged= pd.merge(meta_data,slr_data,
+merged= pd.merge(meta_data,slr_data,
                         on='nzrise_site_id', how='outer')
+nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_NZTM}", geometry= 'geom_nzrise')
+
+coastsat_merged = load_and_merge_coastsat_data(
+    "transects_extended.geojson",
+    "points_ref_shoreline_2005.geojson",
+    CRS_NZTM
+)
+
+#%%
+def nearest_points(meta_data, coastsat_merged):
+    """ Find nearest NZRise points to CoastSat data"""
+
+    #  Nearest neighbor search with BallTree
+    #Check projection before, both should be WGS84
+
+    # Extract lon/lat from geometries
+    coastsat_coords   = np.column_stack((coastsat_merged.geometry.y, coastsat_merged.geometry.x))    
+    nzrise_coords = np.column_stack((meta_data.geometry.y, meta_data.geometry.x))
+
+    # Convert to radians
+    coastsat_rad = np.deg2rad(coastsat_coords)
+    nzrise_rad   = np.deg2rad(nzrise_coords)
+
+    # Build BallTree
+    tree = BallTree(nzrise_rad, metric="haversine")
+
+    # Query nearest neighbor
+    distances, indices = tree.query(coastsat_rad, k=1)
+    distances_km = distances.flatten() * EARTH_RADIUS_KM
+    nearest_indices = indices.flatten()
+
+    # Flag cases farther than 2 km 
+    threshold = 2; count = (distances > threshold).sum()
+    print(f"Points farther than {threshold} km: {count}")
+
+    return distances, nearest_indices
+
+distances, nearest_indices = nearest_points(meta_data.to_crs(CRS_WGS84),
+                                             coastsat_merged.to_crs(CRS_WGS84))
+
+#%% Plot all transects and ref points in map
+
+CRS_WEB_MERCATOR = "EPSG:3857"
+
+# Convert data to Web Mercator (EPSG:3857) for plotting with basemap
+nzrise_web_mercator = meta_data.to_crs(CRS_WEB_MERCATOR)
+coastsat_web_mercator = coastsat_merged.to_crs(CRS_WEB_MERCATOR)
+
+# Create the plot
+fig, ax = plt.subplots(figsize=(12, 12))
+
+# Plot shoreline and transects in the correct projection
+nzrise_web_mercator.plot(ax=ax, color='red', markersize=5, label="NZRise Points")
+#coastsat_web_mercator.plot(ax=ax, color='blue', markersize=0.5, alpha=0.3, label="Coastsat Points")
+
+# Add the basemap
+ctx.add_basemap(ax, crs=CRS_WEB_MERCATOR, source=ctx.providers.Esri.WorldImagery)
+
+# Customize the plot
+ax.set_title("2005 Shoreline Points Across All NZ Sites")
+ax.legend()
+ax.set_axis_off()
+
+# Show the map
+plt.show()
+# %%
