@@ -130,7 +130,7 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     # Apply Bruun rule (beach slope * c_adjust)
     retreat_df = (
         all_merged[slr_quantiles]
-        .div(np.tan(all_merged["beach_slope"] * c_adjust), axis=0)
+        .div((all_merged["beach_slope"]), axis=0)
         .rename(columns=lambda c: f"retreat_{c}")
     )
 
@@ -188,11 +188,61 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 
 #Now calc retreat
 retreat = calc_retreat(all_merged)
-
+#%%
 #MWE of retreat polyline in one site
+# Get unique combinations
+unique_year =  2005
+unique_scenario = 8.5
+# unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
+# unique_scenarios = [1.9,2.6,4.5,7,8.5]
+
+# MWE with specific projection year & specific scenario
+subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == unique_scenario)]
+subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
+#MWE: Choose specific site
+coastsat_site_id = 'nzd0001'
+subset= subset[subset.coastsat_site_id == coastsat_site_id]
+
+#Calc new point location according to retreat_50
+points_2100 = []
+
+subset.retreat_50               #projected retreat 50 quantile
+subset.geom_points_ref2005      #points of shoreline ref 2005
+subset.geom_transect_coastsat   #transects linestrings
+
+# Project reference point onto the transect line (get distance along the line)
+ref_distances_along_lines = subset.geom_transect_coastsat.project(
+                            subset.geom_points_ref2005 )
+
+# Calculate new distance from start of line
+new_distances = ref_distances_along_lines - subset.retreat_50
+   
+ # Interpolate points at new distances
+new_points = subset.geom_transect_coastsat.interpolate(new_distances)
+
+#%%
+# Plot new points, compare to ref
+
+# Add basemap (Web Mercator reprojection)
+gdf_2100_web = new_points.to_crs(epsg=3857)
+ref_points_web = subset.geom_points_ref2005.to_crs(epsg=3857)
+
+fig, ax = plt.subplots(figsize=(10, 10))
+ref_points_web.plot(ax=ax, color='blue', markersize=20, label='Reference Points')
+gdf_2100_web.plot(ax=ax, color='red', markersize=20, label='Projected 2100 Points')
+ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)  # or another basemap
+
+
+ax.legend()
+ax.set_title("NZ Shoreline Retreat Projection - 2100", fontsize=14)
+ax.set_axis_off()
+plt.tight_layout()
+plt.show()
+
+
 
 #%% Plot all transects and ref points in map
-
+#Sanity check between nzrise and coastsat data
 CRS_WEB_MERCATOR = "EPSG:3857"
 
 # Convert data to Web Mercator (EPSG:3857) for plotting with basemap
