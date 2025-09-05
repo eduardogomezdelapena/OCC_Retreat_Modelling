@@ -127,10 +127,11 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
     # a bit ad hoc, matches with some lidar measurements
 
+    denom = c_adjust * all_merged["beach_slope"]
     # Apply Bruun rule (beach slope * c_adjust)
     retreat_df = (
         all_merged[slr_quantiles]
-        .div((all_merged["beach_slope"]), axis=0)
+        .div(denom , axis=0)
         .rename(columns=lambda c: f"retreat_{c}")
     )
 
@@ -192,7 +193,7 @@ retreat = calc_retreat(all_merged)
 #MWE of retreat polyline in one site
 # Get unique combinations
 unique_year =  2100
-unique_scenario = 2.6
+unique_scenario = 8.5
 # unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 
@@ -200,7 +201,11 @@ unique_scenario = 2.6
 subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == unique_scenario)]
 subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 #MWE: Choose specific site
-coastsat_site_id =  "nzd0002"
+# coastsat_site_id =  "nzd0001"
+coastsat_site_id ="nzd0455" #South of Christchurch
+# coastsat_site_id ="nzd0368" #North of Paparoa (erosion hotspot)
+coastsat_site_id ="nzd0174" #Takapuna
+
 subset= subset[subset.coastsat_site_id == coastsat_site_id]
 
 #Calc new point location according to retreat_50
@@ -218,11 +223,14 @@ ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
                             subset.geom_points_ref2005.to_crs(2193)  )
 
 # Calculate new distance from start of line
-new_distances = abs(ref_distances_along_lines - subset.retreat_50)
+new_distances = ref_distances_along_lines - subset.retreat_50
    
  # Interpolate points at new distances
 new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
+
+subset['50']
+subset.retreat_50
 #%%
 # Plot new points, compare to ref
 
@@ -234,12 +242,12 @@ transects_web= subset.geom_transect_coastsat.to_crs(epsg=3857)
 fig, ax = plt.subplots(figsize=(10, 10))
 transects_web.plot(ax=ax, color='yellow',  label='Coastsat Transect', zorder=1)
 ref_points_web.plot(ax=ax, color='blue', markersize=20, label='Reference Points')
-gdf_2100_web.plot(ax=ax, color='red', markersize=20, label='Projected 2100 Points')
+gdf_2100_web.plot(ax=ax, color='red', markersize=20, label= f"Projected :{unique_year} Points")
 ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)  # or another basemap
 
 
 ax.legend()
-ax.set_title("NZ Shoreline Retreat Projection - 2100", fontsize=14)
+ax.set_title(f"NZ Shoreline Retreat Projection - {unique_year}", fontsize=14)
 ax.set_axis_off()
 plt.tight_layout()
 plt.show()
