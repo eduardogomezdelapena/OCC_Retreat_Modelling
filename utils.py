@@ -67,7 +67,7 @@ def load_and_merge_coastsat_data(transects_fp: str,
 
     print(f"Merged {len(merged)} transects/shorelines")
     return merged.reset_index(drop=True)
-# %%
+# %
 def load_metadata_nzrise(filepath:str, crs_str: int):
     """Load metadata for NZRise. Return GeoDataFrame"""
     df = (
@@ -92,7 +92,7 @@ def load_slrdata_nzrise(filepath:str):
     )
     return slr_data
 
-#%%
+#%
 def nearest_points(meta_data, coastsat_merged):
     """ Find nearest NZRise points to CoastSat data"""
 
@@ -145,6 +145,36 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     # merged_retreat_df = pd.concat([merged_df, historic_retreat_df], axis=1)
 
     return merged_retreat_df
+
+def lines_to_points(subset):
+    """ Take the points GeoDataFrame and transforms to polylines"""
+    missing = subset[subset.geometry.isnull()]
+    print(f"Missing geometries: {len(missing)}")
+
+    subset = subset.dropna(subset=['geom_new_points'])
+
+    # Step 1: Extract group and order fields
+    subset["group_id"] = subset["coastsat_transect_id"].str.split("-").str[0]
+    subset["order_id"] = subset["coastsat_transect_id"].str.split("-").str[1].astype(int)
+
+    # Step 2: Create LineStrings per group
+    lines = []
+
+    for group_id, group in subset.groupby("group_id"):
+        sorted_group = group.sort_values(by="order_id")
+        coords = sorted_group.geometry.tolist()
+        
+        # Ensure we have at least 2 points to make a line
+        if len(coords) >= 2:
+            line = LineString(coords)
+            lines.append({"geometry": line, "group_id": group_id})
+
+    # Step 3: Create GeoDataFrame of LineStrings
+    lines_gdf = gpd.GeoDataFrame(lines, crs=subset.crs)
+
+    # Step 4: Reproject to WGS84 (EPSG:4326) for web tools like Leaflet / Google Earth
+    lines_gdf = lines_gdf.to_crs(epsg=4326)
+    return(lines_gdf)
 
 #%%
 
@@ -202,9 +232,10 @@ subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == uniq
 subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 #MWE: Choose specific site
 # coastsat_site_id =  "nzd0001"
-coastsat_site_id ="nzd0455" #South of Christchurch
+#coastsat_site_id ="nzd0455" #South of Christchurch
 # coastsat_site_id ="nzd0368" #North of Paparoa (erosion hotspot)
 coastsat_site_id ="nzd0174" #Takapuna
+
 
 subset= subset[subset.coastsat_site_id == coastsat_site_id]
 
@@ -231,6 +262,34 @@ new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distance
 #append new_points 
 subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
 
+#% From points to linestrings
+lines_gdf = lines_to_points(subset)
+lines_gdf.to_file(f"lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
+
+#%% Operations in the whole dataset ()
+# MWE with specific projection year & specific scenario
+subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == unique_scenario)]
+subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
+
+# Project reference point onto the transect line (get distance along the line)
+ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
+                            subset.geom_points_ref2005.to_crs(2193)  )
+
+# Calculate new distance from start of line
+new_distances = ref_distances_along_lines - subset.retreat_50
+   
+ # Interpolate points at new distances
+new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
+
+#append new_points 
+subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
+#% From points to linestrings
+lines_gdf = lines_to_points(subset)
+lines_gdf.to_file(f"all_lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
+
+subset.retreat_50.median()
+subset.retreat_83.median()
+subset['83'].mean()
 
 #%%
 # Plot new points, compare to ref
@@ -254,40 +313,7 @@ plt.tight_layout()
 plt.show()
 
 
-#%% From points to linestrings
-def lines_to_points(subset):
-    """ Take the points GeoDataFrame and transforms to polylines"""
-    missing = subset[subset.geometry.isnull()]
-    print(f"Missing geometries: {len(missing)}")
 
-    subset = subset.dropna(subset=['geom_new_points'])
-
-    # Step 1: Extract group and order fields
-    subset["group_id"] = subset["coastsat_transect_id"].str.split("-").str[0]
-    subset["order_id"] = subset["coastsat_transect_id"].str.split("-").str[1].astype(int)
-
-    # Step 2: Create LineStrings per group
-    lines = []
-
-    for group_id, group in subset.groupby("group_id"):
-        sorted_group = group.sort_values(by="order_id")
-        coords = sorted_group.geometry.tolist()
-        
-        # Ensure we have at least 2 points to make a line
-        if len(coords) >= 2:
-            line = LineString(coords)
-            lines.append({"geometry": line, "group_id": group_id})
-
-    # Step 3: Create GeoDataFrame of LineStrings
-    lines_gdf = gpd.GeoDataFrame(lines, crs=subset.crs)
-
-    # Step 4: Reproject to WGS84 (EPSG:4326) for web tools like Leaflet / Google Earth
-    lines_gdf = lines_gdf.to_crs(epsg=4326)
-    return(lines_gdf)
-
-lines_gdf = lines_to_points(subset)
-
-lines_gdf.to_file(f"lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
 
 #%% Plot all transects and ref points in map
 #Sanity check between nzrise and coastsat data

@@ -101,6 +101,7 @@
         <label><input type="checkbox" id="layer85_2050"> 2050</label>
         <label><input type="checkbox" id="layer85_2080"> 2080</label>
         <label><input type="checkbox" id="layer85_2100"> 2100</label>
+        <label><input type="checkbox" id="layer85_2100_lines"> 2100 (lines)</label>
      </details>
 
     </div>
@@ -233,24 +234,25 @@ legend.addTo(map);
       layer85_2030: { url: 'retreat_8.5_2030_50percentile.geojson', layer: null },
       layer85_2050: { url: 'retreat_8.5_2050_50percentile.geojson', layer: null },
       layer85_2080: { url: 'retreat_8.5_2080_50percentile.geojson', layer: null },
-      layer85_2100: { url: 'retreat_8.5_2100_50percentile.geojson', layer: null }      
-      
+      layer85_2100: { url: 'retreat_8.5_2100_50percentile.geojson', layer: null },
+      layer85_2100_lines: { url: 'all_lines_ref_shoreline_2005_2100_8.5.geojson', layer: null }     
+
     };
 
-    function loadAndToggleLayer(key, checked) {
-      const entry = layers[key];
+  function loadAndToggleLayer(key, checked) {
+    const entry = layers[key];
 
-      if (checked) {
-        if (entry.layer) {
-          // Already loaded, just add to map
-          map.addLayer(entry.layer);
-        } else {
-          // Lazy-load GeoJSON
-          fetch(entry.url)
-            .then(res => res.json())
-            .then(data => {
-              entry.layer = L.geoJSON(data, {
-                pointToLayer: (feature, latlng) => {
+    if (checked) {
+      if (entry.layer) {
+        map.addLayer(entry.layer);
+      } else {
+        fetch(entry.url)
+          .then(res => res.json())
+          .then(data => {
+            entry.layer = L.geoJSON(data, {
+              pointToLayer: (feature, latlng) => {
+                // For point geometries
+                if (feature.geometry.type === "Point") {
                   const retreat = feature.properties.retreat_50;
                   return L.circleMarker(latlng, {
                     radius: getRadius(retreat),
@@ -260,26 +262,40 @@ legend.addTo(map);
                     opacity: 1,
                     fillOpacity: 0.8
                   });
-                },
-                onEachFeature: (feature, layer) => {
-                  const name = feature.properties.name;
-                  const retreat = feature.properties.retreat_50;
-                  layer.bindPopup(`<strong>${name}</strong><br>Retreat (50th percentile): ${retreat} m`);
                 }
-              });
-
-              entry.layer.addTo(map);
-
+              },
+              style: (feature) => {
+                // For LineString / MultiLineString geometries
+                if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
+                  return {
+                    color: "#0000ff",  // blue, change as needed
+                    weight: 2,
+                    opacity: 0.8
+                  };
+                }
+              },
+              onEachFeature: (feature, layer) => {
+                const props = feature.properties;
+                if (props) {
+                  let popupContent = "";
+                  if (props.name) popupContent += `<strong>${props.name}</strong><br>`;
+                  if (props.retreat_50 !== undefined) {
+                    popupContent += `Retreat (50th percentile): ${props.retreat_50} m`;
+                  }
+                  layer.bindPopup(popupContent || "No attributes");
+                }
+              }
             });
-        }
-      } else {
-        // Turn off layer if it's loaded
-        if (entry.layer && map.hasLayer(entry.layer)) {
-          map.removeLayer(entry.layer);
-        }
+
+            entry.layer.addTo(map);
+          });
+      }
+    } else {
+      if (entry.layer && map.hasLayer(entry.layer)) {
+        map.removeLayer(entry.layer);
       }
     }
-
+  }
     // Attach checkbox listeners
     Object.keys(layers).forEach(key => {
       const checkbox = document.getElementById(key);
