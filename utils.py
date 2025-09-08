@@ -228,9 +228,10 @@ new_distances = ref_distances_along_lines - subset.retreat_50
  # Interpolate points at new distances
 new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
+#append new_points 
+subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
 
-subset['50']
-subset.retreat_50
+
 #%%
 # Plot new points, compare to ref
 
@@ -253,6 +254,40 @@ plt.tight_layout()
 plt.show()
 
 
+#%% From points to linestrings
+def lines_to_points(subset):
+    """ Take the points GeoDataFrame and transforms to polylines"""
+    missing = subset[subset.geometry.isnull()]
+    print(f"Missing geometries: {len(missing)}")
+
+    subset = subset.dropna(subset=['geom_new_points'])
+
+    # Step 1: Extract group and order fields
+    subset["group_id"] = subset["coastsat_transect_id"].str.split("-").str[0]
+    subset["order_id"] = subset["coastsat_transect_id"].str.split("-").str[1].astype(int)
+
+    # Step 2: Create LineStrings per group
+    lines = []
+
+    for group_id, group in subset.groupby("group_id"):
+        sorted_group = group.sort_values(by="order_id")
+        coords = sorted_group.geometry.tolist()
+        
+        # Ensure we have at least 2 points to make a line
+        if len(coords) >= 2:
+            line = LineString(coords)
+            lines.append({"geometry": line, "group_id": group_id})
+
+    # Step 3: Create GeoDataFrame of LineStrings
+    lines_gdf = gpd.GeoDataFrame(lines, crs=subset.crs)
+
+    # Step 4: Reproject to WGS84 (EPSG:4326) for web tools like Leaflet / Google Earth
+    lines_gdf = lines_gdf.to_crs(epsg=4326)
+    return(lines_gdf)
+
+lines_gdf = lines_to_points(subset)
+
+lines_gdf.to_file(f"lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
 
 #%% Plot all transects and ref points in map
 #Sanity check between nzrise and coastsat data
