@@ -260,42 +260,22 @@ new_distances = ref_distances_along_lines - subset.retreat_50
 new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
 #append new_points 
-subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
+# subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
+subset['geom_new_points'] = new_points.to_crs(4326)
 
-#% From points to linestrings
-lines_gdf = lines_to_points(subset)
+
+#% From points to linestrings, careful on what active geometry goes inside
+lines_gdf = lines_to_points(subset.set_geometry('geom_new_points'))
 lines_gdf.to_file(f"lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
 
-#%% Operations in the whole dataset ()
-# MWE with specific projection year & specific scenario
-subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == unique_scenario)]
-subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
-
-# Project reference point onto the transect line (get distance along the line)
-ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
-                            subset.geom_points_ref2005.to_crs(2193)  )
-
-# Calculate new distance from start of line
-new_distances = ref_distances_along_lines - subset.retreat_50
-   
- # Interpolate points at new distances
-new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
-
-#append new_points 
-subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
-#% From points to linestrings
-lines_gdf = lines_to_points(subset)
-lines_gdf.to_file(f"all_lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
-
-subset.retreat_50.median()
-subset.retreat_83.median()
-subset['83'].mean()
+# 
 
 #%%
 # Plot new points, compare to ref
 
 # Add basemap (Web Mercator reprojection)
-gdf_2100_web = new_points.to_crs(epsg=3857)
+# gdf_2100_web = new_points.to_crs(epsg=3857)
+gdf_2100_web = subset.geom_new_points.to_crs(epsg=3857)
 ref_points_web = subset.geom_points_ref2005.to_crs(epsg=3857)
 transects_web= subset.geom_transect_coastsat.to_crs(epsg=3857)
 
@@ -313,31 +293,28 @@ plt.tight_layout()
 plt.show()
 
 
+#% Operations in the whole dataset ()
+# # MWE with specific projection year & specific scenario
+# subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == unique_scenario)]
+# subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
+# # Project reference point onto the transect line (get distance along the line)
+# ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
+#                             subset.geom_points_ref2005.to_crs(2193)  )
 
-#%% Plot all transects and ref points in map
-#Sanity check between nzrise and coastsat data
-CRS_WEB_MERCATOR = "EPSG:3857"
+# # Calculate new distance from start of line
+# new_distances = ref_distances_along_lines - subset.retreat_50
+   
+#  # Interpolate points at new distances
+# new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
-# Convert data to Web Mercator (EPSG:3857) for plotting with basemap
-nzrise_web_mercator = meta_data.to_crs(CRS_WEB_MERCATOR)
-coastsat_web_mercator = coastsat_merged.to_crs(CRS_WEB_MERCATOR)
+# #append new_points 
+# subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
+# #% From points to linestrings
+# lines_gdf = lines_to_points(subset)
+# lines_gdf.to_file(f"all_lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
 
-# Create the plot
-fig, ax = plt.subplots(figsize=(12, 12))
-
-# Plot shoreline and transects in the correct projection
-nzrise_web_mercator.plot(ax=ax, color='red', markersize=5, label="NZRise Points")
-coastsat_web_mercator.plot(ax=ax, color='blue', markersize=0.5, alpha=0.3, label="Coastsat Points")
-
-# Add the basemap
-ctx.add_basemap(ax, crs=CRS_WEB_MERCATOR, source=ctx.providers.Esri.WorldImagery)
-
-# Customize the plot
-ax.set_title("2005 Shoreline Points Across All NZ Sites")
-ax.legend()
-ax.set_axis_off()
-
-# Show the map
-plt.show()
+# subset.retreat_50.median()
+# subset.retreat_83.median()
+# subset['83'].mean()
 # %%
