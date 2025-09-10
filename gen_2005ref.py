@@ -182,13 +182,11 @@ shoreline_reindexed = (
     .drop(columns="flag")   # drop flag here
 )
 
-#Export file
+######################Export files#######################
+#Export points
+shoreline_reindexed.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
 
-#shoreline_reindexed.to_crs(4326).to_file('trial_points_ref_shoreline_2005.geojson')
-# shoreline_2005_gdf.to_crs(4326).to_file('trial_points_ref_shoreline_2005.geojson')
-
-# lines_gdf = points_to_lines(shoreline_2005_gdf)
+#Export polylines
 lines_gdf = points_to_lines(shoreline_reindexed)
-# Step 5: Export to GeoJSON
-lines_gdf.to_file("new_trials_lines_ref_shoreline_2005.geojson", driver="GeoJSON")
+lines_gdf.to_file("lines_ref_shoreline_2005.geojson")
 # %%
