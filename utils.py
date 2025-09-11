@@ -222,53 +222,45 @@ retreat = calc_retreat(all_merged)
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
-unique_year =  2100
-unique_scenario = 8.5
-# unique_years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
+years =  [2005,2100]
+scenarios = [1.9,2.6,4.5,7,8.5]
+# years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
+slr_qt =  "50" #quantiles 17,50,83
 
-# MWE with specific projection year & specific scenario
-subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == unique_scenario)]
-subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
-#MWE: Choose specific site
-# coastsat_site_id =  "nzd0001"
-#coastsat_site_id ="nzd0455" #South of Christchurch
-# coastsat_site_id ="nzd0368" #North of Paparoa (erosion hotspot)
-coastsat_site_id ="nzd0174" #Takapuna
+for year in years:
+    for scenario in scenarios:
 
+        # MWE with specific projection year & specific scenario
+        subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
+        subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
-subset= subset[subset.coastsat_site_id == coastsat_site_id]
+        #Calc new point location according to retreat_50
+        bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
+        subset.geom_points_ref2005      #points of shoreline ref 2005
+        subset.geom_transect_coastsat   #transects linestrings
 
-#Calc new point location according to retreat_50
-points_2100 = []
+        subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
+        # Reproject to NZTM2000 (meters)
 
-bruun_retreat= subset.retreat_50               #projected retreat 50 quantile
-subset.geom_points_ref2005      #points of shoreline ref 2005
-subset.geom_transect_coastsat   #transects linestrings
+        # Project reference point onto the transect line (get distance along the line)
+        ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
+                                    subset.geom_points_ref2005.to_crs(2193)  )
 
-subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
-# Reproject to NZTM2000 (meters)
+        # Calculate new distance from start of line
+        new_distances = ref_distances_along_lines - bruun_slr_qt
+        
+        # Interpolate points at new distances
+        new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
-# Project reference point onto the transect line (get distance along the line)
-ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
-                            subset.geom_points_ref2005.to_crs(2193)  )
+        #append new_points 
+        # subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
+        subset['geom_new_points'] = new_points.to_crs(4326)
 
-# Calculate new distance from start of line
-new_distances = ref_distances_along_lines - subset.retreat_50
-   
- # Interpolate points at new distances
-new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
+        #% From points to linestrings, careful on what active geometry goes inside
+        lines_gdf = lines_to_points(subset.set_geometry('geom_new_points'))
+        lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
 
-#append new_points 
-# subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
-subset['geom_new_points'] = new_points.to_crs(4326)
-
-
-#% From points to linestrings, careful on what active geometry goes inside
-lines_gdf = lines_to_points(subset.set_geometry('geom_new_points'))
-lines_gdf.to_file(f"lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
-
-# 
 
 #%%
 # Plot new points, compare to ref
@@ -282,39 +274,15 @@ transects_web= subset.geom_transect_coastsat.to_crs(epsg=3857)
 fig, ax = plt.subplots(figsize=(10, 10))
 transects_web.plot(ax=ax, color='yellow',  label='Coastsat Transect', zorder=1)
 ref_points_web.plot(ax=ax, color='blue', markersize=20, label='Reference Points')
-gdf_2100_web.plot(ax=ax, color='red', markersize=20, label= f"Projected :{unique_year} Points")
+gdf_2100_web.plot(ax=ax, color='red', markersize=20, label= f"Projected :{year} Points")
 ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)  # or another basemap
 
 
 ax.legend()
-ax.set_title(f"NZ Shoreline Retreat Projection - {unique_year}", fontsize=14)
+ax.set_title(f"NZ Shoreline Retreat Projection - {year}", fontsize=14)
 ax.set_axis_off()
 plt.tight_layout()
 plt.show()
 
 
-#% Operations in the whole dataset ()
-# # MWE with specific projection year & specific scenario
-# subset = retreat[(retreat['year'] == unique_year) & (retreat['scenario'] == unique_scenario)]
-# subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
-
-# # Project reference point onto the transect line (get distance along the line)
-# ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
-#                             subset.geom_points_ref2005.to_crs(2193)  )
-
-# # Calculate new distance from start of line
-# new_distances = ref_distances_along_lines - subset.retreat_50
-   
-#  # Interpolate points at new distances
-# new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
-
-# #append new_points 
-# subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
-# #% From points to linestrings
-# lines_gdf = lines_to_points(subset)
-# lines_gdf.to_file(f"all_lines_ref_shoreline_2005_{unique_year}_{unique_scenario}.geojson")
-
-# subset.retreat_50.median()
-# subset.retreat_83.median()
-# subset['83'].mean()
 # %%
