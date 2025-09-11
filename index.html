@@ -285,16 +285,33 @@
                   });
                 }
               },
-              style: (feature) => {
-                // For LineString / MultiLineString geometries
-                if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
-                  return {
-                    color: "yellow",  // blue, change as needed
-                    weight: 2,
-                    opacity: 0.8
-                  };
-                }
-              },
+              //If 2005, changed to dashed
+                style: (feature) => {
+                  if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
+                    // Default style
+                    let style = {
+                      color: "red",
+                      weight: 2,
+                      opacity: 0.8
+                    };
+
+                    // Dashed style for all htrend layers
+                    if (key.includes("htrend")) {
+                      style.color ="#FF00FF",
+                      style.dashArray = null;  // dashed line
+                    }   
+
+                    // Dashed style for all 2005 layers
+                    if (key.includes("2005")) {
+                      style.color = "yellow",
+                      style.dashArray = "5, 5";  // dashed line
+                    }
+
+                 
+
+                    return style;
+                  }
+                },
               onEachFeature: (feature, layer) => {
                 const props = feature.properties;
                 if (props) {
