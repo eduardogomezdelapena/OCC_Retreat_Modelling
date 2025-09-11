@@ -61,47 +61,74 @@
 
   <!-- Layer toggles -->
     <div class="custom-control">
-      <div class="custom-title">Shoreline Change (only SLR), 50th quartile. </div>  
+      <div class="custom-title">Shoreline change (only SLR), 50th quartile. </div>  
 
       <details>
         <summary><strong>SSP1 — 1.9</strong></summary>
-        <label><input type="checkbox" id="layer19_2005_lines"> 2005 (lines)</label>                   
-        <label><input type="checkbox" id="layer19_2100_lines"> 2100 (lines)</label>             
+        <label><input type="checkbox" id="layer19_2005_lines"> 2005 </label>                   
+        <label><input type="checkbox" id="layer19_2100_lines"> 2100 </label>             
       </details>
     
       <details>
         <summary><strong>SSP2 — 2.6</strong></summary>
-        <label><input type="checkbox" id="layer26_2005_lines"> 2005 (lines)</label>          
-        <label><input type="checkbox" id="layer26_2100_lines"> 2100 (lines)</label>          
+        <label><input type="checkbox" id="layer26_2005_lines"> 2005 </label>          
+        <label><input type="checkbox" id="layer26_2100_lines"> 2100 </label>          
       </details>
       
       <details>
         <summary><strong>SSP2 — 4.5</strong></summary>
-        <label><input type="checkbox" id="layer45_2005_lines"> 2005 (lines)</label>          
-        <label><input type="checkbox" id="layer45_2100_lines"> 2100 (lines)</label>  
+        <label><input type="checkbox" id="layer45_2005_lines"> 2005 </label>          
+        <label><input type="checkbox" id="layer45_2100_lines"> 2100 </label>  
       </details>
        
       <details>
         <summary><strong>SSP3 — 7.0</strong></summary>
-        <label><input type="checkbox" id="layer70_2005_lines"> 2005 (lines)</label>        
-        <label><input type="checkbox" id="layer70_2100_lines"> 2100 (lines)</label>        
+        <label><input type="checkbox" id="layer70_2005_lines"> 2005 </label>        
+        <label><input type="checkbox" id="layer70_2100_lines"> 2100 </label>        
      </details>
 
       <details>
         <summary><strong> SSP5 — 8.5</strong></summary>
-        <label><input type="checkbox" id="layer85_2005_lines"> 2005 (lines)</label>
-        <label><input type="checkbox" id="layer85_2100_lines"> 2100 (lines)</label>
+        <label><input type="checkbox" id="layer85_2005_lines"> 2005 </label>
+        <label><input type="checkbox" id="layer85_2100_lines"> 2100 </label>
      </details>
 
     </div>
 
   <!-- Historic toggle box -->
 <div class="custom-control" style="top: 50%; left: 10px;">
-   <div class="custom-title"> Shoreline change (SLR + Historic trend), 50th quartile.</div>  
-  <details open>
-    <summary><strong>Historic</strong></summary>
-    <label><input type="checkbox" id="layer_hist_lines"> Shorelines (lines)</label>
+   <div class="custom-title"> Shoreline change (SLR + Historic trend), 50th quartile.</div> 
+
+  <details>
+    <summary><strong>SSP1 — 1.9</strong></summary>
+        <label><input type="checkbox" id="htrend_layer19_2005_lines"> 2005 </label>                   
+        <label><input type="checkbox" id="htrend_layer19_2100_lines"> 2100 </label>             
   </details>
+
+  <details>
+    <summary><strong>SSP2 — 2.6</strong></summary>
+        <label><input type="checkbox" id="htrend_layer26_2005_lines"> 2005 </label>                   
+        <label><input type="checkbox" id="htrend_layer26_2100_lines"> 2100 </label>             
+  </details>
+
+  <details>
+    <summary><strong>SSP2 — 4.5</strong></summary>
+        <label><input type="checkbox" id="htrend_layer45_2005_lines"> 2005 </label>                   
+        <label><input type="checkbox" id="htrend_layer45_2100_lines"> 2100 </label>             
+  </details>
+
+  <details>
+    <summary><strong>SSP3 — 7.0</strong></summary>
+        <label><input type="checkbox" id="htrend_layer70_2005_lines"> 2005 </label>                   
+        <label><input type="checkbox" id="htrend_layer70_2100_lines"> 2100 </label>             
+  </details>
+
+  <details>
+    <summary><strong>SSP5 — 8.5</strong></summary>
+        <label><input type="checkbox" id="htrend_layer85_2005_lines"> 2005 </label>                   
+        <label><input type="checkbox" id="htrend_layer85_2100_lines"> 2100 </label>             
+  </details>
+
 </div>
       
   <!-- Sidebar -->
@@ -123,7 +150,7 @@
           <p><a href="https://uoa-eresearch.github.io/CoastSat/">NZ transect data</a> processed by Nick Young using the <a href="https://github.com/kvos/CoastSat/"> CoastSat </a> toolbox and the NIWA Tide API. Shorelines corrected to MSL.</p>
           <p>Sea-Level Rise projections taken from the <a href="https://searise.takiwa.co/map/"> the NZ SeaRise</a> : Te Tai Pari O Aotearoa programme. </p>
 
-          <p> Metadata: Caution is advised for data near river mouths and sand spits, as satellite observations tend to be less reliable in these areas.</p>
+          <p> Metadata: Caution is advised for data near river mouths and sand spits, as satellite observations tend to be less reliable in these areas. Historic trend is derived from satellite observations.</p>
         </div>
       </div>
     </div>
@@ -158,34 +185,34 @@
 
     //Legend
     
- const legend = L.control({ position: 'bottomright' });
+// const legend = L.control({ position: 'bottomright' });
 
-legend.onAdd = function(map) {
-  const div = L.DomUtil.create('div', 'info legend');
-  div.style.backgroundColor = 'white';
-  div.style.padding = '6px 8px';
-  div.style.fontSize = '14px';
-  div.style.borderRadius = '5px';
-  div.style.boxShadow = '0 0 15px rgba(0,0,0,0.2)';
-  div.innerHTML = '<strong>Retreat (m)</strong><br>';
+// legend.onAdd = function(map) {
+//   const div = L.DomUtil.create('div', 'info legend');
+//   div.style.backgroundColor = 'white';
+//   div.style.padding = '6px 8px';
+//   div.style.fontSize = '14px';
+//   div.style.borderRadius = '5px';
+//   div.style.boxShadow = '0 0 15px rgba(0,0,0,0.2)';
+//   div.innerHTML = '<strong>Retreat (m)</strong><br>';
 
-  const grades = [0, 5, 10];
-  const colors = ['#1a9850', '#fee08b', '#d73027']; // green, yellow, red
+//   const grades = [0, 5, 10];
+//   const colors = ['#1a9850', '#fee08b', '#d73027']; // green, yellow, red
 
-  for (let i = 0; i < grades.length; i++) {
-    const from = grades[i];
-    const to = grades[i + 1];
+//   for (let i = 0; i < grades.length; i++) {
+//     const from = grades[i];
+//     const to = grades[i + 1];
 
-    const rangeText = to ? `${from} &ndash; ${to}` : `${from}+`;
+//     const rangeText = to ? `${from} &ndash; ${to}` : `${from}+`;
 
-    div.innerHTML +=
-      `<i style="background:${colors[i]}; width: 18px; height: 18px; display: inline-block; margin-right: 8px; opacity: 0.7;"></i> ${rangeText}<br>`;
-  }
+//     div.innerHTML +=
+//       `<i style="background:${colors[i]}; width: 18px; height: 18px; display: inline-block; margin-right: 8px; opacity: 0.7;"></i> ${rangeText}<br>`;
+//   }
 
-  return div;
-};
+//   return div;
+// };
 
-legend.addTo(map);
+// legend.addTo(map);
 
     // Color + radius
     function getColor(value) {
@@ -216,7 +243,20 @@ legend.addTo(map);
       layer85_2100_lines: { url: 'lines_shoreline_50qtl_2100_8.5.geojson', layer: null },
       
         // ✅ Historic
-      layer_hist_lines: { url: 'lines_shoreline_50qtl_2100_8.5.geojson', layer: null }
+      htrend_layer19_2005_lines: { url: 'htrend_lines_shoreline_50qtl_2005_1.9.geojson', layer: null },
+      htrend_layer19_2100_lines: { url: 'htrend_lines_shoreline_50qtl_2100_1.9.geojson', layer: null },
+
+      htrend_layer26_2005_lines: { url: 'htrend_lines_shoreline_50qtl_2005_2.6.geojson', layer: null },
+      htrend_layer26_2100_lines: { url: 'htrend_lines_shoreline_50qtl_2100_2.6.geojson', layer: null },
+
+      htrend_layer45_2005_lines: { url: 'htrend_lines_shoreline_50qtl_2005_4.5.geojson', layer: null },
+      htrend_layer45_2100_lines: { url: 'htrend_lines_shoreline_50qtl_2100_4.5.geojson', layer: null },
+
+      htrend_layer70_2005_lines: { url: 'htrend_lines_shoreline_50qtl_2005_7.0.geojson', layer: null },
+      htrend_layer70_2100_lines: { url: 'htrend_lines_shoreline_50qtl_2100_7.0.geojson', layer: null },
+
+      htrend_layer85_2005_lines: { url: 'htrend_lines_shoreline_50qtl_2005_8.5.geojson', layer: null },
+      htrend_layer85_2100_lines: { url: 'htrend_lines_shoreline_50qtl_2100_8.5.geojson', layer: null }      
 
     };
 
@@ -249,7 +289,7 @@ legend.addTo(map);
                 // For LineString / MultiLineString geometries
                 if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
                   return {
-                    color: "#0000ff",  // blue, change as needed
+                    color: "yellow",  // blue, change as needed
                     weight: 2,
                     opacity: 0.8
                   };
