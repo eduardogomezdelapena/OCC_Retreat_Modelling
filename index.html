@@ -25,6 +25,14 @@
       height: 100%;
       margin: 0;
     }
+    .custom-title {
+      font-weight: bold;
+      margin-bottom: 6px;
+      font-size: 15px;
+      white-space: normal;   /* allow wrapping */
+      word-wrap: break-word; /* break long words if needed */
+      max-width: 220px;        /* reduce line length before breaking */
+    }
     .custom-control {
       position: absolute;
       top: 10%;
@@ -53,67 +61,48 @@
 
   <!-- Layer toggles -->
     <div class="custom-control">
+      <div class="custom-title">Shoreline Change (only SLR), 50th quartile. </div>  
+
       <details>
-        <summary><strong>RCP 1.9</strong></summary>
-        <label><input type="checkbox" id="layer19_2005_lines"> 2005 (lines)</label>              
-        <label><input type="checkbox" id="layer19_2005"> 2005</label>
-        <label><input type="checkbox" id="layer19_2020"> 2020</label>
-        <label><input type="checkbox" id="layer19_2030"> 2030</label>
-        <label><input type="checkbox" id="layer19_2050"> 2050</label>
-        <label><input type="checkbox" id="layer19_2080"> 2080</label>
-        <label><input type="checkbox" id="layer19_2100"> 2100</label>       
+        <summary><strong>SSP1 — 1.9</strong></summary>
+        <label><input type="checkbox" id="layer19_2005_lines"> 2005 (lines)</label>                   
         <label><input type="checkbox" id="layer19_2100_lines"> 2100 (lines)</label>             
       </details>
     
       <details>
-        <summary><strong>RCP 2.6</strong></summary>
+        <summary><strong>SSP2 — 2.6</strong></summary>
         <label><input type="checkbox" id="layer26_2005_lines"> 2005 (lines)</label>          
-        <label><input type="checkbox" id="layer26_2005"> 2005</label>
-        <label><input type="checkbox" id="layer26_2020"> 2020</label>
-        <label><input type="checkbox" id="layer26_2030"> 2030</label>
-        <label><input type="checkbox" id="layer26_2050"> 2050</label>
-        <label><input type="checkbox" id="layer26_2080"> 2080</label>
-        <label><input type="checkbox" id="layer26_2100"> 2100</label>
         <label><input type="checkbox" id="layer26_2100_lines"> 2100 (lines)</label>          
       </details>
       
       <details>
-        <summary><strong>RCP 4.5</strong></summary>
+        <summary><strong>SSP2 — 4.5</strong></summary>
         <label><input type="checkbox" id="layer45_2005_lines"> 2005 (lines)</label>          
-        <label><input type="checkbox" id="layer45_2005"> 2005</label>
-        <label><input type="checkbox" id="layer45_2020"> 2020</label>
-        <label><input type="checkbox" id="layer45_2030"> 2030</label>
-        <label><input type="checkbox" id="layer45_2050"> 2050</label>
-        <label><input type="checkbox" id="layer45_2080"> 2080</label>
-        <label><input type="checkbox" id="layer45_2100"> 2100</label>
         <label><input type="checkbox" id="layer45_2100_lines"> 2100 (lines)</label>  
       </details>
        
       <details>
-        <summary><strong>RCP 7</strong></summary>
+        <summary><strong>SSP3 — 7.0</strong></summary>
         <label><input type="checkbox" id="layer70_2005_lines"> 2005 (lines)</label>        
-        <label><input type="checkbox" id="layer70_2005"> 2005</label>
-        <label><input type="checkbox" id="layer70_2020"> 2020</label>
-        <label><input type="checkbox" id="layer70_2030"> 2030</label>
-        <label><input type="checkbox" id="layer70_2050"> 2050</label>
-        <label><input type="checkbox" id="layer70_2080"> 2080</label>
-        <label><input type="checkbox" id="layer70_2100"> 2100</label>
         <label><input type="checkbox" id="layer70_2100_lines"> 2100 (lines)</label>        
      </details>
 
       <details>
-        <summary><strong>RCP 8.5</strong></summary>
+        <summary><strong> SSP5 — 8.5</strong></summary>
         <label><input type="checkbox" id="layer85_2005_lines"> 2005 (lines)</label>
-        <label><input type="checkbox" id="layer85_2005"> 2005</label>
-        <label><input type="checkbox" id="layer85_2020"> 2020</label>
-        <label><input type="checkbox" id="layer85_2030"> 2030</label>
-        <label><input type="checkbox" id="layer85_2050"> 2050</label>
-        <label><input type="checkbox" id="layer85_2080"> 2080</label>
-        <label><input type="checkbox" id="layer85_2100"> 2100</label>
         <label><input type="checkbox" id="layer85_2100_lines"> 2100 (lines)</label>
      </details>
 
     </div>
+
+  <!-- Historic toggle box -->
+<div class="custom-control" style="top: 50%; left: 10px;">
+   <div class="custom-title"> Shoreline change (SLR + Historic trend), 50th quartile.</div>  
+  <details open>
+    <summary><strong>Historic</strong></summary>
+    <label><input type="checkbox" id="layer_hist_lines"> Shorelines (lines)</label>
+  </details>
+</div>
       
   <!-- Sidebar -->
   <div id="sidebar" class="leaflet-sidebar collapsed">
@@ -131,9 +120,10 @@
           <p> Shoreline retreat projections for Aotearoa New Zealand. Data processed by Eduardo Gomez-de la Pena. Retreat was estimated using the Bruun rule, see <a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling/blob/main/README.md">README</a> for more information.</p>
           <p> This work is part of  <a href="https://searise.nz/">Our Changing Coasts</a> MBIE project, funded secured by Dr. Giovanni Coco and Dr. Karin Bryan, The University of Auckland. </p>
 
-          <p><a href="https://uoa-eresearch.github.io/CoastSat/">NZ shoreline data</a> processed by Nick Young using the <a href="https://github.com/kvos/CoastSat/"> CoastSat </a> toolbox and the NIWA Tide API. Shorelines corrected to MSL.</p>
+          <p><a href="https://uoa-eresearch.github.io/CoastSat/">NZ transect data</a> processed by Nick Young using the <a href="https://github.com/kvos/CoastSat/"> CoastSat </a> toolbox and the NIWA Tide API. Shorelines corrected to MSL.</p>
           <p>Sea-Level Rise projections taken from the <a href="https://searise.takiwa.co/map/"> the NZ SeaRise</a> : Te Tai Pari O Aotearoa programme. </p>
 
+          <p> Metadata: Caution is advised for data near river mouths and sand spits, as satellite observations tend to be less reliable in these areas.</p>
         </div>
       </div>
     </div>
@@ -210,50 +200,23 @@ legend.addTo(map);
 
     // Track loaded layers
     const layers = {
-      layer19_2005_lines: { url: 'lines_shoreline_50qtl_2005_1.9.geojson', layer: null },      
-      layer19_2005: { url: 'retreat_1.9_2005_50percentile.geojson', layer: null },
-      layer19_2020: { url: 'retreat_1.9_2020_50percentile.geojson', layer: null },
-      layer19_2030: { url: 'retreat_1.9_2030_50percentile.geojson', layer: null },
-      layer19_2050: { url: 'retreat_1.9_2050_50percentile.geojson', layer: null },
-      layer19_2080: { url: 'retreat_1.9_2080_50percentile.geojson', layer: null },
-      layer19_2100: { url: 'retreat_1.9_2100_50percentile.geojson', layer: null },      
+      layer19_2005_lines: { url: 'lines_shoreline_50qtl_2005_1.9.geojson', layer: null },           
       layer19_2100_lines: { url: 'lines_shoreline_50qtl_2100_1.9.geojson', layer: null },     
 
       layer26_2005_lines: { url: 'lines_shoreline_50qtl_2005_2.6.geojson', layer: null },
-      layer26_2005: { url: 'retreat_2.6_2005_50percentile.geojson', layer: null },
-      layer26_2020: { url: 'retreat_2.6_2020_50percentile.geojson', layer: null },
-      layer26_2030: { url: 'retreat_2.6_2030_50percentile.geojson', layer: null },
-      layer26_2050: { url: 'retreat_2.6_2050_50percentile.geojson', layer: null },
-      layer26_2080: { url: 'retreat_2.6_2080_50percentile.geojson', layer: null },
-      layer26_2100: { url: 'retreat_2.6_2100_50percentile.geojson', layer: null },
       layer26_2100_lines: { url: 'lines_shoreline_50qtl_2100_2.6.geojson', layer: null },      
 
       layer45_2005_lines: { url: 'lines_shoreline_50qtl_2005_4.5.geojson', layer: null },      
-      layer45_2005: { url: 'retreat_4.5_2005_50percentile.geojson', layer: null },
-      layer45_2020: { url: 'retreat_4.5_2020_50percentile.geojson', layer: null },
-      layer45_2030: { url: 'retreat_4.5_2030_50percentile.geojson', layer: null },
-      layer45_2050: { url: 'retreat_4.5_2050_50percentile.geojson', layer: null },
-      layer45_2080: { url: 'retreat_4.5_2080_50percentile.geojson', layer: null },
-      layer45_2100: { url: 'retreat_4.5_2100_50percentile.geojson', layer: null },
       layer45_2100_lines: { url: 'lines_shoreline_50qtl_2100_4.5.geojson', layer: null },
 
       layer70_2005_lines: { url: 'lines_shoreline_50qtl_2005_7.geojson', layer: null },
-      layer70_2005: { url: 'retreat_7_2005_50percentile.geojson', layer: null },
-      layer70_2020: { url: 'retreat_7_2020_50percentile.geojson', layer: null },
-      layer70_2030: { url: 'retreat_7_2030_50percentile.geojson', layer: null },
-      layer70_2050: { url: 'retreat_7_2050_50percentile.geojson', layer: null },
-      layer70_2080: { url: 'retreat_7_2080_50percentile.geojson', layer: null },
-      layer70_2100: { url: 'retreat_7_2100_50percentile.geojson', layer: null },
       layer70_2100_lines: { url: 'lines_shoreline_50qtl_2100_7.geojson', layer: null },
 
       layer85_2005_lines: { url: 'lines_shoreline_50qtl_2005_8.5.geojson', layer: null },  
-      layer85_2005: { url: 'retreat_8.5_2005_50percentile.geojson', layer: null },
-      layer85_2020: { url: 'retreat_8.5_2020_50percentile.geojson', layer: null },
-      layer85_2030: { url: 'retreat_8.5_2030_50percentile.geojson', layer: null },
-      layer85_2050: { url: 'retreat_8.5_2050_50percentile.geojson', layer: null },
-      layer85_2080: { url: 'retreat_8.5_2080_50percentile.geojson', layer: null },
-      layer85_2100: { url: 'retreat_8.5_2100_50percentile.geojson', layer: null },
-      layer85_2100_lines: { url: 'lines_shoreline_50qtl_2100_8.5.geojson', layer: null }     
+      layer85_2100_lines: { url: 'lines_shoreline_50qtl_2100_8.5.geojson', layer: null },
+      
+        // ✅ Historic
+      layer_hist_lines: { url: 'lines_shoreline_50qtl_2100_8.5.geojson', layer: null }
 
     };
 
