@@ -183,37 +183,6 @@
     
     L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
 
-    //Legend
-    
-// const legend = L.control({ position: 'bottomright' });
-
-// legend.onAdd = function(map) {
-//   const div = L.DomUtil.create('div', 'info legend');
-//   div.style.backgroundColor = 'white';
-//   div.style.padding = '6px 8px';
-//   div.style.fontSize = '14px';
-//   div.style.borderRadius = '5px';
-//   div.style.boxShadow = '0 0 15px rgba(0,0,0,0.2)';
-//   div.innerHTML = '<strong>Retreat (m)</strong><br>';
-
-//   const grades = [0, 5, 10];
-//   const colors = ['#1a9850', '#fee08b', '#d73027']; // green, yellow, red
-
-//   for (let i = 0; i < grades.length; i++) {
-//     const from = grades[i];
-//     const to = grades[i + 1];
-
-//     const rangeText = to ? `${from} &ndash; ${to}` : `${from}+`;
-
-//     div.innerHTML +=
-//       `<i style="background:${colors[i]}; width: 18px; height: 18px; display: inline-block; margin-right: 8px; opacity: 0.7;"></i> ${rangeText}<br>`;
-//   }
-
-//   return div;
-// };
-
-// legend.addTo(map);
-
     // Color + radius
     function getColor(value) {
       return value > 10 ? '#d73027' :
