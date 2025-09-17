@@ -189,4 +189,9 @@ shoreline_reindexed.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
 #Export polylines
 lines_gdf = points_to_lines(shoreline_reindexed)
 lines_gdf.to_file("lines_ref_shoreline_2005.geojson")
+
+#Export transects
+site_pair_distances = check_consecutive_labels(transects)
+
+
 # %%

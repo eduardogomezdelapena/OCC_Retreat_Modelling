@@ -29,43 +29,44 @@ def load_transects(filepath: str):
     transects = transects.drop_duplicates(subset="id") #drop duplicated transects
     return transects[transects["site_id"].str.startswith("nzd")]
 
-def load_shoreline(filepath: str):
-    """Load shoreline and reproject, drop missing geometries."""
-    shoreline = gpd.read_file(filepath)
-    return shoreline.dropna(subset=["geometry"])
+def load_points(filepath: str):
+    """Load ref points (shoreline) and reproject, drop missing geometries.
+    Points externally generated in gen_2005ref.py"""
+    points = gpd.read_file(filepath)
+    return points.dropna(subset=["geometry"])
 
 def rename_columns(transects: gpd.GeoDataFrame,
-                   shoreline: gpd.GeoDataFrame):
+                   points: gpd.GeoDataFrame):
     """Rename columns for consistency."""
     transects = transects.rename(columns={
         "site_id": "coastsat_site_id",
         "id": "coastsat_transect_id",
         "geometry": "geom_transect_coastsat"
     })
-    shoreline = shoreline.rename(columns={
+    points = points.rename(columns={
         "site_id": "coastsat_site_id",
         "transect_id": "coastsat_transect_id",        
         "geometry": "geom_points_ref2005"
     })
-    return transects, shoreline
+    return transects, points
 
 def load_and_merge_coastsat_data(transects_fp: str,
-                                 shoreline_fp: str,
+                                 points_fp: str,
                                  crs_str: int,
                                  col_merge_label: str = "coastsat_transect_id"):
     """Wrapper: load, clean, and merge coastsat data."""
     transects = load_transects(transects_fp)
-    shoreline = load_shoreline(shoreline_fp)
-    transects, shoreline = rename_columns(transects, shoreline)
+    points = load_points(points_fp)
+    transects, points = rename_columns(transects, points)
 
     # Merge on a column
     merged = pd.merge(transects,
-                      shoreline[[
-                          c for c in shoreline.columns if c not in transects.columns or c == col_merge_label]],
+                      points[[
+                          c for c in points.columns if c not in transects.columns or c == col_merge_label]],
                       on= col_merge_label,  how="inner")
     merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{crs_str}", geometry= 'geom_points_ref2005')
 
-    print(f"Merged {len(merged)} transects/shorelines")
+    print(f"Merged {len(merged)} transects/points")
     return merged.reset_index(drop=True)
 # %
 def load_metadata_nzrise(filepath:str, crs_str: int):
@@ -147,7 +148,7 @@ def calc_retreat(all_merged, c_adjust = 0.5):
 
     return merged_retreat_df
 
-def lines_to_points(subset):
+def points_to_polylines(subset):
     """ Take the points GeoDataFrame and transforms to polylines"""
     missing = subset[subset.geometry.isnull()]
     print(f"Missing geometries: {len(missing)}")
@@ -223,8 +224,8 @@ retreat = calc_retreat(all_merged)
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
-years =  [2005,2100]
-scenarios = [1.9,2.6,4.5,7,8.5]
+years =  [2005]
+scenarios = [1.9]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 slr_qt =  "50" #quantiles 17,50,83
@@ -232,14 +233,12 @@ slr_qt =  "50" #quantiles 17,50,83
 for year in years:
     for scenario in scenarios:
 
-        # MWE with specific projection year & specific scenario
+        # Subset dataframe with specific projection year & specific scenario
         subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
         subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
         #Calc new point location according to retreat_50
         bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
-        subset.geom_points_ref2005      #points of shoreline ref 2005
-        subset.geom_transect_coastsat   #transects linestrings
 
         subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
         # Reproject to NZTM2000 (meters)
@@ -254,16 +253,21 @@ for year in years:
         # Interpolate points at new distances
         new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
+        #Because the transformation from transects to points needs cleaning (labels)
+        #Here some cleaning is added or even better... clean coastsat transects directly
+
+
+
         #append new_points 
         # subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
         subset['geom_new_points'] = new_points.to_crs(4326)
 
         #% From points to linestrings, careful on what active geometry goes inside
-        lines_gdf = lines_to_points(subset.set_geometry('geom_new_points'))
-        lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
+        #lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
         cols_to_display= ['geom_new_points','50','retreat_50']
-        subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
-
+        #subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+       
 #%%
 # Plot new points, compare to ref
 
