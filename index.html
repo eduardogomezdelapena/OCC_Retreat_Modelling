@@ -229,80 +229,84 @@
 
     };
 
-  function loadAndToggleLayer(key, checked) {
-    const entry = layers[key];
+function loadAndToggleLayer(key, checked) {
+  const entry = layers[key];
 
-    if (checked) {
-      if (entry.layer) {
-        map.addLayer(entry.layer);
-      } else {
-        fetch(entry.url)
-          .then(res => res.json())
-          .then(data => {
-            entry.layer = L.geoJSON(data, {
-              pointToLayer: (feature, latlng) => {
-                // For point geometries
-                if (feature.geometry.type === "Point") {
+  if (checked) {
+    if (entry.layer) {
+      map.addLayer(entry.layer);
+      if (entry.pointsLayer) map.addLayer(entry.pointsLayer);
+    } else {
+      fetch(entry.url)
+        .then(res => res.json())
+        .then(data => {
+
+          // Main layer (lines)
+          entry.layer = L.geoJSON(data, {
+            style: (feature) => {
+              if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
+                let style = { color: "red", weight: 2, opacity: 0.8 };
+                if (key.includes("htrend")) style.color = "#FF00FF"; // fuchsia
+                if (key.includes("2005")) style.color = "yellow";
+                if (key.includes("2005")) style.dashArray = "5,5";   // dashed 2005 lines
+                return style;
+              }
+            },
+            onEachFeature: (feature, layer) => {
+              const props = feature.properties;
+              if (props) {
+                let popupContent = "";
+                if (props.name) popupContent += `<strong>${props.name}</strong><br>`;
+                if (props.retreat_50 !== undefined) {
+                  popupContent += `Retreat (50th percentile): ${props.retreat_50} m`;
+                }
+                layer.bindPopup(popupContent || "No attributes");
+              }
+            }
+          }).addTo(map);
+
+          // ✅ Determine points file name
+          let pointsFile;
+          if (key.includes("htrend")) {
+            pointsFile = entry.url.replace("lines", "points");
+          } else {
+            pointsFile = entry.url.replace("lines", "points");
+          }
+
+          // Load points
+          fetch(pointsFile)
+            .then(res => res.json())
+            .then(pointsData => {
+              entry.pointsLayer = L.geoJSON(pointsData, {
+                pointToLayer: (feature, latlng) => {
                   const retreat = feature.properties.retreat_50;
                   return L.circleMarker(latlng, {
                     radius: getRadius(retreat),
-                    fillColor: getColor(retreat),
-                    color: '#000',
+                    fillColor: 'transparent',   // transparent fill
+                    color: 'transparent',       // transparent border
                     weight: 1,
-                    opacity: 1,
-                    fillOpacity: 0.8
+                    opacity: 0,                 // hide border
+                    fillOpacity: 0              // hide fill
                   });
-                }
-              },
-              //If 2005, changed to dashed
-                style: (feature) => {
-                  if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
-                    // Default style
-                    let style = {
-                      color: "red",
-                      weight: 2,
-                      opacity: 0.8
-                    };
-
-                    // Dashed style for all htrend layers
-                    if (key.includes("htrend")) {
-                      style.color ="#FF00FF",
-                      style.dashArray = null;  // dashed line
-                    }   
-
-                    // Dashed style for all 2005 layers
-                    if (key.includes("2005")) {
-                      style.color = "yellow",
-                      style.dashArray = "5, 5";  // dashed line
-                    }
-
-                 
-
-                    return style;
-                  }
                 },
-              onEachFeature: (feature, layer) => {
-                const props = feature.properties;
-                if (props) {
-                  let popupContent = "";
-                  if (props.name) popupContent += `<strong>${props.name}</strong><br>`;
-                  if (props.retreat_50 !== undefined) {
-                    popupContent += `Retreat (50th percentile): ${props.retreat_50} m`;
+                onEachFeature: (feature, layer) => {
+                  if (feature.properties && feature.properties.retreat_50 !== undefined) {
+                    layer.bindTooltip(`Retreat (50th percentile): ${feature.properties.retreat_50} m`);
                   }
-                  layer.bindPopup(popupContent || "No attributes");
                 }
-              }
+              }).addTo(map);
             });
 
-            entry.layer.addTo(map);
-          });
-      }
-    } else {
-      if (entry.layer && map.hasLayer(entry.layer)) {
-        map.removeLayer(entry.layer);
-      }
+        });
     }
+  } else {
+    if (entry.layer && map.hasLayer(entry.layer)) map.removeLayer(entry.layer);
+    if (entry.pointsLayer && map.hasLayer(entry.pointsLayer)) map.removeLayer(entry.pointsLayer);
   }
+}
+
+
+
     // Attach checkbox listeners
     Object.keys(layers).forEach(key => {
       const checkbox = document.getElementById(key);
