@@ -65,32 +65,32 @@
 
       <details>
         <summary><strong>SSP1 — 1.9</strong></summary>
-        <label><input type="checkbox" id="layer19_2005_lines"> 2005 </label>                   
-        <label><input type="checkbox" id="layer19_2100_lines"> 2100 </label>             
+        <label><input type="checkbox" id="layer19_2005_lines"> 2005 (Baseline) </label>                   
+        <label><input type="checkbox" id="layer19_2100_lines"> 2100 (Projection) </label>             
       </details>
     
       <details>
         <summary><strong>SSP2 — 2.6</strong></summary>
-        <label><input type="checkbox" id="layer26_2005_lines"> 2005 </label>          
-        <label><input type="checkbox" id="layer26_2100_lines"> 2100 </label>          
+        <label><input type="checkbox" id="layer26_2005_lines"> 2005 (Baseline) </label>          
+        <label><input type="checkbox" id="layer26_2100_lines"> 2100 (Projection) </label>          
       </details>
       
       <details>
         <summary><strong>SSP2 — 4.5</strong></summary>
-        <label><input type="checkbox" id="layer45_2005_lines"> 2005 </label>          
-        <label><input type="checkbox" id="layer45_2100_lines"> 2100 </label>  
+        <label><input type="checkbox" id="layer45_2005_lines"> 2005 (Baseline) </label>          
+        <label><input type="checkbox" id="layer45_2100_lines"> 2100 (Projection) </label>  
       </details>
        
       <details>
         <summary><strong>SSP3 — 7.0</strong></summary>
-        <label><input type="checkbox" id="layer70_2005_lines"> 2005 </label>        
-        <label><input type="checkbox" id="layer70_2100_lines"> 2100 </label>        
+        <label><input type="checkbox" id="layer70_2005_lines"> 2005 (Baseline) </label>        
+        <label><input type="checkbox" id="layer70_2100_lines"> 2100 (Projection) </label>        
      </details>
 
       <details>
         <summary><strong> SSP5 — 8.5</strong></summary>
-        <label><input type="checkbox" id="layer85_2005_lines"> 2005 </label>
-        <label><input type="checkbox" id="layer85_2100_lines"> 2100 </label>
+        <label><input type="checkbox" id="layer85_2005_lines"> 2005 (Baseline) </label>
+        <label><input type="checkbox" id="layer85_2100_lines"> 2100 (Projection) </label>
      </details>
 
     </div>
@@ -101,32 +101,32 @@
 
   <details>
     <summary><strong>SSP1 — 1.9</strong></summary>
-        <label><input type="checkbox" id="htrend_layer19_2005_lines"> 2005 </label>                   
-        <label><input type="checkbox" id="htrend_layer19_2100_lines"> 2100 </label>             
+        <label><input type="checkbox" id="htrend_layer19_2005_lines"> 2005 (Baseline) </label>                   
+        <label><input type="checkbox" id="htrend_layer19_2100_lines"> 2100 (Projection) </label>             
   </details>
 
   <details>
     <summary><strong>SSP2 — 2.6</strong></summary>
-        <label><input type="checkbox" id="htrend_layer26_2005_lines"> 2005 </label>                   
-        <label><input type="checkbox" id="htrend_layer26_2100_lines"> 2100 </label>             
+        <label><input type="checkbox" id="htrend_layer26_2005_lines"> 2005 (Baseline) </label>                   
+        <label><input type="checkbox" id="htrend_layer26_2100_lines"> 2100 (Projection) </label>             
   </details>
 
   <details>
     <summary><strong>SSP2 — 4.5</strong></summary>
-        <label><input type="checkbox" id="htrend_layer45_2005_lines"> 2005 </label>                   
-        <label><input type="checkbox" id="htrend_layer45_2100_lines"> 2100 </label>             
+        <label><input type="checkbox" id="htrend_layer45_2005_lines"> 2005 (Baseline) </label>                   
+        <label><input type="checkbox" id="htrend_layer45_2100_lines"> 2100 (Projection) </label>             
   </details>
 
   <details>
     <summary><strong>SSP3 — 7.0</strong></summary>
-        <label><input type="checkbox" id="htrend_layer70_2005_lines"> 2005 </label>                   
-        <label><input type="checkbox" id="htrend_layer70_2100_lines"> 2100 </label>             
+        <label><input type="checkbox" id="htrend_layer70_2005_lines"> 2005 (Baseline) </label>                   
+        <label><input type="checkbox" id="htrend_layer70_2100_lines"> 2100 (Projection) </label>             
   </details>
 
   <details>
     <summary><strong>SSP5 — 8.5</strong></summary>
-        <label><input type="checkbox" id="htrend_layer85_2005_lines"> 2005 </label>                   
-        <label><input type="checkbox" id="htrend_layer85_2100_lines"> 2100 </label>             
+        <label><input type="checkbox" id="htrend_layer85_2005_lines"> 2005 (Baseline) </label>                   
+        <label><input type="checkbox" id="htrend_layer85_2100_lines"> 2100 (Projection) </label>             
   </details>
 
 </div>
@@ -259,7 +259,7 @@ function loadAndToggleLayer(key, checked) {
               let tooltipContent = "";
               if (props) {
                 if (props.name) tooltipContent += `<strong>${props.name}</strong><br>`;
-                if (props.retreat_50 !== undefined) tooltipContent += `Retreat (50th percentile): ${props.retreat_50} m`;
+                if (props.retreat_50 !== undefined) tooltipContent += `Change (50th percentile): ${props.retreat_50} m`;
               }
               if (tooltipContent) layer.bindTooltip(tooltipContent);
 
@@ -294,7 +294,7 @@ function loadAndToggleLayer(key, checked) {
                 },
                 onEachFeature: (feature, layer) => {
                   if (feature.properties && feature.properties.retreat_50 !== undefined) {
-                    layer.bindTooltip(`Retreat (50th percentile): ${feature.properties.retreat_50} m`);
+                    layer.bindTooltip(`Shoreline change (50th percentile): ${feature.properties.retreat_50} m`);
                   }
 
                   // Hover highlight for points
