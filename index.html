@@ -294,7 +294,7 @@ function loadAndToggleLayer(key, checked) {
                 },
                 onEachFeature: (feature, layer) => {
                   if (feature.properties && feature.properties.retreat_50 !== undefined) {
-                    layer.bindTooltip(`Shoreline change (50th percentile): ${feature.properties.retreat_50} m`);
+                    layer.bindTooltip(`Projected change (50th percentile): ${feature.properties.retreat_50} m`);
                   }
 
                   // Hover highlight for points
