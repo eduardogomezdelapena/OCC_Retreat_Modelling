@@ -21,7 +21,60 @@ transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_ex
 #Trim it to just NZ, CoastSat is for the entire Pacific
 # Filter where 'id' contains 'nzd'
 transects = transects[transects.site_id.str.startswith("nzd")]
-transects
+#%%
+results = []
+
+for site_id, group in transects.groupby("site_id"):
+    # Look up transect 0 and transect 1
+    t0 = group[group.id.str.endswith("0000")]
+    t1 = group[group.id.str.endswith("0001")]
+
+    # Get a single point for each transect
+    rep_points = group.to_crs(epsg=2193).centroid
+
+    # Distance between consecutive transects
+    distances = [
+        rep_points.iloc[i].distance(rep_points.iloc[i+1])
+        for i in range(len(rep_points)-1)
+    ]
+
+    #Median distance between transects
+    median_val= np.median(distances)
+
+    dist_m = distances[0]
+
+    results.append({
+        "site_id": site_id,
+        "transect0_id": t0.iloc[0].id,
+        "transect1_id": t1.iloc[0].id,
+        "median" : median_val,
+        "dist_m": dist_m,
+        "flag": dist_m > (1.5 * median_val)
+    })
+
+#%%
+
+site_pair_distance = pd.DataFrame(results)
+# # Show flagged sites
+site_pair_distance[site_pair_distance.flag]
+
+#%%
+
+# Join flags back
+transects_flagged = transects.merge(
+    site_pair_distance[["site_id", "flag"]],
+    on="site_id",
+    how="left"
+)
+
+# Apply reindexing per site
+transects_reindexed = (
+    transects_flagged.groupby("site_id", group_keys=False)
+    .apply(lambda g: reindex_transects(g, g["flag"].iloc[0]))
+    .drop(columns="flag")   # drop flag here
+)
+
+transects_reindexed.to_file("transects_reindexed.geojson")
 
 #%%  Shoreline position for ref year 2005
 all_tgroups_2005 = []
@@ -96,15 +149,15 @@ def reindex_transects(group: gpd.GeoDataFrame, flagged: bool) -> gpd.GeoDataFram
 
     # Sort transects by their numeric suffix
     group = group.copy()
-    group["suffix"] = group.transect_id.str.extract(r"-(\d+)$").astype(int)
+    group["suffix"] = group.id.str.extract(r"-(\d+)$").astype(int)
 
     # Rotate suffixes: move 0 to the end, shift others down
     max_suffix = group["suffix"].max()
     group.loc[group["suffix"] == 0, "suffix"] = max_suffix + 1
     group["suffix"] = group["suffix"] - 1  # shift everything up by one
 
-    # Rebuild transect_id string with padded suffix
-    group["transect_id"] = group["site_id"] + "-" + group["suffix"].astype(str).str.zfill(4)
+    # Rebuild id string with padded suffix
+    group["id"] = group["site_id"] + "-" + group["suffix"].astype(str).str.zfill(4)
 
     return group.drop(columns="suffix")
 
@@ -190,8 +243,7 @@ shoreline_reindexed.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
 lines_gdf = points_to_lines(shoreline_reindexed)
 lines_gdf.to_file("lines_ref_shoreline_2005.geojson")
 
-#Export transects
-site_pair_distances = check_consecutive_labels(transects)
+
 
 
 # %%
