@@ -21,6 +21,10 @@ transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_ex
 #Trim it to just NZ, CoastSat is for the entire Pacific
 # Filter where 'id' contains 'nzd'
 transects = transects[transects.site_id.str.startswith("nzd")]
+
+
+#%%
+
 #%%
 results = []
 
@@ -82,8 +86,8 @@ all_tgroups_2005 = []
 target_crs = 2193
 
 #Loop through all NZ site id's
-for site_id in tqdm(transects.site_id.unique()):
-    site = transects[transects.site_id == site_id]
+for site_id in tqdm(transects_reindexed.site_id.unique()):
+    site = transects_reindexed[transects_reindexed.site_id == site_id]
     site.set_index("id", inplace=True)
     site = site.to_crs(target_crs) 
 
@@ -161,30 +165,6 @@ def reindex_transects(group: gpd.GeoDataFrame, flagged: bool) -> gpd.GeoDataFram
 
     return group.drop(columns="suffix")
 
-#% Plot all transects and ref points in map
-def sanity_plot(transects, shoreline_2005_gdf):
-    """ Plots extracted shoreline and reference transects"""
-    # Convert data to Web Mercator (EPSG:3857) for plotting with basemap
-    shoreline_web_mercator = shoreline_2005_gdf.to_crs(epsg=3857)
-    transects_web_mercator = transects.to_crs(epsg=3857)
-
-    # Create the plot
-    fig, ax = plt.subplots(figsize=(12, 12))
-
-    # Plot shoreline and transects in the correct projection
-    shoreline_web_mercator.plot(ax=ax, color='red', markersize=5, label="2005 Shoreline Points")
-    transects_web_mercator.plot(ax=ax, color='blue', linewidth=0.5, alpha=0.3, label="Transects")
-
-    # Add the basemap
-    ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.Esri.WorldImagery)
-
-    # Customize the plot
-    ax.set_title("2005 Shoreline Points Across All NZ Sites")
-    ax.legend()
-    ax.set_axis_off()
-
-    # Show the map
-    plt.show()
 
 #% From points to linestrings
 def points_to_lines(shoreline_2005_gdf):
@@ -215,33 +195,39 @@ def points_to_lines(shoreline_2005_gdf):
     lines_gdf = lines_gdf.to_crs(epsg=4326)
 
     return lines_gdf
+
+
+#% Plot all transects and ref points in map
+def sanity_plot(transects, shoreline_2005_gdf):
+    """ Plots extracted shoreline and reference transects"""
+    # Convert data to Web Mercator (EPSG:3857) for plotting with basemap
+    shoreline_web_mercator = shoreline_2005_gdf.to_crs(epsg=3857)
+    transects_web_mercator = transects.to_crs(epsg=3857)
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    # Plot shoreline and transects in the correct projection
+    shoreline_web_mercator.plot(ax=ax, color='red', markersize=5, label="2005 Shoreline Points")
+    transects_web_mercator.plot(ax=ax, color='blue', linewidth=0.5, alpha=0.3, label="Transects")
+
+    # Add the basemap
+    ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.Esri.WorldImagery)
+
+    # Customize the plot
+    ax.set_title("2005 Shoreline Points Across All NZ Sites")
+    ax.legend()
+    ax.set_axis_off()
+
+    # Show the map
+    plt.show()
 #%%
 
-site_pair_distances = check_consecutive_labels(shoreline_2005_gdf)
-# Show flagged sites
-site_pair_distances[site_pair_distances.flag]
-
-# Join flags back
-shoreline_flagged = shoreline_2005_gdf.merge(
-    site_pair_distances[["site_id", "flag"]],
-    on="site_id",
-    how="left"
-)
-
-# Apply reindexing per site
-shoreline_reindexed = (
-    shoreline_flagged.groupby("site_id", group_keys=False)
-    .apply(lambda g: reindex_transects(g, g["flag"].iloc[0]))
-    .drop(columns="flag")   # drop flag here
-)
-
-######################Export files#######################
-#Export points
-shoreline_reindexed.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
+shoreline_2005_gdf.to_crs(4326).to_file('trial_points_ref_shoreline_2005.geojson')
 
 #Export polylines
-lines_gdf = points_to_lines(shoreline_reindexed)
-lines_gdf.to_file("lines_ref_shoreline_2005.geojson")
+lines_gdf = points_to_lines(shoreline_2005_gdf)
+lines_gdf.to_file("trial_lines_ref_shoreline_2005.geojson")
 
 
 
