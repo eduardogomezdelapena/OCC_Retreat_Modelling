@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Create 2005 reference shoreline in points and polyline
+Clean CoastSat transects & create reference shoreline (yr 2005), export points and polyline.
 """
 #%%
 import numpy as np
@@ -104,7 +104,44 @@ def sanity_plot(transects, shoreline_2005_gdf):
 transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_extended.geojson")
 #Trim it to just NZ, CoastSat is for the entire Pacific
 transects = transects[transects.site_id.str.startswith("nzd")]
+
 #  Clean transects
+# Find which ids are duplicated
+dupe_ids = transects['id'][transects['id'].duplicated()].unique()
+print("Duplicate transect IDs:")
+print(dupe_ids)
+#Drop
+#transects=  transects.drop_duplicates(subset='id', keep='last')
+
+#If within duplicated, transects are close (too close), drop
+#Ok only duplicated transects are nzd0418 & nzd0419, they are overlapping.
+#Merge both, then drop transects that are too close (centroid distance)
+
+# 2. Merge 'nzd0418' into 'nzd0419'
+transects.loc[transects.site_id == "nzd0418", "site_id"] = "nzd0419"
+
+# 3. Renumber the 'id' for all transects in 'nzd0419'
+# Get the index mask for those rows
+mask = transects.site_id == "nzd0419"
+
+# Sort by geometry or existing id if you want consistent ordering (optional)
+subset = transects[mask].sort_values(by="id").copy()
+
+# Assign formatted ID: nzd0419-0000, nzd0419-0001, ...
+subset["id"] = [f"nzd0419-{i:04d}" for i in range(len(subset))]
+
+# 4. Put the updated subset back into the original GeoDataFrame
+transects.update(subset)
+
+#Check if it worked
+transects[transects.site_id == "nzd0419"][["site_id", "id"]].sort_values("id")
+
+#Now drop 
+
+
+
+
+
 site_pair_distance = check_consecutive_labels(transects)
 #  Show flagged sites
 site_pair_distance[site_pair_distance.flag]
@@ -120,6 +157,10 @@ transects_reindexed = (
     .apply(lambda g: reindex_transects(g, g["flag"].iloc[0]))
     .drop(columns="flag")   # drop flag here
 )
+
+
+
+
 ###################################################################################################
 #%%  Generate shoreline points, reference year: 20005
 all_tgroups_2005 = []

@@ -138,13 +138,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     )
 
     # Append retreat columns
-    # merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
-    historic_retreat_df = retreat_df.add(
-        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-    )
-    merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
+    # historic_retreat_df = retreat_df.add(
+    #     (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+    # )
+    # merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
     return merged_retreat_df
 
@@ -191,7 +191,7 @@ merged= pd.merge(meta_data,slr_data,
 nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_WGS84}", geometry= 'geom_nzrise')
 
 coastsat_merged = load_and_merge_coastsat_data(
-    "transects_extended.geojson",
+    "transects_reindexed.geojson",
     "points_ref_shoreline_2005.geojson",
     CRS_WGS84
 )
@@ -235,6 +235,17 @@ for year in years:
 
         # Subset dataframe with specific projection year & specific scenario
         subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
+
+        lol=  subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
+
+
+# Find which ids are duplicated
+dupe_ids = subset['coastsat_transect_id'][subset['coastsat_transect_id'].duplicated()].unique()
+
+# Get the first duplicate group (all rows with that id)
+first_dupe_group = subset[subset['coastsat_transect_id'] == dupe_ids[1]]
+
+
         subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
         #Calc new point location according to retreat_50
@@ -256,17 +267,15 @@ for year in years:
         #Because the transformation from transects to points needs cleaning (labels)
         #Here some cleaning is added or even better... clean coastsat transects directly
 
-
-
         #append new_points 
         # subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
         subset['geom_new_points'] = new_points.to_crs(4326)
 
         #% From points to linestrings, careful on what active geometry goes inside
         lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
-        #lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
         cols_to_display= ['geom_new_points','50','retreat_50']
-        #subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
        
 #%%
 # Plot new points, compare to ref
