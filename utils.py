@@ -235,7 +235,7 @@ for year in years:
 
         # Subset dataframe with specific projection year & specific scenario
         subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
-        subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
+        #subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
         #Calc new point location according to retreat_50
         bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile

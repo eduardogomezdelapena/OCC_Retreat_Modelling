@@ -185,12 +185,35 @@ mask = transects.site_id == to_site
 # Project to appropriate CRS for accurate distance calculation
 subset = transects[mask].to_crs(epsg=crs_epsg).copy()
 
+
+subset= subset.drop_duplicates(subset=['id'], keep='first')
+
 # Calculate centroids
-subset['centroid'] = subset.geometry.centroid
+subset['centroid'] = subset.to_crs(epsg=crs_epsg).geometry.centroid
 subset['centroid_x'] = subset.geometry.centroid.x
 
+distances = [
+    subset['centroid'].iloc[i].distance(subset['centroid'].iloc[i+1])
+    for i in range(len(subset['centroid'])-1)
+]
+median_val= np.median(distances)
+
+# Set a distance threshold (in meters)
+threshold = median_val *0.5  # adjust as needed
+
+# Indices of transects to drop (the second one in each "too close" pair)
+drop_indices = [
+    subset.index[i + 1]  # drop the second transect in the pair
+    for i, dist in enumerate(distances)
+    if dist < median_val - threshold or dist > median_val + threshold  
+]
+
+# Drop them from subset
+subset = subset.drop(index=drop_indices).copy()
+
+
 # Drop duplicates based on centroid.x (keeping last)
-subset = subset.drop_duplicates(subset=['centroid_x'], keep='last')
+# subset = subset.drop_duplicates(subset=['centroid_x'], keep='last')
 
 # Sort transects by centroid's x coordinate (easting)
 subset = subset.sort_values(by='centroid_x').copy()
@@ -206,7 +229,9 @@ subset = subset.drop(columns=['centroid','centroid_x'])
 subset = subset.to_crs(transects.crs)
 transects.update(subset)
    
-transects.to_file("trial_transects_reindexed.geojson")
+# transects[transects.site_id == 'nzd0419'].id
+
+# transects.to_file("trial_transects_reindexed.geojson")
 
 
 #%%
@@ -247,7 +272,7 @@ transects_reindexed = (
 )
 
 #Export clean transects 
-transects_reindexed.to_file("trial_transects_reindexed.geojson")
+transects_reindexed.to_file("transects_reindexed.geojson")
 
 ###################################################################################################
 #%%  Generate shoreline points, reference year: 20005
