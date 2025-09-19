@@ -17,17 +17,34 @@ from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
 #%%
 def merge_and_renumber(transects: gpd.GeoDataFrame, from_site: str,
-                        to_site: str) -> gpd.GeoDataFrame:
+                        to_site: str, crs_epsg: int = 2193) -> gpd.GeoDataFrame:
     """
     Merge transects from one site_id into another and renumber IDs in the target site.
     """
     transects.loc[transects.site_id == from_site , "site_id"] = to_site  #change id label
     # Get the index mask for those rows
     mask = transects.site_id == to_site
-    # Sort subset by original index (i.e., row order in transects)
-    subset = transects[mask].sort_index().copy()
-    # Assign formatted ID: nzd0419-0000, nzd0419-0001, ...
+   # Project to appropriate CRS for accurate distance calculation
+    subset = transects[mask].to_crs(epsg=crs_epsg).copy()
+    
+    # Calculate centroids
+    subset['centroid'] = subset.geometry.centroid
+    
+    # Drop duplicates based on centroid.x (keeping last)
+    subset = subset.drop_duplicates(subset=subset['centroid'].x, keep='last')
+
+    # Sort transects by centroid's x coordinate (easting)
+    subset = subset.sort_values(by=subset.centroid.x).copy()
+    
+    # Assign new IDs in geographic order
     subset["id"] = [f"{to_site}-{i:04d}" for i in range(len(subset))]
+    
+    # Drop centroid helper column before updating
+    subset = subset.drop(columns='centroid')
+    
+    # Update original GeoDataFrame (in original CRS)
+    # Note: subset is currently projected, so re-project back
+    subset = subset.to_crs(transects.crs)
     transects.update(subset)
     return transects
 
@@ -155,11 +172,52 @@ dupe_ids = transects['id'][transects['id'].duplicated()].unique()
 print("Duplicate transect IDs:")
 print(dupe_ids)
 
+
+#%%
+
+from_site="nzd0418"
+to_site="nzd0419"
+crs_epsg: int = 2193
+
+transects.loc[transects.site_id == from_site , "site_id"] = to_site  #change id label
+# Get the index mask for those rows
+mask = transects.site_id == to_site
+# Project to appropriate CRS for accurate distance calculation
+subset = transects[mask].to_crs(epsg=crs_epsg).copy()
+
+# Calculate centroids
+subset['centroid'] = subset.geometry.centroid
+subset['centroid_x'] = subset.geometry.centroid.x
+
+# Drop duplicates based on centroid.x (keeping last)
+subset = subset.drop_duplicates(subset=['centroid_x'], keep='last')
+
+# Sort transects by centroid's x coordinate (easting)
+subset = subset.sort_values(by='centroid_x').copy()
+
+# Assign new IDs in geographic order
+subset["id"] = [f"{to_site}-{i:04d}" for i in range(len(subset))]
+
+# Drop centroid helper column before updating
+subset = subset.drop(columns=['centroid','centroid_x'])
+
+# Update original GeoDataFrame (in original CRS)
+# Note: subset is currently projected, so re-project back
+subset = subset.to_crs(transects.crs)
+transects.update(subset)
+   
+transects.to_file("trial_transects_reindexed.geojson")
+
+
+#%%
+
+
+
 # Merge overlapping sites and renumber
-transects = merge_and_renumber(transects, from_site="nzd0418", to_site="nzd0419")   
+# transects = merge_and_renumber(transects, from_site="nzd0418", to_site="nzd0419")   
 
 #Export clean transects 
-transects_reindexed.to_file("trial_transects_reindexed.geojson")
+
 
 #%%
 #Now drop 
