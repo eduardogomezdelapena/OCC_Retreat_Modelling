@@ -235,17 +235,6 @@ for year in years:
 
         # Subset dataframe with specific projection year & specific scenario
         subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
-
-        lol=  subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
-
-
-# Find which ids are duplicated
-dupe_ids = subset['coastsat_transect_id'][subset['coastsat_transect_id'].duplicated()].unique()
-
-# Get the first duplicate group (all rows with that id)
-first_dupe_group = subset[subset['coastsat_transect_id'] == dupe_ids[1]]
-
-
         subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
         #Calc new point location according to retreat_50

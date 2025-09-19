@@ -16,6 +16,51 @@ from tqdm import tqdm  # progress bar
 from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
 #%%
+def merge_and_renumber(transects: gpd.GeoDataFrame, from_site: str,
+                        to_site: str) -> gpd.GeoDataFrame:
+    """
+    Merge transects from one site_id into another and renumber IDs in the target site.
+    """
+    transects.loc[transects.site_id == from_site , "site_id"] = to_site  #change id label
+    # Get the index mask for those rows
+    mask = transects.site_id == to_site
+    # Sort subset by original index (i.e., row order in transects)
+    subset = transects[mask].sort_index().copy()
+    # Assign formatted ID: nzd0419-0000, nzd0419-0001, ...
+    subset["id"] = [f"{to_site}-{i:04d}" for i in range(len(subset))]
+    transects.update(subset)
+    return transects
+
+def drop_close_transects(transects: gpd.GeoDataFrame, 
+                         site_id: str, crs_epsg: int = 2193) -> gpd.GeoDataFrame:
+    """
+    Drop transects within a given site_id where consecutive transect centroids
+    are closer than the median distance.
+    Reassign IDs after dropping.
+    """
+    subset = transects[transects.site_id == site_id ].to_crs(epsg=crs_epsg).copy()
+    rep_points = subset.centroid   # Get centroids
+    # Distances between consecutive centroids
+    distances = [
+        rep_points.iloc[i].distance(rep_points.iloc[i + 1])
+        for i in range(len(rep_points) - 1)
+    ]
+    median_distance = np.median(distances)
+    print(median_distance)
+    # Find indices (from the original transects GeoDataFrame) to drop
+    drop_indices = [
+        subset.index[i + 1]
+        for i, dist in enumerate(distances)
+        if dist < median_distance * 0.5
+    ]
+    #Drop from original DataFrame
+    transects = transects.drop(index=drop_indices)
+    #Reassign IDs in the site after dropping
+    updated_subset = transects[transects.site_id == site_id].sort_values(by="geometry").copy()
+    updated_subset["id"] = [f"{site_id}-{i:04d}" for i in range(len(updated_subset))]
+    transects.update(updated_subset)
+    return transects
+
 def check_consecutive_labels(transects: gpd.GeoDataFrame):
     """Sometimes transect labels 0000-0001 are not geograhpically adjacent, flag if not csctive. """
     results = []
@@ -104,44 +149,29 @@ def sanity_plot(transects, shoreline_2005_gdf):
 transects = gpd.read_file("https://uoa-eresearch.github.io/CoastSat/transects_extended.geojson")
 #Trim it to just NZ, CoastSat is for the entire Pacific
 transects = transects[transects.site_id.str.startswith("nzd")]
-
-#  Clean transects
+#%% CLEANING TRANSECTS
 # Find which ids are duplicated
 dupe_ids = transects['id'][transects['id'].duplicated()].unique()
 print("Duplicate transect IDs:")
 print(dupe_ids)
-#Drop
-#transects=  transects.drop_duplicates(subset='id', keep='last')
 
-#If within duplicated, transects are close (too close), drop
-#Ok only duplicated transects are nzd0418 & nzd0419, they are overlapping.
-#Merge both, then drop transects that are too close (centroid distance)
+# Merge overlapping sites and renumber
+transects = merge_and_renumber(transects, from_site="nzd0418", to_site="nzd0419")   
 
-# 2. Merge 'nzd0418' into 'nzd0419'
-transects.loc[transects.site_id == "nzd0418", "site_id"] = "nzd0419"
+#Export clean transects 
+transects_reindexed.to_file("trial_transects_reindexed.geojson")
 
-# 3. Renumber the 'id' for all transects in 'nzd0419'
-# Get the index mask for those rows
-mask = transects.site_id == "nzd0419"
-
-# Sort by geometry or existing id if you want consistent ordering (optional)
-subset = transects[mask].sort_values(by="id").copy()
-
-# Assign formatted ID: nzd0419-0000, nzd0419-0001, ...
-subset["id"] = [f"nzd0419-{i:04d}" for i in range(len(subset))]
-
-# 4. Put the updated subset back into the original GeoDataFrame
-transects.update(subset)
-
-#Check if it worked
-transects[transects.site_id == "nzd0419"][["site_id", "id"]].sort_values("id")
-
+#%%
 #Now drop 
+print("Before dropping:")
+print(transects[transects.site_id == 'nzd0419'][['site_id', 'id']].sort_values('id'))
 
+transects = drop_close_transects(transects, "nzd0419")
+# After dropping
+print("\nAfter dropping:")
+print(transects[transects.site_id == 'nzd0419'][['site_id', 'id']].sort_values('id'))
 
-
-
-
+#Consecutive label check (ocasional bug between 000-001 ids)
 site_pair_distance = check_consecutive_labels(transects)
 #  Show flagged sites
 site_pair_distance[site_pair_distance.flag]
@@ -158,8 +188,8 @@ transects_reindexed = (
     .drop(columns="flag")   # drop flag here
 )
 
-
-
+#Export clean transects 
+transects_reindexed.to_file("trial_transects_reindexed.geojson")
 
 ###################################################################################################
 #%%  Generate shoreline points, reference year: 20005
