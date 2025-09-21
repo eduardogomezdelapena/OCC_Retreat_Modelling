@@ -16,67 +16,6 @@ from tqdm import tqdm  # progress bar
 from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
 #%%
-def merge_and_renumber(transects: gpd.GeoDataFrame, from_site: str,
-                        to_site: str, crs_epsg: int = 2193) -> gpd.GeoDataFrame:
-    """
-    Merge transects from one site_id into another and renumber IDs in the target site.
-    """
-    transects.loc[transects.site_id == from_site , "site_id"] = to_site  #change id label
-    # Get the index mask for those rows
-    mask = transects.site_id == to_site
-   # Project to appropriate CRS for accurate distance calculation
-    subset = transects[mask].to_crs(epsg=crs_epsg).copy()
-    
-    # Calculate centroids
-    subset['centroid'] = subset.geometry.centroid
-    
-    # Drop duplicates based on centroid.x (keeping last)
-    subset = subset.drop_duplicates(subset=subset['centroid'].x, keep='last')
-
-    # Sort transects by centroid's x coordinate (easting)
-    subset = subset.sort_values(by=subset.centroid.x).copy()
-    
-    # Assign new IDs in geographic order
-    subset["id"] = [f"{to_site}-{i:04d}" for i in range(len(subset))]
-    
-    # Drop centroid helper column before updating
-    subset = subset.drop(columns='centroid')
-    
-    # Update original GeoDataFrame (in original CRS)
-    # Note: subset is currently projected, so re-project back
-    subset = subset.to_crs(transects.crs)
-    transects.update(subset)
-    return transects
-
-def drop_close_transects(transects: gpd.GeoDataFrame, 
-                         site_id: str, crs_epsg: int = 2193) -> gpd.GeoDataFrame:
-    """
-    Drop transects within a given site_id where consecutive transect centroids
-    are closer than the median distance.
-    Reassign IDs after dropping.
-    """
-    subset = transects[transects.site_id == site_id ].to_crs(epsg=crs_epsg).copy()
-    rep_points = subset.centroid   # Get centroids
-    # Distances between consecutive centroids
-    distances = [
-        rep_points.iloc[i].distance(rep_points.iloc[i + 1])
-        for i in range(len(rep_points) - 1)
-    ]
-    median_distance = np.median(distances)
-    print(median_distance)
-    # Find indices (from the original transects GeoDataFrame) to drop
-    drop_indices = [
-        subset.index[i + 1]
-        for i, dist in enumerate(distances)
-        if dist < median_distance * 0.5
-    ]
-    #Drop from original DataFrame
-    transects = transects.drop(index=drop_indices)
-    #Reassign IDs in the site after dropping
-    updated_subset = transects[transects.site_id == site_id].sort_values(by="geometry").copy()
-    updated_subset["id"] = [f"{site_id}-{i:04d}" for i in range(len(updated_subset))]
-    transects.update(updated_subset)
-    return transects
 
 def check_consecutive_labels(transects: gpd.GeoDataFrame):
     """Sometimes transect labels 0000-0001 are not geograhpically adjacent, flag if not csctive. """
@@ -172,87 +111,9 @@ dupe_ids = transects['id'][transects['id'].duplicated()].unique()
 print("Duplicate transect IDs:")
 print(dupe_ids)
 
-
-#%%
-
-from_site="nzd0418"
-to_site="nzd0419"
-crs_epsg: int = 2193
-
-transects.loc[transects.site_id == from_site , "site_id"] = to_site  #change id label
-# Get the index mask for those rows
-mask = transects.site_id == to_site
-# Project to appropriate CRS for accurate distance calculation
-subset = transects[mask].to_crs(epsg=crs_epsg).copy()
-
-
-subset= subset.drop_duplicates(subset=['id'], keep='first')
-
-# Calculate centroids
-subset['centroid'] = subset.to_crs(epsg=crs_epsg).geometry.centroid
-subset['centroid_x'] = subset.geometry.centroid.x
-
-distances = [
-    subset['centroid'].iloc[i].distance(subset['centroid'].iloc[i+1])
-    for i in range(len(subset['centroid'])-1)
-]
-median_val= np.median(distances)
-
-# Set a distance threshold (in meters)
-threshold = median_val *0.5  # adjust as needed
-
-# Indices of transects to drop (the second one in each "too close" pair)
-drop_indices = [
-    subset.index[i + 1]  # drop the second transect in the pair
-    for i, dist in enumerate(distances)
-    if dist < median_val - threshold or dist > median_val + threshold  
-]
-
-# Drop them from subset
-subset = subset.drop(index=drop_indices).copy()
-
-
-# Drop duplicates based on centroid.x (keeping last)
-# subset = subset.drop_duplicates(subset=['centroid_x'], keep='last')
-
-# Sort transects by centroid's x coordinate (easting)
-subset = subset.sort_values(by='centroid_x').copy()
-
-# Assign new IDs in geographic order
-subset["id"] = [f"{to_site}-{i:04d}" for i in range(len(subset))]
-
-# Drop centroid helper column before updating
-subset = subset.drop(columns=['centroid','centroid_x'])
-
-# Update original GeoDataFrame (in original CRS)
-# Note: subset is currently projected, so re-project back
-subset = subset.to_crs(transects.crs)
-transects.update(subset)
-   
-# transects[transects.site_id == 'nzd0419'].id
-
-# transects.to_file("trial_transects_reindexed.geojson")
-
-
-#%%
-
-
-
-# Merge overlapping sites and renumber
-# transects = merge_and_renumber(transects, from_site="nzd0418", to_site="nzd0419")   
-
-#Export clean transects 
-
-
-#%%
-#Now drop 
-print("Before dropping:")
-print(transects[transects.site_id == 'nzd0419'][['site_id', 'id']].sort_values('id'))
-
-transects = drop_close_transects(transects, "nzd0419")
-# After dropping
-print("\nAfter dropping:")
-print(transects[transects.site_id == 'nzd0419'][['site_id', 'id']].sort_values('id'))
+#Hardcode drop
+transects = transects[transects.site_id != 'nzd0418']
+transects = transects[transects.site_id != 'nzd0419']
 
 #Consecutive label check (ocasional bug between 000-001 ids)
 site_pair_distance = check_consecutive_labels(transects)
@@ -270,9 +131,6 @@ transects_reindexed = (
     .apply(lambda g: reindex_transects(g, g["flag"].iloc[0]))
     .drop(columns="flag")   # drop flag here
 )
-
-#Export clean transects 
-transects_reindexed.to_file("transects_reindexed.geojson")
 
 ###################################################################################################
 #%%  Generate shoreline points, reference year: 20005
