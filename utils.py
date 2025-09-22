@@ -139,13 +139,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     )
 
     # Append retreat columns
-    # merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
-    historic_retreat_df = retreat_df.sub(
-        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-    )
-    merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
+    # historic_retreat_df = retreat_df.sub(
+    #     (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+    # )
+    # merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
     return merged_retreat_df
 
@@ -263,9 +263,9 @@ for year in years:
 
         #% From points to linestrings, careful on what active geometry goes inside
         lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
-        lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
         cols_to_display= ['geom_new_points','50','retreat_50']
-        subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
        
 #%%
 # Plot new points, compare to ref
