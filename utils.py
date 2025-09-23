@@ -137,7 +137,7 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     # To be filled with means from triggered sites
     triggered_means = []
 
-    def fix_large_inverse(slope):
+    def fillna_mildslop_smooth(slope):
         # Fill NaNs with the group-wise mean
         mean_val = np.nanmean(slope)
         slope = slope.fillna(mean_val)
@@ -155,12 +155,25 @@ def calc_retreat(all_merged, c_adjust = 0.5):
             slope = pd.Series(filtfilt(b, a, slope), index=slope.index)
         
         return slope
-
-    all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
-                                      .transform(fix_large_inverse)
     
     #Clean and fix historic trend
+    def fillna_smooth(trend):
+       # Fill NaNs with the group-wise mean
+        mean_val = np.nanmean(trend)
+        trend = trend.fillna(mean_val)
+
+        # Apply Butterworth smoothing if enough points
+        if len(trend) > 3:
+            b, a = butter(2, 0.01, btype='low', analog=False) #filter to smooth longshore variability
+            trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
+        
+        return trend
+
+    all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
+                                      .transform(fillna_mildslop_smooth)
     
+    all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
+                                      .transform(fillna_smooth)   
 
     # Apply Bruun rule
     denom = c_adjust * all_merged["beach_slope"]
@@ -173,13 +186,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     )
 
     # Append retreat columns
-    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+    # merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
-    # historic_retreat_df = retreat_df.sub(
-    #     (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-    # )
-    # merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
+    historic_retreat_df = retreat_df.sub(
+        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+    )
+    merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
     return merged_retreat_df
 
@@ -299,9 +312,9 @@ for year in years:
 
         #% From points to linestrings, careful on what active geometry goes inside
         lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
-        lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
         cols_to_display= ['geom_new_points','50','retreat_50']
-        subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
        
 #%%
 # Plot new points, compare to ref
