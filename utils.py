@@ -164,7 +164,7 @@ def calc_retreat(all_merged, c_adjust = 0.5):
 
         # Apply Butterworth smoothing if enough points
         if len(trend) > 3:
-            b, a = butter(2, 0.01, btype='low', analog=False) #filter to smooth longshore variability
+            b, a = butter(2, 0.2, btype='low', analog=False) #filter to smooth longshore variability
             trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
         
         return trend
