@@ -17,6 +17,7 @@ import contextily as ctx
 from tqdm import tqdm  # progress bar
 from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
+from scipy.signal import butter, filtfilt
 #%%
 # Constants
 EARTH_RADIUS_KM = 6371.0
@@ -129,8 +130,41 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
     # a bit ad hoc, matches with some lidar measurements
 
+    #This needs to be for each site_id in all_merged
+    # clean and filter beach slopes
+    # lol= all_merged['beach_slope']
+
+    # To be filled with means from triggered sites
+    triggered_means = []
+
+    def fix_large_inverse(slope):
+        # Fill NaNs with the group-wise mean
+        mean_val = np.nanmean(slope)
+        slope = slope.fillna(mean_val)
+
+        # Replace values where 1 / slope > 60 and slope != 0
+        inv_condition = (slope != 0) & ((1 / slope) > 60)
+        if inv_condition.any():
+            slope[inv_condition] = mean_val
+            site_id = slope.name  # groupby assigns the group key to Series.name
+            triggered_means.append((site_id, mean_val))
+
+        # Apply Butterworth smoothing if enough points
+        if len(slope) > 6:
+            b, a = butter(2, 0.01, btype='low', analog=False) #filter to smooth longshore variability
+            slope = pd.Series(filtfilt(b, a, slope), index=slope.index)
+        
+        return slope
+
+    all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
+                                      .transform(fix_large_inverse)
+    
+    #Clean and fix historic trend
+    
+
+    # Apply Bruun rule
     denom = c_adjust * all_merged["beach_slope"]
-    # Apply Bruun rule (beach slope * c_adjust)
+
     retreat_df = (
         all_merged[slr_quantiles]
         .div(denom , axis=0)
@@ -222,6 +256,8 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 
 #Now calc retreat
 retreat = calc_retreat(all_merged)
+
+
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
