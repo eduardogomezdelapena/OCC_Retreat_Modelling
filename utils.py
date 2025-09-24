@@ -169,8 +169,9 @@ def calc_retreat(all_merged, c_adjust = 0.5):
             # trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
 
             # Choose window_length and polyorder based on data size
-            window_length = min(len(trend) if len(trend) % 2 == 1 else len(trend) - 1, 11)  # Must be odd and <= len
-            polyorder = min(2, window_length - 1)  # Polyorder must be < window_length
+            # Choose window_length and polyorder based on data size
+            window_length = min(len(trend) if len(trend) % 2 == 1 else len(trend) - 1, 21)
+            polyorder = 2  # linear fit = more smoothing
 
             # Apply smoothing
             smoothed = savgol_filter(trend, window_length=window_length, polyorder=polyorder)
@@ -235,9 +236,8 @@ def points_to_polylines(subset):
     # Step 4: Reproject to WGS84 (EPSG:4326) for web tools like Leaflet / Google Earth
     lines_gdf = lines_gdf.to_crs(epsg=4326)
     return(lines_gdf)
-
+############################################################################################
 #%%
-
 #CRS_NZTM , CRS_WGS84
 meta_data_fp = "NZ_VLM_final_May24.csv"
 slr_fp = "NZ_Searise_noVLM-2005.csv"
@@ -277,103 +277,13 @@ print(all_merged.columns)
 all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
                                geometry= 'geom_points_ref2005')
 
-
-
 #%%
-# def calc_retreat(all_merged, c_adjust = 0.5):
-# """ Shoreline retreat calculation. Bruun rule"""
-
-c_adjust = 0.5
-
-slr_quantiles = ["17", "50", "83"]
-
-# c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
-# a bit ad hoc, matches with some lidar measurements
-
-#This needs to be for each site_id in all_merged
-# clean and filter beach slopes
-# lol= all_merged['beach_slope']
-
-# To be filled with means from triggered sites
-triggered_means = []
-
-def fillna_mildslop_smooth(slope):
-    # Fill NaNs with the group-wise mean
-    mean_val = np.nanmean(slope)
-    slope = slope.fillna(mean_val)
-
-    # Replace values where 1 / slope > 60 and slope != 0
-    inv_condition = (slope != 0) & ((1 / slope) > 60)
-    if inv_condition.any():
-        slope[inv_condition] = mean_val
-        site_id = slope.name  # groupby assigns the group key to Series.name
-        triggered_means.append((site_id, mean_val))
-
-    # Apply Butterworth smoothing if enough points
-    if len(slope) > 6:
-        b, a = butter(2, 0.01, btype='low', analog=False) #filter to smooth longshore variability
-        slope = pd.Series(filtfilt(b, a, slope), index=slope.index)
-    
-    return slope
-
-#Clean and fix historic trend
-def fillna_smooth(trend):
-    # Fill NaNs with the group-wise mean
-    mean_val = np.nanmean(trend)
-    trend = trend.fillna(mean_val)
-
-    # Apply Butterworth smoothing if enough points
-    if len(trend) >= 3:
-        # b, a = butter(2, 0.2, btype='low', analog=False) #filter to smooth longshore variability
-        # trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
-
-        # Choose window_length and polyorder based on data size
-        window_length = min(len(trend) if len(trend) % 2 == 1 else len(trend) - 1, 21)
-        polyorder = 2  # linear fit = more smoothing
-
-        # Apply smoothing
-        smoothed = savgol_filter(trend, window_length=window_length, polyorder=polyorder)
-        trend = pd.Series(smoothed, index=trend.index)            
-        
-    return trend
-#%%
-lol= all_merged['beach_slope']
-all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
-                                    .transform(fillna_mildslop_smooth)
-lol2= all_merged['beach_slope']
+#Step back, only Kaipara
+merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
 
 
-
-lol3 = all_merged['trend']
-all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
-                                    .transform(fillna_smooth)   
-lol4 = all_merged['trend']
-
-# Apply Bruun rule
-denom = c_adjust * all_merged["beach_slope"]
-
-retreat_df = (
-    all_merged[slr_quantiles]
-    .div(denom , axis=0)
-    .rename(columns=lambda c: f"retreat_{c}")
-    .round(2)  # ensures 3 decimals
-)
-
-# Append retreat columns
-# merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
-
-    #(Optional) Historic rate adjustment. Trend is in (m/year)
-historic_retreat_df = retreat_df.sub(
-    (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-)
-merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
-
-# return merged_retreat_df
-
-#%%
 #Now calc retreat
-retreat = calc_retreat(all_merged)
-
+retreat = calc_retreat(merged_kaipara)
 
 #%%
 #MWE of retreat polyline in one site
