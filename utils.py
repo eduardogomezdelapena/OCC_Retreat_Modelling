@@ -281,9 +281,9 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 #Step back, only Kaipara
 merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
 
-
 #Now calc retreat
 retreat = calc_retreat(merged_kaipara)
+
 
 #%%
 #MWE of retreat polyline in one site
@@ -331,6 +331,63 @@ for year in years:
         subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
        
 #%%
+# Extract and prepare data
+subset_vis = subset.copy()  # Just to be safe
+
+# Extract last 3 digits of transect ID
+subset_vis['id_suffix'] = subset_vis['coastsat_transect_id'].str[-3:]
+
+# Convert to int for sorting
+subset_vis['id_suffix'] = subset_vis['id_suffix'].astype(int)
+
+# Sort by suffix
+subset_vis = subset_vis.sort_values('id_suffix')
+
+# Extract columns
+x = subset_vis['id_suffix']
+y1 = subset_vis['beach_slope']
+y2 = subset_vis['trend']
+y3 = subset_vis['retreat_50']
+
+# Start figure and first axis
+fig, ax1 = plt.subplots(figsize=(14, 6))
+
+color1 = 'tab:blue'
+ax1.set_xlabel('Transect Suffix (last 3 digits)')
+ax1.set_ylabel('Beach Slope (tanB)', color=color1)
+ax1.plot(x, y1, color=color1, marker='o', label='Beach Slope')
+ax1.tick_params(axis='y', labelcolor=color1)
+
+# Second y-axis (sharing x)
+ax2 = ax1.twinx()
+color2 = 'tab:green'
+ax2.set_ylabel('Satellite Trend (m/year)', color=color2)
+ax2.plot(x, y2, color=color2, marker='s', label='Trend')
+ax2.tick_params(axis='y', labelcolor=color2)
+
+# Third y-axis (offset from right)
+ax3 = ax1.twinx()
+color3 = 'tab:red'
+ax3.spines['right'].set_position(("axes", 1.1))  # offset
+ax3.set_ylabel('Retreat 50th percentile (m)', color=color3)
+ax3.plot(x, y3, color=color3, marker='^', label='Retreat 50')
+ax3.tick_params(axis='y', labelcolor=color3)
+
+# Add grid and title
+ax1.grid(True)
+
+# X-ticks formatting
+# ax1.set_xticks(x)
+# ax1.set_xticklabels(x, rotation=45)
+
+step = 5  # show every 5th label (adjust as needed)
+ax1.set_xticks(x[::step])
+ax1.set_xticklabels(x[::step], rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+#%%
 # Plot new points, compare to ref
 
 # Add basemap (Web Mercator reprojection)
@@ -349,7 +406,6 @@ ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)  # or another basema
 ax.legend()
 ax.set_title(f"NZ Shoreline Retreat Projection - {year}", fontsize=14)
 ax.set_axis_off()
-plt.tight_layout()
 plt.show()
 
 
