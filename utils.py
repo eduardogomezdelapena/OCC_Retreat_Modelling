@@ -314,15 +314,61 @@ for year in years:
         # Calculate new distance from start of line
         new_distances = ref_distances_along_lines - bruun_slr_qt
         
+        # Convert orientation to radians
+        orientations_rad = np.deg2rad(subset['orientation'])
+        new_geoms = []
+
         # Interpolate points at new distances
-        new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
+        # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
+
+                # Iterate through rows
+        for i, row in subset.iterrows():
+            line = subset.geom_transect_coastsat.to_crs(2193).loc[i]
+            new_dist = new_distances.loc[i]
+            orientation = orientations_rad.loc[i]
+
+            if 0 <= new_dist <= line.length:
+                # Interpolate as normal
+                new_point = line.interpolate(new_dist)
+            else:
+                # Extrapolation needed
+                # Get start or end point depending on whether new_dist is <0 or >length
+                if new_dist < 0:
+                    base_point = Point(line.coords[0])
+                    distance_out = -new_dist
+                    # Move backward (orientation + 180)
+                    theta = orientation + np.pi
+                else:
+                    base_point = Point(line.coords[-1])
+                    distance_out = new_dist - line.length
+                    # Move forward
+                    theta = orientation
+
+                # Compute new point using simple trigonometry
+                dx = distance_out * np.sin(theta)
+                dy = distance_out * np.cos(theta)
+                new_point = Point(base_point.x + dx, base_point.y + dy)
+
+            new_geoms.append(new_point)
+#%%
+        # Create a GeoSeries and convert back to WGS84
+        new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
+
+        # Also reset subset to ensure 1-to-1 alignment
+        subset = subset.reset_index(drop=True)
+
+        # Assign to DataFrame
+        subset['geom_new_points'] = new_points.to_crs(4326)
+#%%
 
         #Because the transformation from transects to points needs cleaning (labels)
         #Here some cleaning is added or even better... clean coastsat transects directly
 
         #append new_points 
         # subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
-        subset['geom_new_points'] = new_points.to_crs(4326)
+        # subset['geom_new_points'] = new_points.to_crs(4326)
+    
+
 
         #% From points to linestrings, careful on what active geometry goes inside
         lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
