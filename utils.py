@@ -359,6 +359,42 @@ for year in years:
 
         # Assign to DataFrame
         subset['geom_new_points'] = new_points.to_crs(4326)
+#%% Smoothing
+
+from scipy.interpolate import UnivariateSpline
+from scipy.signal import savgol_filter
+
+# --- Step 1. Extract arrays from ordered points ---
+x = subset["geom_new_points"].apply(lambda p: p.x).values
+y = subset["geom_new_points"].apply(lambda p: p.y).values
+# s = np.arange(len(x))  # use index as "alongshore distance" since it's ordered
+
+# # --- Step 2. Fit smoothing splines ---
+# # Adjust 's' parameter for smoothing strength
+# spl_x = UnivariateSpline(s, x, s=1)  
+# spl_y = UnivariateSpline(s, y, s=1)
+
+# # --- Step 3. Generate smoothed coordinates ---
+# s_smooth = np.linspace(s.min(), s.max(), 500)
+# x_smooth = spl_x(s_smooth)
+# y_smooth = spl_y(s_smooth)
+#This probably has to be determined with the length of the data
+wl= 41
+
+# smooth with moving polynomial fit
+x_smooth = savgol_filter(x, window_length=wl, polyorder=3)
+y_smooth = savgol_filter(y, window_length=wl, polyorder=3)
+
+smoothed_line = LineString(np.column_stack([x_smooth, y_smooth]))
+
+# --- Step 4. Wrap into a GeoDataFrame for plotting ---
+gdf_smoothed = gpd.GeoDataFrame(geometry=[smoothed_line], crs=subset.crs)
+
+# --- Example plot ---
+ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
+gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
+ax.legend()
+
 #%%
 
         #Because the transformation from transects to points needs cleaning (labels)
@@ -369,13 +405,14 @@ for year in years:
         # subset['geom_new_points'] = new_points.to_crs(4326)
     
 
-
         #% From points to linestrings, careful on what active geometry goes inside
         lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
         lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
         cols_to_display= ['geom_new_points','50','retreat_50']
         subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
        
+
+       lol= retreat.ERODIBILITY
 #%%
 # Extract and prepare data
 subset_vis = subset.copy()  # Just to be safe
