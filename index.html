@@ -52,6 +52,19 @@
     .custom-control .group {
       margin-bottom: 10px;
     }
+    .color-line {
+    display: inline-block;
+    width: 20px;
+    height: 0;
+    border-top: 3px solid;
+    margin-left: 6px;
+    vertical-align: middle;
+    box-shadow: 0 0 2px  black; /* black glow outline for visibility */
+    }
+    .color-line.baseline {
+      border-top: 3px dashed yellow;
+      box-shadow: 0 0 2px  black; /* black glow outline for visibility */
+    }
   </style>
 </head>
 <body>
@@ -65,68 +78,120 @@
 
       <details>
         <summary><strong>SSP1 — 1.9</strong></summary>
-        <label><input type="checkbox" id="layer19_2005_lines"> 2005 (Baseline) </label>                   
-        <label><input type="checkbox" id="layer19_2100_lines"> 2100 (Projection) </label>             
+        <label>
+           <span class="color-line baseline"></span>
+          <input type="checkbox" id="layer19_2005_lines"> 2005 (Baseline) </label> 
+                
+        <label>
+          <span class="color-line" style="border-color:red"></span>   
+          <input type="checkbox" id="layer19_2100_lines"> 2100 (Projection) </label>         
+ 
       </details>
     
       <details>
         <summary><strong>SSP2 — 2.6</strong></summary>
-        <label><input type="checkbox" id="layer26_2005_lines"> 2005 (Baseline) </label>          
-        <label><input type="checkbox" id="layer26_2100_lines"> 2100 (Projection) </label>          
+        <label>
+          <span class="color-line baseline"></span>         
+          <input type="checkbox" id="layer26_2005_lines"> 2005 (Baseline) </label>          
+        <label>
+          <span class="color-line" style="border-color:lime"></span>   
+          <input type="checkbox" id="layer26_2100_lines"> 2100 (Projection) </label>          
       </details>
       
       <details>
         <summary><strong>SSP2 — 4.5</strong></summary>
-        <label><input type="checkbox" id="layer45_2005_lines"> 2005 (Baseline) </label>          
-        <label><input type="checkbox" id="layer45_2100_lines"> 2100 (Projection) </label>  
+        <label>
+          <span class="color-line baseline"></span>             
+          <input type="checkbox" id="layer45_2005_lines"> 2005 (Baseline) </label>          
+        <label>
+           <span class="color-line" style="border-color:orange"></span>            
+          <input type="checkbox" id="layer45_2100_lines"> 2100 (Projection) </label>  
       </details>
        
       <details>
         <summary><strong>SSP3 — 7.0</strong></summary>
-        <label><input type="checkbox" id="layer70_2005_lines"> 2005 (Baseline) </label>        
-        <label><input type="checkbox" id="layer70_2100_lines"> 2100 (Projection) </label>        
+        <label>
+           <span class="color-line baseline"></span>               
+          <input type="checkbox" id="layer70_2005_lines"> 2005 (Baseline) </label>        
+        <label>
+           <span class="color-line" style="border-color:cyan"></span>             
+          <input type="checkbox" id="layer70_2100_lines"> 2100 (Projection) </label>        
      </details>
 
       <details>
         <summary><strong> SSP5 — 8.5</strong></summary>
-        <label><input type="checkbox" id="layer85_2005_lines"> 2005 (Baseline) </label>
-        <label><input type="checkbox" id="layer85_2100_lines"> 2100 (Projection) </label>
+        <label>
+           <span class="color-line baseline"></span>            
+          <input type="checkbox" id="layer85_2005_lines"> 2005 (Baseline) </label>
+        <label>
+           <span class="color-line" style="border-color:deeppink"></span>          
+          <input type="checkbox" id="layer85_2100_lines"> 2100 (Projection) </label>
      </details>
 
     </div>
 
-  <!-- Historic toggle box -->
+<!-- Historic toggle box -->
 <div class="custom-control" style="top: 50%; left: 10px;">
    <div class="custom-title"> Shoreline change (SLR + Historic trend), 50th quartile.</div> 
 
   <details>
     <summary><strong>SSP1 — 1.9</strong></summary>
-        <label><input type="checkbox" id="htrend_layer19_2005_lines"> 2005 (Baseline) </label>                   
-        <label><input type="checkbox" id="htrend_layer19_2100_lines"> 2100 (Projection) </label>             
+        <label>
+          <span class="color-line baseline"></span>
+          <input type="checkbox" id="htrend_layer19_2005_lines"> 2005 (Baseline)
+        </label>                   
+        <label>
+          <span class="color-line" style="border-color:red; border-top-style:dashed;"></span>
+          <input type="checkbox" id="htrend_layer19_2100_lines"> 2100 (Projection)
+        </label>             
   </details>
 
   <details>
     <summary><strong>SSP2 — 2.6</strong></summary>
-        <label><input type="checkbox" id="htrend_layer26_2005_lines"> 2005 (Baseline) </label>                   
-        <label><input type="checkbox" id="htrend_layer26_2100_lines"> 2100 (Projection) </label>             
+        <label>
+          <span class="color-line baseline"></span>
+          <input type="checkbox" id="htrend_layer26_2005_lines"> 2005 (Baseline)
+        </label>                   
+        <label>
+          <span class="color-line" style="border-color:lime; border-top-style:dashed;"></span>
+          <input type="checkbox" id="htrend_layer26_2100_lines"> 2100 (Projection)
+        </label>             
   </details>
 
   <details>
     <summary><strong>SSP2 — 4.5</strong></summary>
-        <label><input type="checkbox" id="htrend_layer45_2005_lines"> 2005 (Baseline) </label>                   
-        <label><input type="checkbox" id="htrend_layer45_2100_lines"> 2100 (Projection) </label>             
+        <label>
+          <span class="color-line baseline"></span>
+          <input type="checkbox" id="htrend_layer45_2005_lines"> 2005 (Baseline)
+        </label>                   
+        <label>
+          <span class="color-line" style="border-color:orange; border-top-style:dashed;"></span>
+          <input type="checkbox" id="htrend_layer45_2100_lines"> 2100 (Projection)
+        </label>             
   </details>
 
   <details>
     <summary><strong>SSP3 — 7.0</strong></summary>
-        <label><input type="checkbox" id="htrend_layer70_2005_lines"> 2005 (Baseline) </label>                   
-        <label><input type="checkbox" id="htrend_layer70_2100_lines"> 2100 (Projection) </label>             
+        <label>
+          <span class="color-line baseline"></span>
+          <input type="checkbox" id="htrend_layer70_2005_lines"> 2005 (Baseline)
+        </label>                   
+        <label>
+          <span class="color-line" style="border-color:cyan; border-top-style:dashed;"></span>
+          <input type="checkbox" id="htrend_layer70_2100_lines"> 2100 (Projection)
+        </label>             
   </details>
 
   <details>
     <summary><strong>SSP5 — 8.5</strong></summary>
-        <label><input type="checkbox" id="htrend_layer85_2005_lines"> 2005 (Baseline) </label>                   
-        <label><input type="checkbox" id="htrend_layer85_2100_lines"> 2100 (Projection) </label>             
+        <label>
+          <span class="color-line baseline"></span>
+          <input type="checkbox" id="htrend_layer85_2005_lines"> 2005 (Baseline)
+        </label>                   
+        <label>
+          <span class="color-line" style="border-color:deeppink; border-top-style:dashed;"></span>
+          <input type="checkbox" id="htrend_layer85_2100_lines"> 2100 (Projection)
+        </label>             
   </details>
 
 </div>
@@ -234,6 +299,14 @@
 
     };
 
+const sspColors = {
+  "19": "red",          // SSP1-1.9
+  "26": "lime",         // SSP2-2.6 bright green
+  "45": "orange",       // SSP2-4.5 bright orange
+  "70": "cyan",         // SSP3-7.0 bright cyan
+  "85": "deeppink"      // SSP5-8.5 bright pink
+};
+
 function loadAndToggleLayer(key, checked) {
   const entry = layers[key];
 
@@ -250,12 +323,32 @@ function loadAndToggleLayer(key, checked) {
           entry.layer = L.geoJSON(data, {
             style: (feature) => {
               if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
-                let style = { color: "red", weight: 2, opacity: 0.8 };
-                if (key.includes("htrend")) style.color = "#FF00FF"; // fuchsia
+                let style = { color: "gray", weight: 2, opacity: 0.8 };
+
+                // detect SSP
+                let sspKey = null;
+                if (key.includes("19")) sspKey = "19";
+                if (key.includes("26")) sspKey = "26";
+                if (key.includes("45")) sspKey = "45";
+                if (key.includes("70")) sspKey = "70";
+                if (key.includes("85")) sspKey = "85";
+
+                // Only color projection (2100), not 2005 baseline
+                if (key.includes("2100") && sspKey) {
+                  style.color = sspColors[sspKey];
+                }
+
+                // Dashed if it’s a historic trend run
+                if (key.includes("htrend") && key.includes("2100")) {
+                  style.dashArray = "5,5";
+                }
+
+                // Baseline 2005 = keep simple yellow dashed
                 if (key.includes("2005")) {
                   style.color = "yellow";
                   style.dashArray = "5,5";
                 }
+
                 return style;
               }
             },
