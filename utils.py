@@ -182,8 +182,8 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
                                       .transform(fillna_mildslop_smooth)
     
-    all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
-                                      .transform(fillna_smooth)   
+    # all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
+    #                                   .transform(fillna_smooth)   
 
 
     # Apply Bruun rule
@@ -317,6 +317,7 @@ for year in years:
         # Convert orientation to radians
         orientations_rad = np.deg2rad(subset['orientation'])
         new_geoms = []
+        new_transects = []
 
         # Interpolate points at new distances
         # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
@@ -338,27 +339,41 @@ for year in years:
                     distance_out = -new_dist
                     # Move backward (orientation + 180)
                     theta = orientation + np.pi
+                    # Extend at start
                 else:
                     base_point = Point(line.coords[-1])
                     distance_out = new_dist - line.length
                     # Move forward
                     theta = orientation
-
+                    # Extend at end             
                 # Compute new point using simple trigonometry
                 dx = distance_out * np.sin(theta)
                 dy = distance_out * np.cos(theta)
                 new_point = Point(base_point.x + dx, base_point.y + dy)
 
+            # ---- build new transect AFTER new_point is finalized ----
+            coords = list(line.coords)
+            if new_dist < 0:
+                new_line = LineString([new_point] + coords)
+            elif new_dist > line.length:
+                new_line = LineString(coords + [new_point])
+            else:
+                new_line = line  # unchanged
+
             new_geoms.append(new_point)
+            new_transects.append(new_line)
 #%%
         # Create a GeoSeries and convert back to WGS84
         new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
+        # Make GeoSeries of new transects in WGS84
+        new_transects = gpd.GeoSeries(new_transects, crs=2193).to_crs(4326).reset_index(drop=True)
 
         # Also reset subset to ensure 1-to-1 alignment
         subset = subset.reset_index(drop=True)
 
         # Assign to DataFrame
         subset['geom_new_points'] = new_points.to_crs(4326)
+        subset["extended_transects"] = new_transects
 #%% Smoothing
 
 from scipy.interpolate import UnivariateSpline
@@ -393,7 +408,17 @@ gdf_smoothed = gpd.GeoDataFrame(geometry=[smoothed_line], crs=subset.crs)
 # --- Example plot ---
 ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
 gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
+# subset.set_geometry("geom_transect_coastsat").plot(ax=ax, color= "black")
+subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5)
+subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
 ax.legend()
+
+
+#%% Map orange line back to transects
+
+#Orange is non-monotonic, so we switch to arclen to keep everything sequential
+
+
 
 #%%
 
