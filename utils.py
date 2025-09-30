@@ -408,16 +408,88 @@ gdf_smoothed = gpd.GeoDataFrame(geometry=[smoothed_line], crs=subset.crs)
 # --- Example plot ---
 ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
 gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
-# subset.set_geometry("geom_transect_coastsat").plot(ax=ax, color= "black")
 subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5)
 subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
 ax.legend()
 
 
-#%% Map orange line back to transects
+#%% Map (intersect) orange line back to extended transects
 
 #Orange is non-monotonic, so we switch to arclen to keep everything sequential
+# When mapping to the orange line, enforce that each subsequent transect must map to a strictly increasing arc length along the orange line.
 
+#If a transect’s projection would “go backwards” (due to a corner fold), you skip it,
+
+#We also need to append the smoothed retreat, given by the distance between orange line and ref (blue)
+#%% Map (intersect) orange line back to extended transects
+
+from shapely.ops import nearest_points
+import numpy as np
+
+# Precompute cumulative arclength along orange line
+orange_coords = np.array(smoothed_line.coords)
+seg_lengths = np.sqrt(np.sum(np.diff(orange_coords, axis=0)**2, axis=1))
+arc_lengths = np.concatenate([[0], np.cumsum(seg_lengths)])
+total_len = arc_lengths[-1]
+
+# Function to get arc length of a point on orange line
+def point_to_arclen(pt, line):
+    # project point onto line and get distance along line
+    dist_along = line.project(pt)
+    return dist_along
+
+# Storage
+results = []
+last_arclen = -np.inf
+
+for idx, transect in subset["extended_transects"].items():
+    ref_pt = subset.loc[idx, "geom_points_ref2005"]
+
+    # Intersect transect with orange line
+    inter = transect.intersection(smoothed_line)
+
+    if inter.is_empty:
+        continue
+
+    # Handle multipoint intersections (take nearest to ref)
+    if inter.geom_type == "MultiPoint":
+        inter = min(inter.geoms, key=lambda g: g.distance(ref_pt))
+
+    # Compute arc length
+    arclen = point_to_arclen(inter, smoothed_line)
+
+    # Enforce strictly increasing arc length
+    if arclen <= last_arclen:
+        continue  # skip backwards
+    last_arclen = arclen
+
+    # Smoothed retreat = distance from ref point (blue) to smoothed intersection
+    smoothed_retreat = ref_pt.distance(inter)
+
+    results.append({
+        "transect_id": idx,
+        "ref_point": ref_pt,
+        "intersection": inter,
+        "arc_length": arclen,
+        "smoothed_retreat": smoothed_retreat
+    })
+
+# Wrap into GeoDataFrame
+gdf_results = gpd.GeoDataFrame(
+    results,
+    geometry=[r["intersection"] for r in results],
+    crs=subset.crs
+)
+#%%
+# --- Example plot ---
+ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
+#gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
+subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5)
+subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
+# Plot intersections (green dots)
+gdf_results.plot(ax=ax, color="green", markersize=30, marker="x", label="Smoothed intersections")
+
+ax.legend()
 
 
 #%%
