@@ -13,12 +13,16 @@ from sklearn.neighbors import BallTree
 import math
 from shapely.geometry import Point, LineString, Polygon
 from shapely import line_interpolate_point, get_point
+from shapely.ops import nearest_points
+
 import contextily as ctx
 from tqdm import tqdm  # progress bar
 from shapely.errors import GEOSException
 import matplotlib.pyplot as plt
+
 from scipy.signal import butter, filtfilt
 from scipy.signal import savgol_filter
+
 #%%
 # Constants
 EARTH_RADIUS_KM = 6371.0
@@ -373,26 +377,13 @@ for year in years:
 
         # Assign to DataFrame
         subset['geom_new_points'] = new_points.to_crs(4326)
-        subset["extended_transects"] = new_transects
+        subset["extended_transects"] = new_transects.to_crs(4326)
 #%% Smoothing
-
-from scipy.interpolate import UnivariateSpline
-from scipy.signal import savgol_filter
 
 # --- Step 1. Extract arrays from ordered points ---
 x = subset["geom_new_points"].apply(lambda p: p.x).values
 y = subset["geom_new_points"].apply(lambda p: p.y).values
-# s = np.arange(len(x))  # use index as "alongshore distance" since it's ordered
 
-# # --- Step 2. Fit smoothing splines ---
-# # Adjust 's' parameter for smoothing strength
-# spl_x = UnivariateSpline(s, x, s=1)  
-# spl_y = UnivariateSpline(s, y, s=1)
-
-# # --- Step 3. Generate smoothed coordinates ---
-# s_smooth = np.linspace(s.min(), s.max(), 500)
-# x_smooth = spl_x(s_smooth)
-# y_smooth = spl_y(s_smooth)
 #This probably has to be determined with the length of the data
 wl= 41
 
@@ -412,19 +403,7 @@ subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize
 subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
 ax.legend()
 
-
 #%% Map (intersect) orange line back to extended transects
-
-#Orange is non-monotonic, so we switch to arclen to keep everything sequential
-# When mapping to the orange line, enforce that each subsequent transect must map to a strictly increasing arc length along the orange line.
-
-#If a transect’s projection would “go backwards” (due to a corner fold), you skip it,
-
-#We also need to append the smoothed retreat, given by the distance between orange line and ref (blue)
-#%% Map (intersect) orange line back to extended transects
-
-from shapely.ops import nearest_points
-import numpy as np
 
 # Precompute cumulative arclength along orange line
 orange_coords = np.array(smoothed_line.coords)
@@ -463,6 +442,7 @@ for idx, transect in subset["extended_transects"].items():
         continue  # skip backwards
     last_arclen = arclen
 
+
     # Smoothed retreat = distance from ref point (blue) to smoothed intersection
     smoothed_retreat = ref_pt.distance(inter)
 
@@ -481,6 +461,8 @@ gdf_results = gpd.GeoDataFrame(
     crs=subset.crs
 )
 #%%
+
+
 # --- Example plot ---
 ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
 #gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
