@@ -298,6 +298,63 @@ scenarios = [1.9]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 slr_qt =  "50" #quantiles 17,50,83
 
+
+def extend_transects_4_new_distances_points(subset, new_distances):
+    """ Extend reference coastsat transects when schange value is bigger than transect length.
+     Then determine new shoreline point. Returns new points locations, and extended transects. """
+
+    # Convert orientation to radians
+    orientations_rad = np.deg2rad(subset['orientation'])
+    new_geoms = []
+    new_transects = []
+
+    # Interpolate points at new distances
+    # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
+
+    # Iterate through rows
+    for i, row in subset.iterrows():
+        line = subset.geom_transect_coastsat.to_crs(2193).loc[i]
+        new_dist = new_distances.loc[i]
+        orientation = orientations_rad.loc[i]
+
+        if 0 <= new_dist <= line.length:
+            # Interpolate as normal
+            new_point = line.interpolate(new_dist)
+        else:
+            # Extrapolation needed
+            # Get start or end point depending on whether new_dist is <0 or >length
+            if new_dist < 0:
+                base_point = Point(line.coords[0])
+                distance_out = -new_dist
+                # Move backward (orientation + 180)
+                theta = orientation + np.pi
+                # Extend at start
+            else:
+                base_point = Point(line.coords[-1])
+                distance_out = new_dist - line.length
+                # Move forward
+                theta = orientation
+                # Extend at end             
+            # Compute new point using simple trigonometry
+            dx = distance_out * np.sin(theta)
+            dy = distance_out * np.cos(theta)
+            new_point = Point(base_point.x + dx, base_point.y + dy)
+
+        # ---- build new transect AFTER new_point is finalized ----
+        coords = list(line.coords)
+        if new_dist < 0:
+            new_line = LineString([new_point] + coords)
+        elif new_dist > line.length:
+            new_line = LineString(coords + [new_point])
+        else:
+            new_line = line  # unchanged
+
+        new_geoms.append(new_point)
+        new_transects.append(new_line)
+
+    return new_geoms, new_transects
+
+
 for year in years:
     for scenario in scenarios:
 
@@ -318,55 +375,9 @@ for year in years:
         # Calculate new distance from start of line
         new_distances = ref_distances_along_lines - bruun_slr_qt
         
-        # Convert orientation to radians
-        orientations_rad = np.deg2rad(subset['orientation'])
-        new_geoms = []
-        new_transects = []
+        #Determine new points for shoreline , extend transects when needed
+        new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
 
-        # Interpolate points at new distances
-        # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
-
-                # Iterate through rows
-        for i, row in subset.iterrows():
-            line = subset.geom_transect_coastsat.to_crs(2193).loc[i]
-            new_dist = new_distances.loc[i]
-            orientation = orientations_rad.loc[i]
-
-            if 0 <= new_dist <= line.length:
-                # Interpolate as normal
-                new_point = line.interpolate(new_dist)
-            else:
-                # Extrapolation needed
-                # Get start or end point depending on whether new_dist is <0 or >length
-                if new_dist < 0:
-                    base_point = Point(line.coords[0])
-                    distance_out = -new_dist
-                    # Move backward (orientation + 180)
-                    theta = orientation + np.pi
-                    # Extend at start
-                else:
-                    base_point = Point(line.coords[-1])
-                    distance_out = new_dist - line.length
-                    # Move forward
-                    theta = orientation
-                    # Extend at end             
-                # Compute new point using simple trigonometry
-                dx = distance_out * np.sin(theta)
-                dy = distance_out * np.cos(theta)
-                new_point = Point(base_point.x + dx, base_point.y + dy)
-
-            # ---- build new transect AFTER new_point is finalized ----
-            coords = list(line.coords)
-            if new_dist < 0:
-                new_line = LineString([new_point] + coords)
-            elif new_dist > line.length:
-                new_line = LineString(coords + [new_point])
-            else:
-                new_line = line  # unchanged
-
-            new_geoms.append(new_point)
-            new_transects.append(new_line)
-#%%
         # Create a GeoSeries and convert back to WGS84
         new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
         # Make GeoSeries of new transects in WGS84
