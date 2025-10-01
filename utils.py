@@ -420,9 +420,9 @@ subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize
 subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
 ax.legend()
 
-#%% Map (intersect) orange line back to extended transects
+#%% Map (intersect) smooth line back to extended transects
 
-def map_smoothline_back2transects(gdf_smoothed,subset):
+def map_smoothline_back2transects(df_line_smoothed,subset):
     """ Map smoothed line back to extended transects to obtain points.
     In the process some transects get dropped due to non-monotonicity of smoothed line.
     This gets rid of uggly corner effects. """
@@ -431,21 +431,10 @@ def map_smoothline_back2transects(gdf_smoothed,subset):
     # Ensure subset is in NZTM (EPSG:2193)
     subset_m = subset.set_geometry("extended_transects").to_crs(2193)
     subset_m["geom_points_ref2005"] = subset_m["geom_points_ref2005"].to_crs(2193)
-    print(subset_m.iloc[0].extended_transects)
-    print(subset_m.iloc[0].geom_points_ref2005)
-    # Transform smoothed line to NZTM as well
-    # smoothed_line = gpd.GeoSeries([smoothed_line], crs=4326).to_crs(2193).iloc[0]
+    # Transform smoothed line too. Extract from df
+    smoothed_line = df_line_smoothed.to_crs(2193).geometry.iloc[0]
 
-    smoothed_line = gdf_smoothed.to_crs(2193).geometry.iloc[0]
-    print(gdf_smoothed.geometry.iloc[0])
-
-    # Precompute cumulative arclength along orange line
-    orange_coords = np.array(smoothed_line.coords)
-    seg_lengths = np.sqrt(np.sum(np.diff(orange_coords, axis=0)**2, axis=1))
-    arc_lengths = np.concatenate([[0], np.cumsum(seg_lengths)])
-    total_len = arc_lengths[-1]
-
-    # Function to get arc length of a point on orange line
+    # Function to get arc length of a point on smoothed line
     def point_to_arclen(pt, line):
         # project point onto line and get distance along line
         dist_along = line.project(pt)
@@ -457,25 +446,20 @@ def map_smoothline_back2transects(gdf_smoothed,subset):
 
     for idx, transect in subset_m["extended_transects"].items():
         ref_pt = subset_m.loc[idx, "geom_points_ref2005"]
-
-        # Intersect transect with orange line
+        # Intersect transect with smoothed line
         inter = transect.intersection(smoothed_line)
-
         if inter.is_empty:
             continue
 
         # Handle multipoint intersections (take nearest to ref)
         if inter.geom_type == "MultiPoint":
             inter = min(inter.geoms, key=lambda g: g.distance(ref_pt))
-
         # Compute arc length
         arclen = point_to_arclen(inter, smoothed_line)
-
         # Enforce strictly increasing arc length
         if arclen <= last_arclen:
             continue  # skip backwards
         last_arclen = arclen
-
 
         # Smoothed retreat = distance from ref point (blue) to smoothed intersection
         smoothed_retreat = ref_pt.distance(inter)
@@ -499,7 +483,6 @@ def map_smoothline_back2transects(gdf_smoothed,subset):
 
 gdf_results= map_smoothline_back2transects(gdf_smoothed,subset)
 
-
 #%%
 
 
@@ -507,9 +490,9 @@ gdf_results= map_smoothline_back2transects(gdf_smoothed,subset)
 ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
 #gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
 subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5)
-subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
+# subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
 # Plot intersections (green dots)
-gdf_results.plot(ax=ax, color="green", markersize=30, marker="x", label="Smoothed intersections")
+gdf_results.to_crs("4326").plot(ax=ax, color="green", markersize=30, marker="x", label="Smoothed intersections")
 
 ax.legend()
 
