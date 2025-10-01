@@ -211,6 +211,61 @@ def calc_retreat(all_merged, c_adjust = 0.5):
 
     return merged_retreat_df
 
+def extend_transects_4_new_distances_points(subset, new_distances):
+    """ Extend reference coastsat transects when schange value is bigger than transect length.
+     Then determine new shoreline point. Returns new points locations, and extended transects. """
+
+    # Convert orientation to radians
+    orientations_rad = np.deg2rad(subset['orientation'])
+    new_geoms = []
+    new_transects = []
+
+    # Interpolate points at new distances
+    # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
+
+    # Iterate through rows
+    for i, row in subset.iterrows():
+        line = subset.geom_transect_coastsat.to_crs(2193).loc[i]
+        new_dist = new_distances.loc[i]
+        orientation = orientations_rad.loc[i]
+
+        if 0 <= new_dist <= line.length:
+            # Interpolate as normal
+            new_point = line.interpolate(new_dist)
+        else:
+            # Extrapolation needed
+            # Get start or end point depending on whether new_dist is <0 or >length
+            if new_dist < 0:
+                base_point = Point(line.coords[0])
+                distance_out = -new_dist
+                # Move backward (orientation + 180)
+                theta = orientation + np.pi
+                # Extend at start
+            else:
+                base_point = Point(line.coords[-1])
+                distance_out = new_dist - line.length
+                # Move forward
+                theta = orientation
+                # Extend at end             
+            # Compute new point using simple trigonometry
+            dx = distance_out * np.sin(theta)
+            dy = distance_out * np.cos(theta)
+            new_point = Point(base_point.x + dx, base_point.y + dy)
+
+        # ---- build new transect AFTER new_point is finalized ----
+        coords = list(line.coords)
+        if new_dist < 0:
+            new_line = LineString([new_point] + coords)
+        elif new_dist > line.length:
+            new_line = LineString(coords + [new_point])
+        else:
+            new_line = line  # unchanged
+
+        new_geoms.append(new_point)
+        new_transects.append(new_line)
+
+    return new_geoms, new_transects
+
 def points_to_polylines(subset):
     """ Take the points GeoDataFrame and transforms to polylines"""
     missing = subset[subset.geometry.isnull()]
@@ -299,62 +354,6 @@ scenarios = [1.9]
 slr_qt =  "50" #quantiles 17,50,83
 
 
-def extend_transects_4_new_distances_points(subset, new_distances):
-    """ Extend reference coastsat transects when schange value is bigger than transect length.
-     Then determine new shoreline point. Returns new points locations, and extended transects. """
-
-    # Convert orientation to radians
-    orientations_rad = np.deg2rad(subset['orientation'])
-    new_geoms = []
-    new_transects = []
-
-    # Interpolate points at new distances
-    # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
-
-    # Iterate through rows
-    for i, row in subset.iterrows():
-        line = subset.geom_transect_coastsat.to_crs(2193).loc[i]
-        new_dist = new_distances.loc[i]
-        orientation = orientations_rad.loc[i]
-
-        if 0 <= new_dist <= line.length:
-            # Interpolate as normal
-            new_point = line.interpolate(new_dist)
-        else:
-            # Extrapolation needed
-            # Get start or end point depending on whether new_dist is <0 or >length
-            if new_dist < 0:
-                base_point = Point(line.coords[0])
-                distance_out = -new_dist
-                # Move backward (orientation + 180)
-                theta = orientation + np.pi
-                # Extend at start
-            else:
-                base_point = Point(line.coords[-1])
-                distance_out = new_dist - line.length
-                # Move forward
-                theta = orientation
-                # Extend at end             
-            # Compute new point using simple trigonometry
-            dx = distance_out * np.sin(theta)
-            dy = distance_out * np.cos(theta)
-            new_point = Point(base_point.x + dx, base_point.y + dy)
-
-        # ---- build new transect AFTER new_point is finalized ----
-        coords = list(line.coords)
-        if new_dist < 0:
-            new_line = LineString([new_point] + coords)
-        elif new_dist > line.length:
-            new_line = LineString(coords + [new_point])
-        else:
-            new_line = line  # unchanged
-
-        new_geoms.append(new_point)
-        new_transects.append(new_line)
-
-    return new_geoms, new_transects
-
-
 for year in years:
     for scenario in scenarios:
 
@@ -387,25 +386,32 @@ for year in years:
         subset = subset.reset_index(drop=True)
 
         # Assign to DataFrame
-        subset['geom_new_points'] = new_points.to_crs(4326)
-        subset["extended_transects"] = new_transects.to_crs(4326)
+        subset['geom_new_points'] = new_points#.to_crs(4326)
+        subset["extended_transects"] = new_transects#.to_crs(4326)
 #%% Smoothing
 
-# --- Step 1. Extract arrays from ordered points ---
-x = subset["geom_new_points"].apply(lambda p: p.x).values
-y = subset["geom_new_points"].apply(lambda p: p.y).values
+def smooth_retreat_lines(subset):
+    """ Smooth retreat lines with savgol filter. Especially useful for corners."""
 
-#This probably has to be determined with the length of the data
-wl= 41
+    # --- Step 1. Extract arrays from ordered points ---
+    x = subset["geom_new_points"].apply(lambda p: p.x).values
+    y = subset["geom_new_points"].apply(lambda p: p.y).values
 
-# smooth with moving polynomial fit
-x_smooth = savgol_filter(x, window_length=wl, polyorder=3)
-y_smooth = savgol_filter(y, window_length=wl, polyorder=3)
+    #This probably has to be determined with the length of the data
+    wl= 41
 
-smoothed_line = LineString(np.column_stack([x_smooth, y_smooth]))
+    # smooth with moving polynomial fit
+    x_smooth = savgol_filter(x, window_length=wl, polyorder=3)
+    y_smooth = savgol_filter(y, window_length=wl, polyorder=3)
 
-# --- Step 4. Wrap into a GeoDataFrame for plotting ---
-gdf_smoothed = gpd.GeoDataFrame(geometry=[smoothed_line], crs=subset.crs)
+    smoothed_line = LineString(np.column_stack([x_smooth, y_smooth]))
+
+    # --- Step 4. Wrap into a GeoDataFrame for plotting ---
+    gdf_smoothed = gpd.GeoDataFrame(geometry=[smoothed_line], crs=subset.crs)
+
+    return gdf_smoothed, smoothed_line
+
+gdf_smoothed, smoothed_line =  smooth_retreat_lines(subset)
 
 # --- Example plot ---
 ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
@@ -416,61 +422,84 @@ ax.legend()
 
 #%% Map (intersect) orange line back to extended transects
 
-# Precompute cumulative arclength along orange line
-orange_coords = np.array(smoothed_line.coords)
-seg_lengths = np.sqrt(np.sum(np.diff(orange_coords, axis=0)**2, axis=1))
-arc_lengths = np.concatenate([[0], np.cumsum(seg_lengths)])
-total_len = arc_lengths[-1]
+def map_smoothline_back2transects(gdf_smoothed,subset):
+    """ Map smoothed line back to extended transects to obtain points.
+    In the process some transects get dropped due to non-monotonicity of smoothed line.
+    This gets rid of uggly corner effects. """
 
-# Function to get arc length of a point on orange line
-def point_to_arclen(pt, line):
-    # project point onto line and get distance along line
-    dist_along = line.project(pt)
-    return dist_along
+    #CAREFUL WITH THE ACTIVE GEOMETRY
+    # Ensure subset is in NZTM (EPSG:2193)
+    subset_m = subset.set_geometry("extended_transects").to_crs(2193)
+    subset_m["geom_points_ref2005"] = subset_m["geom_points_ref2005"].to_crs(2193)
+    print(subset_m.iloc[0].extended_transects)
+    print(subset_m.iloc[0].geom_points_ref2005)
+    # Transform smoothed line to NZTM as well
+    # smoothed_line = gpd.GeoSeries([smoothed_line], crs=4326).to_crs(2193).iloc[0]
 
-# Storage
-results = []
-last_arclen = -np.inf
+    smoothed_line = gdf_smoothed.to_crs(2193).geometry.iloc[0]
+    print(gdf_smoothed.geometry.iloc[0])
 
-for idx, transect in subset["extended_transects"].items():
-    ref_pt = subset.loc[idx, "geom_points_ref2005"]
+    # Precompute cumulative arclength along orange line
+    orange_coords = np.array(smoothed_line.coords)
+    seg_lengths = np.sqrt(np.sum(np.diff(orange_coords, axis=0)**2, axis=1))
+    arc_lengths = np.concatenate([[0], np.cumsum(seg_lengths)])
+    total_len = arc_lengths[-1]
 
-    # Intersect transect with orange line
-    inter = transect.intersection(smoothed_line)
+    # Function to get arc length of a point on orange line
+    def point_to_arclen(pt, line):
+        # project point onto line and get distance along line
+        dist_along = line.project(pt)
+        return dist_along
 
-    if inter.is_empty:
-        continue
+    # Storage
+    results = []
+    last_arclen = -np.inf
 
-    # Handle multipoint intersections (take nearest to ref)
-    if inter.geom_type == "MultiPoint":
-        inter = min(inter.geoms, key=lambda g: g.distance(ref_pt))
+    for idx, transect in subset_m["extended_transects"].items():
+        ref_pt = subset_m.loc[idx, "geom_points_ref2005"]
 
-    # Compute arc length
-    arclen = point_to_arclen(inter, smoothed_line)
+        # Intersect transect with orange line
+        inter = transect.intersection(smoothed_line)
 
-    # Enforce strictly increasing arc length
-    if arclen <= last_arclen:
-        continue  # skip backwards
-    last_arclen = arclen
+        if inter.is_empty:
+            continue
+
+        # Handle multipoint intersections (take nearest to ref)
+        if inter.geom_type == "MultiPoint":
+            inter = min(inter.geoms, key=lambda g: g.distance(ref_pt))
+
+        # Compute arc length
+        arclen = point_to_arclen(inter, smoothed_line)
+
+        # Enforce strictly increasing arc length
+        if arclen <= last_arclen:
+            continue  # skip backwards
+        last_arclen = arclen
 
 
-    # Smoothed retreat = distance from ref point (blue) to smoothed intersection
-    smoothed_retreat = ref_pt.distance(inter)
+        # Smoothed retreat = distance from ref point (blue) to smoothed intersection
+        smoothed_retreat = ref_pt.distance(inter)
+        print(smoothed_retreat)
 
-    results.append({
-        "transect_id": idx,
-        "ref_point": ref_pt,
-        "intersection": inter,
-        "arc_length": arclen,
-        "smoothed_retreat": smoothed_retreat
-    })
+        results.append({
+            "transect_id": idx,
+            "ref_point": ref_pt,
+            "intersection": inter,
+            "arc_length": arclen,
+            "smoothed_retreat": smoothed_retreat
+        })
 
-# Wrap into GeoDataFrame
-gdf_results = gpd.GeoDataFrame(
-    results,
-    geometry=[r["intersection"] for r in results],
-    crs=subset.crs
-)
+    # Wrap into GeoDataFrame
+    gdf_results = gpd.GeoDataFrame(
+        results,
+        geometry=[r["intersection"] for r in results],
+        crs=subset_m.crs
+    )
+    return gdf_results
+
+gdf_results= map_smoothline_back2transects(gdf_smoothed,subset)
+
+
 #%%
 
 
