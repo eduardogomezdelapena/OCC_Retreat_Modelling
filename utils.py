@@ -341,7 +341,9 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 #%%
 #Step back, only Kaipara
 # merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
-merged_kaipara = all_merged[all_merged.coastsat_site_id.isin([ 'nzd0126','nzd0456'])]
+# merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
+merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
+
 #Now calc retreat
 retreat = calc_retreat(merged_kaipara)
 
