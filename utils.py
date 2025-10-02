@@ -189,6 +189,8 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     # all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
     #                                   .transform(fillna_smooth)   
 
+    # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
+    # a bit ad hoc, matches with some lidar measurements
 
     # Apply Bruun rule
     denom = c_adjust * all_merged["beach_slope"]
@@ -397,8 +399,8 @@ def smooth_retreat_lines(subset):
     x = subset["geom_new_points"].apply(lambda p: p.x).values
     y = subset["geom_new_points"].apply(lambda p: p.y).values
 
-    #This probably has to be determined with the length of the data
-    wl= 41
+    #Set the window length to the largest odd number ≤ len(trend), but cap it at 41 (Kaipara)
+    wl = min(len(x) if len(x) % 2 == 1 else len(x) - 1, 41)
 
     # smooth with moving polynomial fit
     x_smooth = savgol_filter(x, window_length=wl, polyorder=3)
@@ -446,6 +448,7 @@ def map_smoothline_back2transects(df_line_smoothed,subset):
 
     for idx, transect in subset_m["extended_transects"].items():
         ref_pt = subset_m.loc[idx, "geom_points_ref2005"]
+        ref_tran = subset_m.loc[idx, "coastsat_transect_id"]
         # Intersect transect with smoothed line
         inter = transect.intersection(smoothed_line)
         if inter.is_empty:
@@ -462,24 +465,40 @@ def map_smoothline_back2transects(df_line_smoothed,subset):
         last_arclen = arclen
 
         # Smoothed retreat = distance from ref point (blue) to smoothed intersection
+        # Smoothed retreat = signed distance along transect
+        # Project ref and inter onto the transect
+        ref_dist = transect.project(ref_pt)
+        inter_dist = transect.project(inter)
+
         smoothed_retreat = ref_pt.distance(inter)
-        print(smoothed_retreat)
+
+
+        # Assign sign based on relative position along transect
+        if inter_dist >= ref_dist:
+            smoothed_retreat_signed = smoothed_retreat   # positive
+        else:
+            smoothed_retreat_signed = -smoothed_retreat  # negative
+
+        # Round to 2 decimals
+        smoothed_retreat_signed = round(smoothed_retreat_signed, 2)
+
+        print(smoothed_retreat_signed)
 
         results.append({
-            "transect_id": idx,
-            "ref_point": ref_pt,
-            "intersection": inter,
-            "arc_length": arclen,
-            "smoothed_retreat": smoothed_retreat
+            "coastsat_transect_id": ref_tran,
+            "geom_points_ref2005": ref_pt,
+            "geom_smoothed_new_points": inter,
+            "smoothed_retreat_50": smoothed_retreat_signed
         })
 
-    # Wrap into GeoDataFrame
+    # # Wrap into GeoDataFrame
     gdf_results = gpd.GeoDataFrame(
         results,
-        geometry=[r["intersection"] for r in results],
-        crs=subset_m.crs
+        geometry="geom_smoothed_new_points",  # <- tells geopandas which column to use
+        crs="EPSG:2193"                        # <- explicitly sets the CRS
     )
-    return gdf_results
+
+    return gdf_results.to_crs('4326')
 
 gdf_results= map_smoothline_back2transects(gdf_smoothed,subset)
 
@@ -492,10 +511,17 @@ ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, labe
 subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5)
 # subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
 # Plot intersections (green dots)
-gdf_results.to_crs("4326").plot(ax=ax, color="green", markersize=30, marker="x", label="Smoothed intersections")
+gdf_results.plot(ax=ax, color="green", markersize=30, marker="x", label="Smoothed intersections")
 
 ax.legend()
 
+#%%
+
+merged_df = subset.merge(gdf_results[['coastsat_transect_id', 'geom_smoothed_new_points']],
+                      on='coastsat_transect_id',
+                      how='inner')
+
+merged_df['retreat_50'] = gdf_results['smoothed_retreat_50']
 
 #%%
 
@@ -508,13 +534,13 @@ ax.legend()
     
 
         #% From points to linestrings, careful on what active geometry goes inside
-        lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
+        # lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
+        lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
         lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
-        cols_to_display= ['geom_new_points','50','retreat_50']
-        subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        # cols_to_display= ['geom_new_points','50','retreat_50']
+        cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
+        merged_df[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
        
-
-       lol= retreat.ERODIBILITY
 #%%
 # Extract and prepare data
 subset_vis = subset.copy()  # Just to be safe
