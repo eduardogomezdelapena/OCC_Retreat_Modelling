@@ -342,8 +342,8 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 #Step back, only Kaipara
 # merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
 # merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
-merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
-
+# merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
+merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0455'])]
 #Now calc retreat
 retreat = calc_retreat(merged_kaipara)
 
@@ -393,6 +393,38 @@ for year in years:
         subset['geom_new_points'] = new_points#.to_crs(4326)
         subset["extended_transects"] = new_transects#.to_crs(4326)
 #%% Smoothing
+from pyproj import Transformer
+from shapely.ops import transform
+
+# def extend_line(line, distance=100):
+#     # Define transformer from EPSG:4326 (lon/lat) → EPSG:2193 (NZTM meters)
+#     to_2193  = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
+#     to_4326 = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
+#     # Reproject the shapely LineString
+#     line_2193 = transform(to_2193 , line)   # smoothed_line must be EPSG:4326
+
+#     coords = list(line_2193.coords)
+#     # first segment vector
+#     x0, y0 = coords[0]
+#     x1, y1 = coords[1]
+#     dx0, dy0 = x0 - x1, y0 - y1
+#     length0 = np.hypot(dx0, dy0)
+#     ux0, uy0 = dx0 / length0, dy0 / length0
+
+#     # last segment vector
+#     xn1, yn1 = coords[-2]
+#     xn, yn = coords[-1]
+#     dx1, dy1 = xn - xn1, yn - yn1
+#     length1 = np.hypot(dx1, dy1)
+#     ux1, uy1 = dx1 / length1, dy1 / length1
+
+#     # extend
+#     new_start = (x0 + ux0 * distance, y0 + uy0 * distance)
+#     new_end = (xn + ux1 * distance, yn + uy1 * distance)
+
+#     extended_line_2193 = LineString([new_start] + coords + [new_end])
+
+#     return transform(to_4326, extended_line_2193)
 
 def smooth_retreat_lines(subset):
     """ Smooth retreat lines with savgol filter for each site. Especially useful for corners."""
@@ -415,6 +447,9 @@ def smooth_retreat_lines(subset):
         y_smooth = savgol_filter(y, window_length=wl, polyorder=3)
 
         smoothed_line = LineString(np.column_stack([x_smooth, y_smooth]))
+        # smoothed_line = extend_line(LineString(np.column_stack([x_smooth, y_smooth])),
+        #              distance=10)
+
         results.append({"coastsat_site_id": site_id, "geometry": smoothed_line})
 
     # --- Step 4. Wrap into a GeoDataFrame for plotting ---
@@ -423,13 +458,41 @@ def smooth_retreat_lines(subset):
     return gdf_smoothed
 
 gdf_smoothed =  smooth_retreat_lines(subset)
+#%%
+
+
 
 # --- Example plot ---
 ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
 gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
-subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5)
-subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
+subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5, label="Ref 2005")
+subset.set_geometry("extended_transects").plot(ax=ax, color= "black", label="ext_transects")
 ax.legend()
+
+#%% So the intersect is empty ae
+
+# smoothed_line = gdf_smoothed[gdf_smoothed["coastsat_site_id"] == "nzd0455"].geometry.iloc[0]
+
+# transect0 = subset.loc[subset["coastsat_transect_id"] == 'nzd0455-0000', "extended_transects"].iloc[0]
+
+# # Project to NZTM (meters)
+# smoothed_line_m = gpd.GeoSeries([smoothed_line], crs=4326).to_crs(2193).iloc[0]
+# transect_m = gpd.GeoSeries([transect0], crs=4326).to_crs(2193).iloc[0]
+
+# # Buffer a few meters
+# smoothed_buffer_m = smoothed_line_m.buffer(5)  # 5 meters
+
+# # Intersection
+# inter_m = transect_m.intersection(smoothed_buffer_m)
+
+
+# # inter = transect0.intersection(smoothed_line)
+# print(inter_m.is_empty)
+
+# print(transect0.is_valid) 
+# print(transect0.length)
+
+
 
 #%% Map (intersect) smooth line back to extended transects
 
@@ -466,10 +529,26 @@ def map_smoothline_back2transects(df_line_smoothed,subset):
         for idx, transect in site_data["extended_transects"].items():
             ref_pt = site_data.loc[idx, "geom_points_ref2005"]
             ref_tran = site_data.loc[idx, "coastsat_transect_id"]
+            print(f"Checking transect {ref_tran} (idx={idx})")
 
             # Intersect transect with smoothed line
-            inter = transect.intersection(smoothed_line)
+            inter = transect.intersection(smoothed_line.buffer(5))
+
+# # Project to NZTM (meters)
+# smoothed_line_m = gpd.GeoSeries([smoothed_line], crs=4326).to_crs(2193).iloc[0]
+# transect_m = gpd.GeoSeries([transect0], crs=4326).to_crs(2193).iloc[0]
+
+# # Buffer a few meters
+# smoothed_buffer_m = smoothed_line_m.buffer(5)  # 5 meters
+
+# # Intersection
+# inter_m = transect_m.intersection(smoothed_buffer_m)
+
+
+
+
             if inter.is_empty:
+                print(f"   Transect {ref_tran}: no intersection with smoothed line")
                 continue
 
             # Handle multipoint intersections (take nearest to ref)
@@ -478,7 +557,14 @@ def map_smoothline_back2transects(df_line_smoothed,subset):
 
             # Compute arc length
             arclen = point_to_arclen(inter, smoothed_line)
-            if arclen <= last_arclen:
+
+            # # Debug print
+            # status = "KEPT"
+            # if arclen <= last_arclen:
+            #     status = "SKIPPED"
+            # print(f"Site {site_id} | Transect {ref_tran} | arclen={arclen:.3f} | last_arclen={last_arclen:.3f} | {status}")
+
+            if arclen <= last_arclen :  
                 continue  # enforce monotonic increase
             last_arclen = arclen
 
@@ -511,12 +597,11 @@ gdf_results= map_smoothline_back2transects(gdf_smoothed,subset)
 
 #%%
 
-
 # --- Example plot ---
 ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
 #gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
-subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5)
-# subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
+subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5,label= "Ref 2005")
+subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
 # Plot intersections (green dots)
 gdf_results.plot(ax=ax, color="green", markersize=30, marker="x", label="Smoothed intersections")
 
