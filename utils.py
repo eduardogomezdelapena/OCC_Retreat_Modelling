@@ -355,17 +355,17 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 #Step back, only Kaipara
 # merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
 # merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
-# merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
+merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
 
 #Now calc retreat
-# retreat = calc_retreat(merged_kaipara)
-retreat = calc_retreat(all_merged)
+retreat = calc_retreat(merged_kaipara)
+# retreat = calc_retreat(all_merged)
 
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
 years =  [2100]
-scenarios = [2.6]
+scenarios = [8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 slr_qt =  "50" #quantiles 17,50,83
@@ -377,7 +377,8 @@ for year in years:
 
         # Subset dataframe with specific projection year & specific scenario
         subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
-        #subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
+        #Scenarios SSP2-2.6 & SSP5-8.5 have duplicates
+        subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
         #Calc new point location according to retreat_50
         bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
