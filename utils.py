@@ -226,10 +226,21 @@ def extend_transects_4_new_distances_points(subset, new_distances):
     # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
     # Iterate through rows
-    for i, row in subset.iterrows():
-        line = subset.geom_transect_coastsat.to_crs(2193).loc[i]
-        new_dist = new_distances.loc[i]
-        orientation = orientations_rad.loc[i]
+    for idx, row in subset.reset_index(drop=True).iterrows():
+        line = row.geom_transect_coastsat
+        if line is None or line.is_empty or not isinstance(line, LineString):
+            new_geoms.append(None)
+            new_transects.append(None)
+            continue
+
+        line = gpd.GeoSeries([line], crs=subset.crs).to_crs(2193).iloc[0]
+        new_dist = new_distances.iloc[idx]
+        orientation = orientations_rad.iloc[idx]
+
+        if pd.isna(new_dist):
+            new_geoms.append(None)
+            new_transects.append(None)
+            continue
 
         if 0 <= new_dist <= line.length:
             # Interpolate as normal
@@ -394,7 +405,6 @@ for year in years:
 
 
 #%%
-
 
 #% From points to linestrings, careful on what active geometry goes inside
 lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
