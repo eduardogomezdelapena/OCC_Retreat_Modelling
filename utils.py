@@ -25,6 +25,8 @@ from scipy.signal import savgol_filter
 
 import time
 
+from smooth_algorithms.smoothn import smoothn
+
 #%%
 # Constants
 EARTH_RADIUS_KM = 6371.0
@@ -163,34 +165,42 @@ def calc_retreat(all_merged, c_adjust = 0.5):
         
         return slope
     
-    #Clean and fix historic trend
-    def fillna_smooth(trend):
-       # Fill NaNs with the group-wise mean
-        mean_val = np.nanmean(trend)
-        trend = trend.fillna(mean_val)
+    # #Clean and fix historic trend
+    # def fillna_smooth(trend):
+    #    # Fill NaNs with the group-wise mean
+    #     mean_val = np.nanmean(trend)
+    #     trend = trend.fillna(mean_val)
 
-        # Apply Butterworth smoothing if enough points
-        if len(trend) >= 3:
-            # b, a = butter(2, 0.2, btype='low', analog=False) #filter to smooth longshore variability
-            # trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
+    #     # Apply Butterworth smoothing if enough points
+    #     if len(trend) >= 3:
+    #         # b, a = butter(2, 0.2, btype='low', analog=False) #filter to smooth longshore variability
+    #         # trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
 
-            # Choose window_length and polyorder based on data size
-            # Choose window_length and polyorder based on data size
-            window_length = min(len(trend) if len(trend) % 2 == 1 else len(trend) - 1, 21)
-            polyorder = 2  # linear fit = more smoothing
+    #         # Choose window_length and polyorder based on data size
+    #         # Choose window_length and polyorder based on data size
+    #         window_length = min(len(trend) if len(trend) % 2 == 1 else len(trend) - 1, 21)
+    #         polyorder = 2  # linear fit = more smoothing
 
-            # Apply smoothing
-            smoothed = savgol_filter(trend, window_length=window_length, polyorder=polyorder)
-            trend = pd.Series(smoothed, index=trend.index)            
+    #         # Apply smoothing
+    #         smoothed = savgol_filter(trend, window_length=window_length, polyorder=polyorder)
+    #         trend = pd.Series(smoothed, index=trend.index)            
             
-        return trend
+    #     return trend
 
     all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
                                       .transform(fillna_mildslop_smooth)
     
     # all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
-    #                                   .transform(fillna_smooth)   
+    #                                   .transform(fillna_smooth)  
 
+    #Smooth historic trend
+    def smoothn_by_variability(x):
+        s = 100000 if x.std() > 0.2 else 10000 # A bit adhoc, but works
+        return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
+
+    all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
+            .transform(smoothn_by_variability)
+    
     # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
     # a bit ad hoc, matches with some lidar measurements
 
@@ -205,13 +215,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     )
 
     # Append retreat columns
-    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+    # merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
-    # historic_retreat_df = retreat_df.sub(
-    #     (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-    # )
-    # merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
+    historic_retreat_df = retreat_df.sub(
+        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+    )
+    merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
     return merged_retreat_df
 
@@ -353,19 +363,44 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 
 #%%
 #Step back, only Kaipara
-# merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
-# merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
-merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
+merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
+#merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
+# merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
 
 #Now calc retreat
 retreat = calc_retreat(merged_kaipara)
 # retreat = calc_retreat(all_merged)
 
 #%%
+
+# ax1= retreat.trend.plot()
+
+# from smooth_algorithms.smoothn import smoothn
+
+# # Garcias smoother
+# # #S is a smoothing parameter (must be real positive scalar)
+
+# stdev= np.std(retreat.trend)
+# print(stdev)
+
+# def smoothn_by_variability(x):
+#     s = 100000 if x.std() > 0.2 else 10000 # A bit adhoc, but works
+#     return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
+
+# retreat['trend_smooth'] = (
+#     retreat.groupby('coastsat_site_id')['trend']
+#            .transform(smoothn_by_variability)
+# )
+
+# retreat.trend_smooth.plot(ax=ax1)
+
+
+
+#%%
 #MWE of retreat polyline in one site
 # Get unique combinations
 years =  [2100]
-scenarios = [8.5]
+scenarios = [4.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 slr_qt =  "50" #quantiles 17,50,83
@@ -412,10 +447,10 @@ for year in years:
         #% From points to linestrings, careful on what active geometry goes inside
         lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
         # lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
-        lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
         cols_to_display= ['geom_new_points','50','retreat_50']
         # cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
-        subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+        subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
 
         elapsed_minutes = (time.time() - start_time) / 60
         print(f"⏱ Time for scenario {scenario} ({year}): {elapsed_minutes:.2f} minutes")
