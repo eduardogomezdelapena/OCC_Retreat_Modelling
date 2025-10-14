@@ -165,35 +165,14 @@ def calc_retreat(all_merged, c_adjust = 0.5):
         
         return slope
     
-    # #Clean and fix historic trend
-    # def fillna_smooth(trend):
-    #    # Fill NaNs with the group-wise mean
-    #     mean_val = np.nanmean(trend)
-    #     trend = trend.fillna(mean_val)
-
-    #     # Apply Butterworth smoothing if enough points
-    #     if len(trend) >= 3:
-    #         # b, a = butter(2, 0.2, btype='low', analog=False) #filter to smooth longshore variability
-    #         # trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
-
-    #         # Choose window_length and polyorder based on data size
-    #         # Choose window_length and polyorder based on data size
-    #         window_length = min(len(trend) if len(trend) % 2 == 1 else len(trend) - 1, 21)
-    #         polyorder = 2  # linear fit = more smoothing
-
-    #         # Apply smoothing
-    #         smoothed = savgol_filter(trend, window_length=window_length, polyorder=polyorder)
-    #         trend = pd.Series(smoothed, index=trend.index)            
-            
-    #     return trend
-
     all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
                                       .transform(fillna_mildslop_smooth)
     
     # all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
     #                                   .transform(fillna_smooth)  
 
-    #Smooth historic trend
+    #Smooth historic trend with Garcia smoother, dynamic smoothing factor s
+    #with the standard deviation of the trend time series
     def smoothn_by_variability(x):
         s = 100000 if x.std() > 0.2 else 10000 # A bit adhoc, but works
         return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
@@ -368,8 +347,8 @@ merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
 # merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
 
 #Now calc retreat
-retreat = calc_retreat(merged_kaipara)
-# retreat = calc_retreat(all_merged)
+# retreat = calc_retreat(merged_kaipara)
+retreat = calc_retreat(all_merged)
 
 #%%
 
@@ -400,7 +379,7 @@ retreat = calc_retreat(merged_kaipara)
 #MWE of retreat polyline in one site
 # Get unique combinations
 years =  [2100]
-scenarios = [4.5]
+scenarios = [8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 slr_qt =  "50" #quantiles 17,50,83
