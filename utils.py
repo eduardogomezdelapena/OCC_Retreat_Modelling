@@ -163,13 +163,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
             b, a = butter(2, 0.01, btype='low', analog=False) #filter to smooth longshore variability
             slope = pd.Series(filtfilt(b, a, slope), index=slope.index)
         
+        #apply perturbations to beach slope
+        slope = slope * (1 + 0.05 * np.random.randn(*slope.shape))
+
         return slope
     
     all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
                                       .transform(fillna_mildslop_smooth)
-    
-    # all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
-    #                                   .transform(fillna_smooth)  
 
     #Smooth historic trend with Garcia smoother, dynamic smoothing factor s
     #with the standard deviation of the trend time series
@@ -352,26 +352,15 @@ retreat = calc_retreat(all_merged)
 
 #%%
 
-# ax1= retreat.trend.plot()
 
-# from smooth_algorithms.smoothn import smoothn
+# tanBeta = retreat.beach_slope * (1 + 0.05 * np.random.randn(*retreat.beach_slope.shape))
 
-# # Garcias smoother
-# # #S is a smoothing parameter (must be real positive scalar)
 
-# stdev= np.std(retreat.trend)
-# print(stdev)
+# ax1= tanBeta.plot()
 
-# def smoothn_by_variability(x):
-#     s = 100000 if x.std() > 0.2 else 10000 # A bit adhoc, but works
-#     return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
 
-# retreat['trend_smooth'] = (
-#     retreat.groupby('coastsat_site_id')['trend']
-#            .transform(smoothn_by_variability)
-# )
+# retreat.trend.plot()
 
-# retreat.trend_smooth.plot(ax=ax1)
 
 
 
