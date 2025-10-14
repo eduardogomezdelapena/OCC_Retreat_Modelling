@@ -32,6 +32,9 @@ from smooth_algorithms.smoothn import smoothn
 EARTH_RADIUS_KM = 6371.0
 CRS_NZTM = 2193  # NZ Transverse Mercator
 CRS_WGS84 = 4326 # Lat/Lon
+
+#Fix randomness
+np.random.seed(42)
 #%%
 def load_transects(filepath: str):
     """Load and filter transects (NZ only)."""
@@ -350,25 +353,12 @@ merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
 # retreat = calc_retreat(merged_kaipara)
 retreat = calc_retreat(all_merged)
 
-#%%
-
-
-# tanBeta = retreat.beach_slope * (1 + 0.05 * np.random.randn(*retreat.beach_slope.shape))
-
-
-# ax1= tanBeta.plot()
-
-
-# retreat.trend.plot()
-
-
-
 
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
 years =  [2100]
-scenarios = [1.9,2.6,4.5,7,8.5]
+scenarios = [1.9,2.6,4.5,8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 slr_qt =  "50" #quantiles 17,50,83
