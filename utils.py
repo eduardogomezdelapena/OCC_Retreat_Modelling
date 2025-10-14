@@ -358,62 +358,67 @@ retreat = calc_retreat(all_merged)
 #MWE of retreat polyline in one site
 # Get unique combinations
 years =  [2100]
-scenarios = [1.9,2.6,4.5,7,8.5]
+scenarios = [1.9]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
-slr_qt =  "50" #quantiles 17,50,83
+#slr_qt =  "50" #quantiles 17,50,83
 
-for year in years:
-    for scenario in scenarios:
-        start_time = time.time()  # ⏱ start timer
-        print(f"Processing scenario {scenario} for year {year}...")
+# Quantiles to process
+slr_qt_list = ["17", "50", "83"]
 
-        # Subset dataframe with specific projection year & specific scenario
-        subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
-        #Scenarios SSP2-2.6 & SSP5-8.5 have duplicates
-        subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
-
-        #Calc new point location according to retreat_50
-        bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
-
-        subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
-        # Reproject to NZTM2000 (meters)
-
-        # Project reference point onto the transect line (get distance along the line)
-        ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
-                                    subset.geom_points_ref2005.to_crs(2193)  )
-
-        # Calculate new distance from start of line
-        new_distances = ref_distances_along_lines - bruun_slr_qt
+for slr_qt in slr_qt_list:
+    print(f"\n=== Processing SLR quantile: {slr_qt} ===")
         
-        #Determine new points for shoreline , extend transects when needed
-        new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
+    for year in years:
+        for scenario in scenarios:
+            start_time = time.time()  # ⏱ start timer
+            print(f"Processing scenario {scenario} for year {year} (quantile {slr_qt})...")
 
-        # Create a GeoSeries and convert back to WGS84
-        new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
-        # Make GeoSeries of new transects in WGS84
-        new_transects = gpd.GeoSeries(new_transects, crs=2193).to_crs(4326).reset_index(drop=True)
+            # Subset dataframe with specific projection year & specific scenario
+            subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
+            #Scenarios SSP2-2.6 & SSP5-8.5 have duplicates
+            subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
-        # Also reset subset to ensure 1-to-1 alignment
-        subset = subset.reset_index(drop=True)
+            #Calc new point location according to retreat_50
+            bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
 
-        # Assign to DataFrame
-        subset['geom_new_points'] = new_points#.to_crs(4326)
-        subset["extended_transects"] = new_transects#.to_crs(4326)
+            subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
+            # Reproject to NZTM2000 (meters)
+
+            # Project reference point onto the transect line (get distance along the line)
+            ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
+                                        subset.geom_points_ref2005.to_crs(2193)  )
+
+            # Calculate new distance from start of line
+            new_distances = ref_distances_along_lines - bruun_slr_qt
+            
+            #Determine new points for shoreline , extend transects when needed
+            new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
+
+            # Create a GeoSeries and convert back to WGS84
+            new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
+            # Make GeoSeries of new transects in WGS84
+            new_transects = gpd.GeoSeries(new_transects, crs=2193).to_crs(4326).reset_index(drop=True)
+
+            # Also reset subset to ensure 1-to-1 alignment
+            subset = subset.reset_index(drop=True)
+
+            # Assign to DataFrame
+            subset['geom_new_points'] = new_points#.to_crs(4326)
+            subset["extended_transects"] = new_transects#.to_crs(4326)
 
 
-        #% From points to linestrings, careful on what active geometry goes inside
-        lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
-        # lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
-        lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
-        cols_to_display= ['geom_new_points','50','retreat_50']
-        # cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
-        subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+            #% From points to linestrings, careful on what active geometry goes inside
+            lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
+            # lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
+            lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+            cols_to_display= ['geom_new_points',f'{slr_qt}',f'retreat_{slr_qt}']
+            # cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
+            subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
 
-        elapsed_minutes = (time.time() - start_time) / 60
-        print(f"⏱ Time for scenario {scenario} ({year}): {elapsed_minutes:.2f} minutes")
- 
-        print(f"Scenario {scenario}, projections for year {year}, saved!")
+            elapsed_minutes = (time.time() - start_time) / 60
+            print(f"⏱ Time for scenario {scenario} ({year}, {slr_qt} qtl): {elapsed_minutes:.2f} minutes")
+            print(f"Scenario {scenario}, projections for year {year}, quantile {slr_qt}, saved!\n")
 
 #%%
 # Extract and prepare data

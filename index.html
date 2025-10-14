@@ -86,6 +86,10 @@
           <span class="color-line" style="border-color:red"></span>   
           <input type="checkbox" id="layer19_2100_lines"> 2100 (Projection) </label>         
  
+        <label>
+          <input type="checkbox" id="layer19_2100_quantiles"> Show 17–83 % range
+        </label>
+
       </details>
     
       <details>
@@ -270,6 +274,10 @@
       layer19_2005_lines: { url: 'lines_shoreline_50qtl_2005_1.9.geojson', layer: null },           
       layer19_2100_lines: { url: 'lines_shoreline_50qtl_2100_1.9.geojson', layer: null },     
 
+      layer19_2100_q17_lines: { url: 'lines_shoreline_17qtl_2100_1.9.geojson', layer: null },
+      layer19_2100_q83_lines: { url: 'lines_shoreline_83qtl_2100_1.9.geojson', layer: null },
+      layer19_2100_quantiles: { layer: null },  // virtual combo layer
+
       layer26_2005_lines: { url: 'lines_shoreline_50qtl_2005_2.6.geojson', layer: null },
       layer26_2100_lines: { url: 'lines_shoreline_50qtl_2100_2.6.geojson', layer: null },      
 
@@ -414,6 +422,59 @@ function loadAndToggleLayer(key, checked) {
   }
 }
 
+// --- Quantile polygon (17–83) + 50th line for SSP1–1.9 ---
+function loadQuantilePolygon(checked) {
+  if (!checked) {
+    if (layers.layer19_2100_quantiles.layer && map.hasLayer(layers.layer19_2100_quantiles.layer)) {
+      map.removeLayer(layers.layer19_2100_quantiles.layer);
+      layers.layer19_2100_quantiles.layer = null;
+    }
+    return;
+  }
+
+  Promise.all([
+    fetch('lines_shoreline_17qtl_2100_1.9.geojson').then(r => r.json()),
+    fetch('lines_shoreline_83qtl_2100_1.9.geojson').then(r => r.json()),
+    fetch('lines_shoreline_50qtl_2100_1.9.geojson').then(r => r.json())
+  ])
+    .then(([q17, q83, q50]) => {
+      const polygons = [];
+
+      q17.features.forEach((feat17, i) => {
+        if (feat17.geometry.type !== 'LineString') return;
+        const coords17 = feat17.geometry.coordinates.map(c => [c[1], c[0]]);
+
+        const feat83 = q83.features[i];
+        if (!feat83 || feat83.geometry.type !== 'LineString') return;
+        const coords83 = feat83.geometry.coordinates.map(c => [c[1], c[0]]).reverse();
+
+        const polygon = L.polygon([...coords17, ...coords83], {
+          color: 'red',
+          fillColor: 'red',
+          fillOpacity: 0.25,
+          weight: 0
+        });
+        polygons.push(polygon);
+      });
+
+      const polygonsGroup = L.layerGroup(polygons);
+
+      // 50th line overlay
+      const medianLine = L.geoJSON(q50, {
+        style: { color: 'red', weight: 2, opacity: 1 }
+      });
+
+      // Combine both
+      const comboLayer = L.layerGroup([polygonsGroup, medianLine]).addTo(map);
+      layers.layer19_2100_quantiles.layer = comboLayer;
+    })
+    .catch(err => console.error('Quantile polygon load error:', err));
+}
+
+// Bind new checkbox
+document.getElementById('layer19_2100_quantiles').addEventListener('change', e => {
+  loadQuantilePolygon(e.target.checked);
+});
 
 
 
