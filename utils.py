@@ -197,13 +197,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     )
 
     # Append retreat columns
-    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+    # merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
-    # historic_retreat_df = retreat_df.sub(
-    #     (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-    # )
-    # merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
+    historic_retreat_df = retreat_df.sub(
+        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+    )
+    merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
     return merged_retreat_df
 
@@ -358,7 +358,7 @@ retreat = calc_retreat(all_merged)
 #MWE of retreat polyline in one site
 # Get unique combinations
 years =  [2100]
-scenarios = [1.9]
+scenarios = [1.9,2.6,4.5,7,8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 #slr_qt =  "50" #quantiles 17,50,83
@@ -411,10 +411,10 @@ for slr_qt in slr_qt_list:
             #% From points to linestrings, careful on what active geometry goes inside
             lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
             # lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
-            lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+            lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
             cols_to_display= ['geom_new_points',f'{slr_qt}',f'retreat_{slr_qt}']
             # cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
-            subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+            subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
 
             elapsed_minutes = (time.time() - start_time) / 60
             print(f"⏱ Time for scenario {scenario} ({year}, {slr_qt} qtl): {elapsed_minutes:.2f} minutes")
