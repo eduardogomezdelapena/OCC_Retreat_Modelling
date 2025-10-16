@@ -23,11 +23,18 @@ import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt
 from scipy.signal import savgol_filter
 
+import time
+
+from smooth_algorithms.smoothn import smoothn
+
 #%%
 # Constants
 EARTH_RADIUS_KM = 6371.0
 CRS_NZTM = 2193  # NZ Transverse Mercator
 CRS_WGS84 = 4326 # Lat/Lon
+
+#Fix randomness
+np.random.seed(42)
 #%%
 def load_transects(filepath: str):
     """Load and filter transects (NZ only)."""
@@ -159,36 +166,23 @@ def calc_retreat(all_merged, c_adjust = 0.5):
             b, a = butter(2, 0.01, btype='low', analog=False) #filter to smooth longshore variability
             slope = pd.Series(filtfilt(b, a, slope), index=slope.index)
         
+        #apply perturbations to beach slope
+        slope = slope * (1 + 0.05 * np.random.randn(*slope.shape))
+
         return slope
     
-    #Clean and fix historic trend
-    def fillna_smooth(trend):
-       # Fill NaNs with the group-wise mean
-        mean_val = np.nanmean(trend)
-        trend = trend.fillna(mean_val)
-
-        # Apply Butterworth smoothing if enough points
-        if len(trend) >= 3:
-            # b, a = butter(2, 0.2, btype='low', analog=False) #filter to smooth longshore variability
-            # trend = pd.Series(filtfilt(b, a, trend), index=trend.index)
-
-            # Choose window_length and polyorder based on data size
-            # Choose window_length and polyorder based on data size
-            window_length = min(len(trend) if len(trend) % 2 == 1 else len(trend) - 1, 21)
-            polyorder = 2  # linear fit = more smoothing
-
-            # Apply smoothing
-            smoothed = savgol_filter(trend, window_length=window_length, polyorder=polyorder)
-            trend = pd.Series(smoothed, index=trend.index)            
-            
-        return trend
-
     all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
                                       .transform(fillna_mildslop_smooth)
-    
-    # all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
-    #                                   .transform(fillna_smooth)   
 
+    #Smooth historic trend with Garcia smoother, dynamic smoothing factor s
+    #with the standard deviation of the trend time series
+    def smoothn_by_variability(x):
+        s = 100000 if x.std() > 0.2 else 10000 # A bit adhoc, but works
+        return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
+
+    all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
+            .transform(smoothn_by_variability)
+    
     # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
     # a bit ad hoc, matches with some lidar measurements
 
@@ -203,13 +197,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     )
 
     # Append retreat columns
-    # merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
-    historic_retreat_df = retreat_df.sub(
-        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-    )
-    merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
+    # historic_retreat_df = retreat_df.sub(
+    #     (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+    # )
+    # merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
     return merged_retreat_df
 
@@ -226,10 +220,21 @@ def extend_transects_4_new_distances_points(subset, new_distances):
     # new_points = subset.geom_transect_coastsat.to_crs(2193).interpolate(new_distances)
 
     # Iterate through rows
-    for i, row in subset.iterrows():
-        line = subset.geom_transect_coastsat.to_crs(2193).loc[i]
-        new_dist = new_distances.loc[i]
-        orientation = orientations_rad.loc[i]
+    for idx, row in subset.reset_index(drop=True).iterrows():
+        line = row.geom_transect_coastsat
+        if line is None or line.is_empty or not isinstance(line, LineString):
+            new_geoms.append(None)
+            new_transects.append(None)
+            continue
+
+        line = gpd.GeoSeries([line], crs=subset.crs).to_crs(2193).iloc[0]
+        new_dist = new_distances.iloc[idx]
+        orientation = orientations_rad.iloc[idx]
+
+        if pd.isna(new_dist):
+            new_geoms.append(None)
+            new_transects.append(None)
+            continue
 
         if 0 <= new_dist <= line.length:
             # Interpolate as normal
@@ -340,12 +345,13 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 
 #%%
 #Step back, only Kaipara
-# merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
-# merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
+merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
+#merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
 # merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0126','nzd0455','nzd0456','nzd0457'])]
-merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0455'])]
+
 #Now calc retreat
-retreat = calc_retreat(merged_kaipara)
+# retreat = calc_retreat(merged_kaipara)
+retreat = calc_retreat(all_merged)
 
 
 #%%
@@ -355,285 +361,72 @@ years =  [2100]
 scenarios = [1.9]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
-slr_qt =  "50" #quantiles 17,50,83
+#slr_qt =  "50" #quantiles 17,50,83
 
+# Quantiles to process
+slr_qt_list = ["50"]
+# slr_qt_list = ["17", "50", "83"]
 
-for year in years:
-    for scenario in scenarios:
-
-        # Subset dataframe with specific projection year & specific scenario
-        subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
-        #subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
-
-        #Calc new point location according to retreat_50
-        bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
-
-        subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
-        # Reproject to NZTM2000 (meters)
-
-        # Project reference point onto the transect line (get distance along the line)
-        ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
-                                    subset.geom_points_ref2005.to_crs(2193)  )
-
-        # Calculate new distance from start of line
-        new_distances = ref_distances_along_lines - bruun_slr_qt
+for slr_qt in slr_qt_list:
+    print(f"\n=== Processing SLR quantile: {slr_qt} ===")
         
-        #Determine new points for shoreline , extend transects when needed
-        new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
+    for year in years:
+        for scenario in scenarios:
+            start_time = time.time()  # ⏱ start timer
+            print(f"Processing scenario {scenario} for year {year} (quantile {slr_qt})...")
 
-        # Create a GeoSeries and convert back to WGS84
-        new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
-        # Make GeoSeries of new transects in WGS84
-        new_transects = gpd.GeoSeries(new_transects, crs=2193).to_crs(4326).reset_index(drop=True)
+            # Subset dataframe with specific projection year & specific scenario
+            subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
+            #Scenarios SSP2-2.6 & SSP5-8.5 have duplicates
+            subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
 
-        # Also reset subset to ensure 1-to-1 alignment
-        subset = subset.reset_index(drop=True)
+            #Calc new point location according to retreat_50
+            bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
 
-        # Assign to DataFrame
-        subset['geom_new_points'] = new_points#.to_crs(4326)
-        subset["extended_transects"] = new_transects#.to_crs(4326)
-#%% Smoothing
-from pyproj import Transformer
-from shapely.ops import transform
+            subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
+            # Reproject to NZTM2000 (meters)
 
-# def extend_line(line, distance=100):
-#     # Define transformer from EPSG:4326 (lon/lat) → EPSG:2193 (NZTM meters)
-#     to_2193  = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
-#     to_4326 = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
-#     # Reproject the shapely LineString
-#     line_2193 = transform(to_2193 , line)   # smoothed_line must be EPSG:4326
+            # Project reference point onto the transect line (get distance along the line)
+            ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
+                                        subset.geom_points_ref2005.to_crs(2193)  )
 
-#     coords = list(line_2193.coords)
-#     # first segment vector
-#     x0, y0 = coords[0]
-#     x1, y1 = coords[1]
-#     dx0, dy0 = x0 - x1, y0 - y1
-#     length0 = np.hypot(dx0, dy0)
-#     ux0, uy0 = dx0 / length0, dy0 / length0
+            # Calculate new distance from start of line
+            new_distances = ref_distances_along_lines - bruun_slr_qt
+            
+            #Determine new points for shoreline , extend transects when needed
+            new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
 
-#     # last segment vector
-#     xn1, yn1 = coords[-2]
-#     xn, yn = coords[-1]
-#     dx1, dy1 = xn - xn1, yn - yn1
-#     length1 = np.hypot(dx1, dy1)
-#     ux1, uy1 = dx1 / length1, dy1 / length1
+            # Create a GeoSeries and convert back to WGS84
+            new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
+            # Make GeoSeries of new transects in WGS84
+            new_transects = gpd.GeoSeries(new_transects, crs=2193).to_crs(4326).reset_index(drop=True)
 
-#     # extend
-#     new_start = (x0 + ux0 * distance, y0 + uy0 * distance)
-#     new_end = (xn + ux1 * distance, yn + uy1 * distance)
+            # Also reset subset to ensure 1-to-1 alignment
+            subset = subset.reset_index(drop=True)
 
-#     extended_line_2193 = LineString([new_start] + coords + [new_end])
-
-#     return transform(to_4326, extended_line_2193)
-
-def smooth_retreat_lines(subset):
-    """ Smooth retreat lines with savgol filter for each site. Especially useful for corners."""
-
-    results = []
-
-    for site_id, site_data in subset.groupby("coastsat_site_id"):
-
-        # --- Step 1. Extract arrays from ordered points ---
-        x = site_data["geom_new_points"].apply(lambda p: p.x).values
-        y = site_data["geom_new_points"].apply(lambda p: p.y).values
-
-        #Set the window length to the largest odd number ≤ len(trend), but cap it at 41 (Kaipara)
-        wl = min(len(x) if len(x) % 2 == 1 else len(x) - 1, 41)
-        if wl < 3:  # need at least 3 for polyorder=3
-            continue
-
-        # smooth with moving polynomial fit
-        x_smooth = savgol_filter(x, window_length=wl, polyorder=3)
-        y_smooth = savgol_filter(y, window_length=wl, polyorder=3)
-
-        smoothed_line = LineString(np.column_stack([x_smooth, y_smooth]))
-        # smoothed_line = extend_line(LineString(np.column_stack([x_smooth, y_smooth])),
-        #              distance=10)
-
-        results.append({"coastsat_site_id": site_id, "geometry": smoothed_line})
-
-    # --- Step 4. Wrap into a GeoDataFrame for plotting ---
-    gdf_smoothed = gpd.GeoDataFrame(results, crs=subset.crs)
-
-    return gdf_smoothed
-
-gdf_smoothed =  smooth_retreat_lines(subset)
-#%%
+            # Assign to DataFrame
+            subset['geom_new_points'] = new_points#.to_crs(4326)
+            subset["extended_transects"] = new_transects#.to_crs(4326)
 
 
+            #% From points to linestrings, careful on what active geometry goes inside
+            lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
+            # lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
+            lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+            cols_to_display= ['geom_new_points',f'{slr_qt}',f'retreat_{slr_qt}']
+            # cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
+            subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
 
-# --- Example plot ---
-ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
-gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
-subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5, label="Ref 2005")
-subset.set_geometry("extended_transects").plot(ax=ax, color= "black", label="ext_transects")
-ax.legend()
+            elapsed_minutes = (time.time() - start_time) / 60
+            print(f"⏱ Time for scenario {scenario} ({year}, {slr_qt} qtl): {elapsed_minutes:.2f} minutes")
+            print(f"Scenario {scenario}, projections for year {year}, quantile {slr_qt}, saved!\n")
 
-#%% So the intersect is empty ae
-
-# smoothed_line = gdf_smoothed[gdf_smoothed["coastsat_site_id"] == "nzd0455"].geometry.iloc[0]
-
-# transect0 = subset.loc[subset["coastsat_transect_id"] == 'nzd0455-0000', "extended_transects"].iloc[0]
-
-# # Project to NZTM (meters)
-# smoothed_line_m = gpd.GeoSeries([smoothed_line], crs=4326).to_crs(2193).iloc[0]
-# transect_m = gpd.GeoSeries([transect0], crs=4326).to_crs(2193).iloc[0]
-
-# # Buffer a few meters
-# smoothed_buffer_m = smoothed_line_m.buffer(5)  # 5 meters
-
-# # Intersection
-# inter_m = transect_m.intersection(smoothed_buffer_m)
-
-
-# # inter = transect0.intersection(smoothed_line)
-# print(inter_m.is_empty)
-
-# print(transect0.is_valid) 
-# print(transect0.length)
-
-
-
-#%% Map (intersect) smooth line back to extended transects
-
-def map_smoothline_back2transects(df_line_smoothed,subset):
-    """ 
-    Map smoothed line back to extended transects to obtain points.
-    In the process some transects get dropped due to non-monotonicity of smoothed line.
-    This gets rid of uggly corner effects. 
-    """
-
-    # Function to get arc length of a point on smoothed line
-    def point_to_arclen(pt, line):
-        # project point onto line and get distance along line
-        dist_along = line.project(pt)
-        return dist_along
-
-    #CAREFUL WITH THE ACTIVE GEOMETRY
-    # Ensure subset is in NZTM (EPSG:2193)
-    subset_m = subset.set_geometry("extended_transects").to_crs(2193)
-    subset_m["geom_points_ref2005"] = subset_m["geom_points_ref2005"].to_crs(2193)
-
-
-    results = []
-
-    # Work per site
-    for site_id, site_data in subset_m.groupby("coastsat_site_id"):
-
-        # Grab this site's smoothed line
-        smoothed_line = df_line_smoothed[df_line_smoothed["coastsat_site_id"] == site_id] \
-            .to_crs(2193).geometry.iloc[0]
-
-        last_arclen = -np.inf
-
-        for idx, transect in site_data["extended_transects"].items():
-            ref_pt = site_data.loc[idx, "geom_points_ref2005"]
-            ref_tran = site_data.loc[idx, "coastsat_transect_id"]
-            print(f"Checking transect {ref_tran} (idx={idx})")
-
-            # Intersect transect with smoothed line
-            inter = transect.intersection(smoothed_line.buffer(5))
-
-# # Project to NZTM (meters)
-# smoothed_line_m = gpd.GeoSeries([smoothed_line], crs=4326).to_crs(2193).iloc[0]
-# transect_m = gpd.GeoSeries([transect0], crs=4326).to_crs(2193).iloc[0]
-
-# # Buffer a few meters
-# smoothed_buffer_m = smoothed_line_m.buffer(5)  # 5 meters
-
-# # Intersection
-# inter_m = transect_m.intersection(smoothed_buffer_m)
-
-
-
-
-            if inter.is_empty:
-                print(f"   Transect {ref_tran}: no intersection with smoothed line")
-                continue
-
-            # Handle multipoint intersections (take nearest to ref)
-            if inter.geom_type == "MultiPoint":
-                inter = min(inter.geoms, key=lambda g: g.distance(ref_pt))
-
-            # Compute arc length
-            arclen = point_to_arclen(inter, smoothed_line)
-
-            # # Debug print
-            # status = "KEPT"
-            # if arclen <= last_arclen:
-            #     status = "SKIPPED"
-            # print(f"Site {site_id} | Transect {ref_tran} | arclen={arclen:.3f} | last_arclen={last_arclen:.3f} | {status}")
-
-            if arclen <= last_arclen :  
-                continue  # enforce monotonic increase
-            last_arclen = arclen
-
-            # Signed retreat: project points onto transect
-            ref_dist = transect.project(ref_pt)
-            inter_dist = transect.project(inter)
-            dist = ref_pt.distance(inter)
-
-            # Assign sign based on relative position along transect
-            smoothed_retreat_signed = dist if inter_dist >= ref_dist else -dist
-            smoothed_retreat_signed = round(smoothed_retreat_signed, 2)
-
-            results.append({
-                "coastsat_transect_id": ref_tran,
-                "geom_points_ref2005": ref_pt,
-                "geom_smoothed_new_points": inter,
-                "smoothed_retreat_50": smoothed_retreat_signed
-            })
-
-    # Build GeoDataFrame from all sites
-    gdf_results = gpd.GeoDataFrame(
-        results,
-        geometry="geom_smoothed_new_points",  
-        crs="EPSG:2193"                        
-    )
-
-    return gdf_results.to_crs('4326')
-
-gdf_results= map_smoothline_back2transects(gdf_smoothed,subset)
+#Save
+subset.to_pickle(f"./postprocessing/scenario{scenario}_year{year}_quantile_{slr_qt}.pkl")
 
 #%%
+subset.retreat_50.mean
 
-# --- Example plot ---
-ax = subset.set_geometry("geom_new_points").plot(color="red", markersize=5, label="Raw 2100")
-#gdf_smoothed.plot(ax=ax, color="orange", linewidth=2, label="Smoothed 2100 ")
-subset.set_geometry("geom_points_ref2005").plot(ax=ax, color= "blue", markersize=5,label= "Ref 2005")
-subset.set_geometry("extended_transects").plot(ax=ax, color= "black")
-# Plot intersections (green dots)
-gdf_results.plot(ax=ax, color="green", markersize=30, marker="x", label="Smoothed intersections")
-
-ax.legend()
-
-#%%
-
-merged_df = subset.merge(gdf_results[['coastsat_transect_id', 'geom_smoothed_new_points']],
-                      on='coastsat_transect_id',
-                      how='inner')
-
-#Replace old retreat with smoothed retreat
-merged_df['retreat_50'] = gdf_results['smoothed_retreat_50']
-
-#%%
-
-        #Because the transformation from transects to points needs cleaning (labels)
-        #Here some cleaning is added or even better... clean coastsat transects directly
-
-        #append new_points 
-        # subset['geom_new_points'] = subset.geom_transect_coastsat.interpolate(new_distances)
-        # subset['geom_new_points'] = new_points.to_crs(4326)
-    
-
-        #% From points to linestrings, careful on what active geometry goes inside
-        # lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
-        lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
-        lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
-        # cols_to_display= ['geom_new_points','50','retreat_50']
-        cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
-        merged_df[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
-       
 #%%
 # Extract and prepare data
 subset_vis = subset.copy()  # Just to be safe
