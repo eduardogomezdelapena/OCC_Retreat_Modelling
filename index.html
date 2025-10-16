@@ -162,10 +162,8 @@
         </label>                   
         <label>
           <span class="color-line" style="border-color:red; border-top-style:dashed;"></span>
-          <input type="checkbox" id="htrend_layer19_2100_lines"> 2100 (Projection)</label> 
-        <label>
-          <input type="checkbox" id="htrend_quantile_2100_1.9">
-          Show 17–83 % range </label>            
+          <input type="checkbox" id="htrend_layer19_2100_lines"> 2100 (Projection)
+        </label>             
   </details>
 
   <details>
@@ -455,37 +453,22 @@ function loadQuantilePolygon(scenario, checked) {
     if (quantileLayers[scenario] && map.hasLayer(quantileLayers[scenario])) {
       map.removeLayer(quantileLayers[scenario]);
     }
-    if (quantileLayers[`htrend_${scenario}`] && map.hasLayer(quantileLayers[`htrend_${scenario}`])) {
-      map.removeLayer(quantileLayers[`htrend_${scenario}`]);
-    }
     quantileLayers[scenario] = null;
-    quantileLayers[`htrend_${scenario}`] = null;
-
     return;
   }
 
-  // --- SLR-only quantiles ---
   const q17url = `lines_shoreline_17qtl_2100_${scenario}.geojson`;
   const q50url = `lines_shoreline_50qtl_2100_${scenario}.geojson`;
   const q83url = `lines_shoreline_83qtl_2100_${scenario}.geojson`;
 
-  // --- Historic trend quantiles ---
-  const hq17url = `htrend_lines_shoreline_17qtl_2100_${scenario}.geojson`;
-  const hq50url = `htrend_lines_shoreline_50qtl_2100_${scenario}.geojson`;
-  const hq83url = `htrend_lines_shoreline_83qtl_2100_${scenario}.geojson`;
-
   Promise.all([
     fetch(q17url).then(r => r.json()),
     fetch(q83url).then(r => r.json()),
-    fetch(q50url).then(r => r.json()),
-    fetch(hq17url).then(r => r.json()),
-    fetch(hq83url).then(r => r.json()),
-    fetch(hq50url).then(r => r.json())
+    fetch(q50url).then(r => r.json())
   ])
-    .then(([q17, q83, q50, hq17, hq83, hq50]) => {
-
-       // --- SLR-only polygon ---
+    .then(([q17, q83, q50]) => {
       const polygons = [];
+
       q17.features.forEach((feat17, i) => {
         if (feat17.geometry.type !== "LineString") return;
         const coords17 = feat17.geometry.coordinates.map(c => [c[1], c[0]]);
@@ -509,32 +492,7 @@ function loadQuantilePolygon(scenario, checked) {
       });
       const combo = L.layerGroup([polygonsGroup, medianLine]).addTo(map);
       quantileLayers[scenario] = combo;
-
-      // --- Historic trend polygon ---
-      const htrendPolygons = [];
-      hq17.features.forEach((feat17, i) => {
-        if (feat17.geometry.type !== "LineString") return;
-        const coords17 = feat17.geometry.coordinates.map(c => [c[1], c[0]]);
-        const feat83 = hq83.features[i];
-        if (!feat83 || feat83.geometry.type !== "LineString") return;
-        const coords83 = feat83.geometry.coordinates.map(c => [c[1], c[0]]).reverse();
-        htrendPolygons.push(
-          L.polygon([...coords17, ...coords83], {
-            color: color,
-            fillColor: color,
-            fillOpacity: 0.25,
-            weight: 0
-          })
-        );
-      });
-      const htrendGroup = L.layerGroup(htrendPolygons);
-      const htrendmedianLine = L.geoJSON(hq50, {
-        style: { color: color, weight: 2, opacity: 1 , dashArray: "5,5" }
-      });
-      const htrendcombo = L.layerGroup([htrendGroup, htrendmedianLine]).addTo(map);
-      quantileLayers[`htrend_${scenario}`] = htrendcombo;
     })
-
     .catch(err => console.error(`Quantile polygon load error for ${scenario}:`, err));
 }
 
