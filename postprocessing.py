@@ -74,7 +74,7 @@ ax.axis("off")
 plt.show()
 
 # %%
-
+import folium
 import branca
 
 values = regions_summary['retreat_50'].dropna()

@@ -197,13 +197,13 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     )
 
     # Append retreat columns
-    merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
+    # merged_retreat_df = pd.concat([all_merged, retreat_df], axis=1)
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
-    # historic_retreat_df = retreat_df.sub(
-    #     (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
-    # )
-    # merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
+    historic_retreat_df = retreat_df.sub(
+        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+    )
+    merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
     return merged_retreat_df
 
@@ -358,13 +358,13 @@ retreat = calc_retreat(all_merged)
 #MWE of retreat polyline in one site
 # Get unique combinations
 years =  [2100]
-scenarios = [1.9]
+scenarios = [1.9,2.6,4.5,7,8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 #slr_qt =  "50" #quantiles 17,50,83
 
 # Quantiles to process
-slr_qt_list = ["50"]
+slr_qt_list = ["17", "50", "83"]
 # slr_qt_list = ["17", "50", "83"]
 
 for slr_qt in slr_qt_list:
@@ -412,98 +412,98 @@ for slr_qt in slr_qt_list:
             #% From points to linestrings, careful on what active geometry goes inside
             lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
             # lines_gdf = points_to_polylines(merged_df.set_geometry('geom_smoothed_new_points'))
-            lines_gdf.to_file(f"lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+            lines_gdf.to_file(f"htrend_lines_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
             cols_to_display= ['geom_new_points',f'{slr_qt}',f'retreat_{slr_qt}']
             # cols_to_display= ['geom_smoothed_new_points','50','retreat_50']
-            subset[cols_to_display].to_file(f"points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
+            subset[cols_to_display].to_file(f"htrend_points_shoreline_{slr_qt}qtl_{year}_{scenario}.geojson")
 
             elapsed_minutes = (time.time() - start_time) / 60
             print(f"⏱ Time for scenario {scenario} ({year}, {slr_qt} qtl): {elapsed_minutes:.2f} minutes")
             print(f"Scenario {scenario}, projections for year {year}, quantile {slr_qt}, saved!\n")
 
-#Save
-subset.to_pickle(f"./postprocessing/scenario{scenario}_year{year}_quantile_{slr_qt}.pkl")
+            #Save for postprocessing
+            subset.to_pickle(f"./postprocessing/htrend_scenario{scenario}_year{year}_quantile_{slr_qt}.pkl")
 
-#%%
-subset.retreat_50.mean
+# #%%
+# subset.retreat_50.mean
 
-#%%
-# Extract and prepare data
-subset_vis = subset.copy()  # Just to be safe
+# #%%
+# # Extract and prepare data
+# subset_vis = subset.copy()  # Just to be safe
 
-# Extract last 3 digits of transect ID
-subset_vis['id_suffix'] = subset_vis['coastsat_transect_id'].str[-3:]
+# # Extract last 3 digits of transect ID
+# subset_vis['id_suffix'] = subset_vis['coastsat_transect_id'].str[-3:]
 
-# Convert to int for sorting
-subset_vis['id_suffix'] = subset_vis['id_suffix'].astype(int)
+# # Convert to int for sorting
+# subset_vis['id_suffix'] = subset_vis['id_suffix'].astype(int)
 
-# Sort by suffix
-subset_vis = subset_vis.sort_values('id_suffix')
+# # Sort by suffix
+# subset_vis = subset_vis.sort_values('id_suffix')
 
-# Extract columns
-x = subset_vis['id_suffix']
-y1 = subset_vis['beach_slope']
-y2 = subset_vis['trend']
-y3 = subset_vis['retreat_50']
+# # Extract columns
+# x = subset_vis['id_suffix']
+# y1 = subset_vis['beach_slope']
+# y2 = subset_vis['trend']
+# y3 = subset_vis['retreat_50']
 
-# Start figure and first axis
-fig, ax1 = plt.subplots(figsize=(14, 6))
+# # Start figure and first axis
+# fig, ax1 = plt.subplots(figsize=(14, 6))
 
-color1 = 'tab:blue'
-ax1.set_xlabel('Transect Suffix (last 3 digits)')
-ax1.set_ylabel('Beach Slope (tanB)', color=color1)
-ax1.plot(x, y1, color=color1, marker='o', label='Beach Slope')
-ax1.tick_params(axis='y', labelcolor=color1)
+# color1 = 'tab:blue'
+# ax1.set_xlabel('Transect Suffix (last 3 digits)')
+# ax1.set_ylabel('Beach Slope (tanB)', color=color1)
+# ax1.plot(x, y1, color=color1, marker='o', label='Beach Slope')
+# ax1.tick_params(axis='y', labelcolor=color1)
 
-# Second y-axis (sharing x)
-ax2 = ax1.twinx()
-color2 = 'tab:green'
-ax2.set_ylabel('Satellite Trend (m/year)', color=color2)
-ax2.plot(x, y2, color=color2, marker='s', label='Trend')
-ax2.tick_params(axis='y', labelcolor=color2)
+# # Second y-axis (sharing x)
+# ax2 = ax1.twinx()
+# color2 = 'tab:green'
+# ax2.set_ylabel('Satellite Trend (m/year)', color=color2)
+# ax2.plot(x, y2, color=color2, marker='s', label='Trend')
+# ax2.tick_params(axis='y', labelcolor=color2)
 
-# Third y-axis (offset from right)
-ax3 = ax1.twinx()
-color3 = 'tab:red'
-ax3.spines['right'].set_position(("axes", 1.1))  # offset
-ax3.set_ylabel('Retreat 50th percentile (m)', color=color3)
-ax3.plot(x, y3, color=color3, marker='^', label='Retreat 50')
-ax3.tick_params(axis='y', labelcolor=color3)
+# # Third y-axis (offset from right)
+# ax3 = ax1.twinx()
+# color3 = 'tab:red'
+# ax3.spines['right'].set_position(("axes", 1.1))  # offset
+# ax3.set_ylabel('Retreat 50th percentile (m)', color=color3)
+# ax3.plot(x, y3, color=color3, marker='^', label='Retreat 50')
+# ax3.tick_params(axis='y', labelcolor=color3)
 
-# Add grid and title
-ax1.grid(True)
+# # Add grid and title
+# ax1.grid(True)
 
-# X-ticks formatting
-# ax1.set_xticks(x)
-# ax1.set_xticklabels(x, rotation=45)
+# # X-ticks formatting
+# # ax1.set_xticks(x)
+# # ax1.set_xticklabels(x, rotation=45)
 
-step = 5  # show every 5th label (adjust as needed)
-ax1.set_xticks(x[::step])
-ax1.set_xticklabels(x[::step], rotation=45)
+# step = 5  # show every 5th label (adjust as needed)
+# ax1.set_xticks(x[::step])
+# ax1.set_xticklabels(x[::step], rotation=45)
 
-plt.tight_layout()
-plt.show()
+# plt.tight_layout()
+# plt.show()
 
-#%%
-# Plot new points, compare to ref
+# #%%
+# # Plot new points, compare to ref
 
-# Add basemap (Web Mercator reprojection)
-# gdf_2100_web = new_points.to_crs(epsg=3857)
-gdf_2100_web = subset.geom_new_points.to_crs(epsg=3857)
-ref_points_web = subset.geom_points_ref2005.to_crs(epsg=3857)
-transects_web= subset.geom_transect_coastsat.to_crs(epsg=3857)
+# # Add basemap (Web Mercator reprojection)
+# # gdf_2100_web = new_points.to_crs(epsg=3857)
+# gdf_2100_web = subset.geom_new_points.to_crs(epsg=3857)
+# ref_points_web = subset.geom_points_ref2005.to_crs(epsg=3857)
+# transects_web= subset.geom_transect_coastsat.to_crs(epsg=3857)
 
-fig, ax = plt.subplots(figsize=(10, 10))
-transects_web.plot(ax=ax, color='yellow',  label='Coastsat Transect', zorder=1)
-ref_points_web.plot(ax=ax, color='blue', markersize=20, label='Reference Points')
-gdf_2100_web.plot(ax=ax, color='red', markersize=20, label= f"Projected :{year} Points")
-ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)  # or another basemap
-
-
-ax.legend()
-ax.set_title(f"NZ Shoreline Retreat Projection - {year}", fontsize=14)
-ax.set_axis_off()
-plt.show()
+# fig, ax = plt.subplots(figsize=(10, 10))
+# transects_web.plot(ax=ax, color='yellow',  label='Coastsat Transect', zorder=1)
+# ref_points_web.plot(ax=ax, color='blue', markersize=20, label='Reference Points')
+# gdf_2100_web.plot(ax=ax, color='red', markersize=20, label= f"Projected :{year} Points")
+# ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery)  # or another basemap
 
 
-# %%
+# ax.legend()
+# ax.set_title(f"NZ Shoreline Retreat Projection - {year}", fontsize=14)
+# ax.set_axis_off()
+# plt.show()
+
+
+# # %%
