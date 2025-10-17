@@ -456,13 +456,15 @@ function loadAndToggleLayer(key, checked) {
     "1.9": "red",
     "2.6": "lime",
     "4.5": "orange",
-    "7": "cyan",
+    "7.0": "cyan",
     "8.5": "deeppink"
   };
 
   
 function loadQuantilePolygon(scenario, checked) {
   const color = scenarioColors[scenario] || "gray";
+  // Fix file naming mismatch for SSP3 — 7.0
+  const scenarioKey = scenario === "7.0" ? "7" : scenario;
 
   if (!checked) {
     if (quantileLayers[scenario] && map.hasLayer(quantileLayers[scenario])) {
@@ -472,9 +474,9 @@ function loadQuantilePolygon(scenario, checked) {
     return;
   }
 
-  const q17url = `lines_shoreline_17qtl_2100_${scenario}.geojson`;
-  const q50url = `lines_shoreline_50qtl_2100_${scenario}.geojson`;
-  const q83url = `lines_shoreline_83qtl_2100_${scenario}.geojson`;
+  const q17url = `lines_shoreline_17qtl_2100_${scenarioKey}.geojson`;
+  const q50url = `lines_shoreline_50qtl_2100_${scenarioKey}.geojson`;
+  const q83url = `lines_shoreline_83qtl_2100_${scenarioKey}.geojson`;
 
   Promise.all([
     fetch(q17url).then(r => r.json()),
@@ -514,6 +516,8 @@ function loadQuantilePolygon(scenario, checked) {
 
 function loadHtrendQuantilePolygon(scenario, checked) {
   const color = scenarioColors[scenario] || "gray";
+    // Fix file naming mismatch for SSP3 — 7.0
+  const scenarioKey = scenario === "7.0" ? "7" : scenario;
 
   if (!checked) {
     if (quantileLayers[`htrend_${scenario}`] && map.hasLayer(quantileLayers[`htrend_${scenario}`])) {
@@ -523,9 +527,9 @@ function loadHtrendQuantilePolygon(scenario, checked) {
     return;
   }
 
-  const hq17url = `htrend_lines_shoreline_17qtl_2100_${scenario}.geojson`;
-  const hq50url = `htrend_lines_shoreline_50qtl_2100_${scenario}.geojson`;
-  const hq83url = `htrend_lines_shoreline_83qtl_2100_${scenario}.geojson`;
+  const hq17url = `htrend_lines_shoreline_17qtl_2100_${scenarioKey}.geojson`;
+  const hq50url = `htrend_lines_shoreline_50qtl_2100_${scenarioKey}.geojson`;
+  const hq83url = `htrend_lines_shoreline_83qtl_2100_${scenarioKey}.geojson`;
 
   Promise.all([
     fetch(hq17url).then(r => r.json()),
