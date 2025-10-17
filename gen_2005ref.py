@@ -111,9 +111,13 @@ dupe_ids = transects['id'][transects['id'].duplicated()].unique()
 print("Duplicate transect IDs:")
 print(dupe_ids)
 
-#Hardcode drop
+#Hardcoded: drop nested transects near Rotokino mouth
 transects = transects[transects.site_id != 'nzd0418']
 transects = transects[transects.site_id != 'nzd0419']
+
+#Hardcoded: drop Farewell spit transects
+transects = transects[transects.site_id != 'nzd0313']
+transects = transects[transects.site_id != 'nzd0314']
 
 #Consecutive label check (ocasional bug between 000-001 ids)
 site_pair_distance = check_consecutive_labels(transects)
