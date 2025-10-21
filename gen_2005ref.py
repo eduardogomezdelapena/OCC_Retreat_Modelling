@@ -148,7 +148,7 @@ for site_id in tqdm(transects_reindexed.site_id.unique()):
     site = site.to_crs(target_crs) 
     #Read tidally corrected ts for each transect
     intersects = pd.read_csv(f"https://uoa-eresearch.github.io/CoastSat/data/{site_id}/transect_time_series_tidally_corrected.csv")
-    mean_intersect = intersects[intersects.dates.between("2005-01-01", "2006-01-01")].drop(columns=["dates", "satname"]).mean(
+    mean_intersect = intersects[intersects.dates.between("2024-01-01", "2025-08-01")].drop(columns=["dates", "satname"]).mean(
         skipna=True
     )
     #All points in a single group transect
@@ -163,10 +163,10 @@ shoreline_2005_gdf = gpd.GeoDataFrame(all_tgroups_2005, crs=target_crs)
 ##################################################################################################
 #%% Export points
 shoreline_2005_gdf = shoreline_2005_gdf.dropna(subset=['geometry'])
-shoreline_2005_gdf.to_crs(4326).to_file('points_ref_shoreline_2005.geojson')
+shoreline_2005_gdf.to_crs(4326).to_file('points_ref_shoreline_2025.geojson')
 #Export polylines
 lines_gdf = points_to_lines(shoreline_2005_gdf)
-lines_gdf.to_file("lines_ref_shoreline_2005.geojson")
+lines_gdf.to_file("lines_ref_shoreline_2025.geojson")
 #Export clean transects 
 transects_reindexed.to_file("transects_reindexed.geojson")
 

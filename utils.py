@@ -316,7 +316,7 @@ nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_WGS84}", geometry= 'geo
 
 coastsat_merged = load_and_merge_coastsat_data(
     "transects_reindexed.geojson",
-    "points_ref_shoreline_2005.geojson",
+    "points_ref_shoreline_2025.geojson",
     CRS_WGS84
 )
 
@@ -357,16 +357,16 @@ retreat = calc_retreat(all_merged)
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
-years =  [2100]
-scenarios = [1.9,2.6,4.5,7,8.5]
+years =  [2005]
+scenarios = [1.9]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 #slr_qt =  "50" #quantiles 17,50,83
 
 # Quantiles to process
-slr_qt_list = ["17", "50", "83"]
+slr_qt_list = ["50"]
 # slr_qt_list = ["17", "50", "83"]
-
+print("Before loop:", retreat.loc[retreat["year"] == 2005, "retreat_50"].describe())
 for slr_qt in slr_qt_list:
     print(f"\n=== Processing SLR quantile: {slr_qt} ===")
         
@@ -394,20 +394,26 @@ for slr_qt in slr_qt_list:
             new_distances = ref_distances_along_lines - bruun_slr_qt
             
             #Determine new points for shoreline , extend transects when needed
-            new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
+            #If year base, don't extend transects, append points as they are
+            if year == 2005 :
+                subset = subset.reset_index(drop=True)
+                subset['geom_new_points'] = subset["geom_points_ref2005"]
+                #Just pass transects as they are
+                subset["extended_transects"] =  subset["geom_transect_coastsat"]
 
-            # Create a GeoSeries and convert back to WGS84
-            new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
-            # Make GeoSeries of new transects in WGS84
-            new_transects = gpd.GeoSeries(new_transects, crs=2193).to_crs(4326).reset_index(drop=True)
+            else:
+                new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
+                # Create a GeoSeries and convert back to WGS84
+                new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
+                # Make GeoSeries of new transects in WGS84
+                new_transects = gpd.GeoSeries(new_transects, crs=2193).to_crs(4326).reset_index(drop=True)
 
-            # Also reset subset to ensure 1-to-1 alignment
-            subset = subset.reset_index(drop=True)
+                # Also reset subset to ensure 1-to-1 alignment
+                subset = subset.reset_index(drop=True)
 
-            # Assign to DataFrame
-            subset['geom_new_points'] = new_points#.to_crs(4326)
-            subset["extended_transects"] = new_transects#.to_crs(4326)
-
+                # Assign to DataFrame
+                subset['geom_new_points'] = new_points#.to_crs(4326)
+                subset["extended_transects"] = new_transects#.to_crs(4326)
 
             #% From points to linestrings, careful on what active geometry goes inside
             lines_gdf = points_to_polylines(subset.set_geometry('geom_new_points'))
@@ -423,7 +429,8 @@ for slr_qt in slr_qt_list:
 
             #Save for postprocessing
             subset.to_pickle(f"./postprocessing/htrend_scenario{scenario}_year{year}_quantile_{slr_qt}.pkl")
-
+            
+            print("After subset creation:", subset["retreat_50"].describe())
 # #%%
 # subset.retreat_50.mean
 
@@ -507,3 +514,5 @@ for slr_qt in slr_qt_list:
 
 
 # # %%
+
+# %%
