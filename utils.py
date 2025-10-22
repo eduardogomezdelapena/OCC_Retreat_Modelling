@@ -344,6 +344,110 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
                                geometry= 'geom_points_ref2005')
 
 #%%
+#Given a custom reference year (the current is 2005), transform the SLR values for the 50 quartiles
+
+# Parameters
+slrise_ref = 2005
+custom_ref_year = 2025
+
+# Filter to one site and one scenario (adjust these to match your data)
+site_id = 0         
+
+unique_combos = slr_data[["SSP", "scenario","Confidence"]].drop_duplicates()
+print(unique_combos)
+
+# Get available years
+available_years = sorted(slr_data["year"].unique())
+
+# Find lower and upper bounds around the custom reference year
+lower = max([y for y in available_years if y <= custom_ref_year])
+upper = min([y for y in available_years if y >= custom_ref_year])
+
+# Pick first combination
+first_combo = unique_combos.iloc[0]
+
+# Extract values
+ssp_val = first_combo["SSP"]
+scenario_val = first_combo["scenario"]
+confidence_val = first_combo["Confidence"]
+
+# Subset slr_data for that combination AND the site
+site_id = 0
+slr_subset = slr_data[
+    (slr_data["nzrise_site_id"] == site_id) &
+    (slr_data["SSP"] == ssp_val) &
+    (slr_data["scenario"] == scenario_val) &
+    (slr_data["Confidence"] == confidence_val)
+].copy()
+
+print(slr_subset)
+
+# Compute decadal retreat rate (assuming linear change between lower and upper years)
+R_lower = slr_subset.loc[slr_subset['year'] == lower, '50'].values
+R_upper = slr_subset.loc[slr_subset['year'] == upper, '50'].values
+
+Rdecade = R_upper - R_lower
+Rperyear = Rdecade / (upper - lower)
+
+# Correction from current reference (e.g., 2005) to new reference (e.g., 2025)
+correction_factor = R_lower + Rperyear * (custom_ref_year - lower)
+
+slr_subset['50_shifted'] = slr_subset['50'] - correction_factor
+# Apply correction factors to the 50th percentile values and store in new column
+#slr_data['50_shifted'] = slr_data['50'] - correction_factors
+
+ax1= slr_subset['50_shifted'].plot(color='red')
+slr_subset['50'].plot(ax=ax1,color='k')
+#%% Quick plot to check correction makes sense
+
+# Create larger figure
+fig, ax1 = plt.subplots(figsize=(14, 6))  # width, height in inches
+
+# Plot both series
+ax1.plot(slr_subset["year"], slr_subset["50_shifted"], color="red", label="shifted")
+ax1.plot(slr_subset["year"], slr_subset["50"], color="k", label="original")
+
+# Add vertical line and annotation
+ax1.axvline(x=custom_ref_year, color="blue", linestyle="--", linewidth=1.5)
+ax1.text(
+    custom_ref_year + 0.5,
+    ax1.get_ylim()[1] * 0.95,
+    "custom ref year",
+    color="blue",
+    fontsize=11,
+    rotation=90,
+    va="top"
+)
+
+# Add horizontal line at y = 0
+ax1.axhline(y=0, color="gray", linestyle="--", linewidth=1)
+
+# Labels and legend
+ax1.set_xlabel("Year", fontsize=12)
+ax1.set_ylabel("Sea level rise (m)", fontsize=12)
+ax1.legend(fontsize=10)
+
+# Set x-axis ticks every 5 years
+year_min = int(slr_subset["year"].min())
+year_max = int(slr_subset["year"].max())
+ax1.set_xticks(np.arange(year_min, year_max + 1, 5))
+ax1.set_xticklabels(ax1.get_xticks().astype(int), rotation=45, ha="center")
+
+
+# 🔹 Dynamic title
+ax1.set_title(
+    f"Site {site_id} — SSP: {ssp_val}, Scenario: {scenario_val}, Confidence: {confidence_val}",
+    fontsize=13,
+    pad=15
+)
+
+# Improve spacing
+plt.tight_layout()
+plt.show()
+
+
+########################################################################################
+#%%
 #Step back, only Kaipara
 merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
 #merged_kaipara = all_merged[all_merged.coastsat_site_id.isin(['nzd0125', 'nzd0126','nzd0127','nzd0456'])]
@@ -366,7 +470,7 @@ scenarios = [1.9]
 # Quantiles to process
 slr_qt_list = ["50"]
 # slr_qt_list = ["17", "50", "83"]
-print("Before loop:", retreat.loc[retreat["year"] == 2005, "retreat_50"].describe())
+
 for slr_qt in slr_qt_list:
     print(f"\n=== Processing SLR quantile: {slr_qt} ===")
         
@@ -430,7 +534,7 @@ for slr_qt in slr_qt_list:
             #Save for postprocessing
             subset.to_pickle(f"./postprocessing/htrend_scenario{scenario}_year{year}_quantile_{slr_qt}.pkl")
             
-            print("After subset creation:", subset["retreat_50"].describe())
+
 # #%%
 # subset.retreat_50.mean
 
