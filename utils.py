@@ -350,9 +350,7 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 slrise_ref = 2005
 custom_ref_year = 2025
 
-# Filter to one site and one scenario (adjust these to match your data)
-site_id = 0         
-
+# Unique combos, assume not all combos will be in all sites 
 unique_combos = slr_data[["SSP", "scenario","Confidence"]].drop_duplicates()
 print(unique_combos)
 
@@ -363,49 +361,82 @@ available_years = sorted(slr_data["year"].unique())
 lower = max([y for y in available_years if y <= custom_ref_year])
 upper = min([y for y in available_years if y >= custom_ref_year])
 
-# Pick first combination
-first_combo = unique_combos.iloc[0]
+# Loop through all site IDs
+for site_id in slr_data["nzrise_site_id"].unique():
+    print(f"\n=== Processing site {site_id} ===")
+        
+    for _, combo in unique_combos.iterrows():
 
-# Extract values
-ssp_val = first_combo["SSP"]
-scenario_val = first_combo["scenario"]
-confidence_val = first_combo["Confidence"]
+        # Extract values
+        ssp_val = combo["SSP"]
+        scenario_val = combo["scenario"]
+        confidence_val = combo["Confidence"]
 
-# Subset slr_data for that combination AND the site
-site_id = 0
-slr_subset = slr_data[
-    (slr_data["nzrise_site_id"] == site_id) &
-    (slr_data["SSP"] == ssp_val) &
-    (slr_data["scenario"] == scenario_val) &
-    (slr_data["Confidence"] == confidence_val)
-].copy()
+        # Subset for this site and combination
+        slr_subset = slr_data[
+            (slr_data["nzrise_site_id"] == site_id) &
+            (slr_data["SSP"] == ssp_val) &
+            (slr_data["scenario"] == scenario_val) &
+            (slr_data["Confidence"] == confidence_val)
+        ].copy()
 
-print(slr_subset)
+        # Skip empty subsets (not all combos exist at all sites)
+        if slr_subset.empty:
+            continue
 
-# Compute decadal retreat rate (assuming linear change between lower and upper years)
-R_lower = slr_subset.loc[slr_subset['year'] == lower, '50'].values
-R_upper = slr_subset.loc[slr_subset['year'] == upper, '50'].values
+        #print(f"\nProcessing combo: SSP={ssp_val}, scenario={scenario_val}, Confidence={confidence_val}")
 
-Rdecade = R_upper - R_lower
-Rperyear = Rdecade / (upper - lower)
+        # Loop through the quartiles
+        for q in ["17", "50", "83"]:
+            # Compute decadal retreat rate (assuming linear change between lower and upper years)
+            R_lower = slr_subset.loc[slr_subset['year'] == lower, q].values
+            R_upper = slr_subset.loc[slr_subset['year'] == upper, q].values
 
-# Correction from current reference (e.g., 2005) to new reference (e.g., 2025)
-correction_factor = R_lower + Rperyear * (custom_ref_year - lower)
+            Rdecade = R_upper - R_lower
+            Rperyear = Rdecade / (upper - lower)
 
-slr_subset['50_shifted'] = slr_subset['50'] - correction_factor
-# Apply correction factors to the 50th percentile values and store in new column
-#slr_data['50_shifted'] = slr_data['50'] - correction_factors
+            # Correction from current reference (e.g., 2005) to new reference (e.g., 2025)
+            correction_factor = R_lower + Rperyear * (custom_ref_year - lower)
+            #print(f"correction factor at quartile {q}: {correction_factor}")
+            # Create new shifted column
+            shifted_col = f"{q}_shifted"
+            slr_subset[shifted_col] = slr_subset[q] - correction_factor
 
-ax1= slr_subset['50_shifted'].plot(color='red')
-slr_subset['50'].plot(ax=ax1,color='k')
+            # --- Update the original dataset directly ---
+            mask = (
+                (slr_data["nzrise_site_id"] == site_id) &
+                (slr_data["SSP"] == ssp_val) &
+                (slr_data["scenario"] == scenario_val) &
+                (slr_data["Confidence"] == confidence_val)
+            )
+            slr_data.loc[mask, shifted_col] = slr_subset[shifted_col].values
+
+
+#%%
 #%% Quick plot to check correction makes sense
 
 # Create larger figure
 fig, ax1 = plt.subplots(figsize=(14, 6))  # width, height in inches
 
-# Plot both series
-ax1.plot(slr_subset["year"], slr_subset["50_shifted"], color="red", label="shifted")
-ax1.plot(slr_subset["year"], slr_subset["50"], color="k", label="original")
+# Define quartiles and colors
+quartiles = ["17", "50", "83"]
+colors = {"17": "orange", "50": "red", "83": "green"}
+
+# Plot original and shifted series for each quartile
+for q in quartiles:
+    ax1.plot(
+        slr_subset["year"],
+        slr_subset[q],
+        color=colors[q],
+        label=f"original {q}"
+    )
+    ax1.plot(
+        slr_subset["year"],
+        slr_subset[f"{q}_shifted"],
+        color=colors[q],
+        linestyle="--",
+        label=f"shifted {q}"
+    )
 
 # Add vertical line and annotation
 ax1.axvline(x=custom_ref_year, color="blue", linestyle="--", linewidth=1.5)
@@ -425,14 +456,13 @@ ax1.axhline(y=0, color="gray", linestyle="--", linewidth=1)
 # Labels and legend
 ax1.set_xlabel("Year", fontsize=12)
 ax1.set_ylabel("Sea level rise (m)", fontsize=12)
-ax1.legend(fontsize=10)
+ax1.legend(fontsize=10, ncol=2)
 
 # Set x-axis ticks every 5 years
 year_min = int(slr_subset["year"].min())
 year_max = int(slr_subset["year"].max())
 ax1.set_xticks(np.arange(year_min, year_max + 1, 5))
 ax1.set_xticklabels(ax1.get_xticks().astype(int), rotation=45, ha="center")
-
 
 # 🔹 Dynamic title
 ax1.set_title(
@@ -444,7 +474,6 @@ ax1.set_title(
 # Improve spacing
 plt.tight_layout()
 plt.show()
-
 
 ########################################################################################
 #%%
