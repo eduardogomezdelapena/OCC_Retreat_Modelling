@@ -30,6 +30,8 @@ import time
 from smooth_algorithms.smoothn import smoothn
 
 #%%
+slrise_ref = 2005
+custom_ref_year = 2025
 # Constants
 EARTH_RADIUS_KM = 6371.0
 CRS_NZTM = 2193  # NZ Transverse Mercator
@@ -150,7 +152,7 @@ def calc_retreat(all_merged, c_adjust = 0.5):
         mean_val = np.nanmean(slope)
         slope = slope.fillna(mean_val)
 
-        # Replace values where 1 / slope > 60 and slope != 0
+        # Replace values where 1 / slope > 60 
         inv_condition = (slope != 0) & ((1 / slope) > 60)
         if inv_condition.any():
             slope[inv_condition] = mean_val
@@ -167,7 +169,7 @@ def calc_retreat(all_merged, c_adjust = 0.5):
     
     def smoothn_by_variability(x):
         """ Satellite trend smoothing. Garcia smoother, dynamic smoothing factor s
-        with the standard deviation of the trend time series """
+        varies with the standard deviation of the trend spatial series """
         s = 100000 if x.std() > 0.2 else 10000 # s a bit adhoc, depends on stdev
         return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
 
@@ -302,7 +304,7 @@ def points_to_polylines(subset):
 #%%
 #CRS_NZTM , CRS_WGS84
 meta_data_fp = "NZ_VLM_final_May24.csv"
-slr_fp = "NZ_Searise_noVLM-2005.csv"
+slr_fp = "NZ_Searise_noVLM-2005_{custom_ref_year}adjusted.csv"
 meta_data = load_metadata_nzrise(meta_data_fp, crs_str= CRS_WGS84 ) # gpd.DataFrame
 slr_data  = load_slrdata_nzrise(slr_fp) #pd.DataFrame
 
@@ -312,7 +314,7 @@ nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_WGS84}", geometry= 'geo
 
 coastsat_merged = load_and_merge_coastsat_data(
     "transects_reindexed.geojson",
-    "points_ref_shoreline_2025.geojson",
+    f"points_ref_shoreline_{custom_ref_year}.geojson",
     CRS_WGS84
 )
 
@@ -338,146 +340,6 @@ print(all_merged.columns)
 
 all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
                                geometry= 'geom_points_ref2005')
-
-#%%
-
-# Parameters
-slrise_ref = 2005
-custom_ref_year = 2025
-
-# Record start time
-start_time = time.time()
-
-# Precompute available years and bounds
-available_years = sorted(slr_data["year"].unique())
-lower = max([y for y in available_years if y <= custom_ref_year])
-upper = min([y for y in available_years if y >= custom_ref_year])
-
-print(f"Using lower year: {lower}, upper year: {upper}")
-print("assuming linear change between lower and upper year bounds")
-
-# Prepare shifted columns
-for q in ["17", "50", "83"]:
-    shifted_col = f"{q}_shifted"
-    if shifted_col not in slr_data.columns:
-        slr_data[shifted_col] = np.nan
-
-# Group by unique combinations of site + SSP + scenario + confidence
-group_cols = ["nzrise_site_id", "SSP", "scenario", "Confidence"]
-groups = slr_data.groupby(group_cols)
-
-# tqdm progress bar
-pbar = tqdm(total=len(groups), desc="Processing slr data correction to custom ref year", ncols=100)
-
-# Loop over grouped data
-for (site_id, ssp_val, scenario_val, confidence_val), group in groups:
-
-    # Get lower and upper rows once
-    lower_row = group.loc[group["year"] == lower]
-    upper_row = group.loc[group["year"] == upper]
-
-    # Loop through quartiles
-    for q in ["17", "50", "83"]:
-        R_lower = lower_row[q].values[0]
-        R_upper = upper_row[q].values[0]
-        Rdecade = R_upper - R_lower
-        Rperyear = Rdecade / (upper - lower)
-        correction_factor = R_lower + Rperyear * (custom_ref_year - lower)
-
-        # Compute shifted values and assign directly via index alignment
-        slr_data.loc[group.index, f"{q}_shifted"] = group[q] - correction_factor
-
-    pbar.update(1)
-
-# Record end time
-end_time = time.time()
-pbar.close()
-print(f"\n✅ Processing complete: slr data adjusted to ref year: {custom_ref_year}.")
-
-# Compute elapsed time in seconds
-elapsed_seconds = end_time - start_time
-
-print(f"\n✅ Total processing time: {elapsed_seconds/60:.2f} minutes")
-
-
-#%% Plot for specific site and scenario
-site_id = 200
-ssp_val = "ssp1"
-scenario_val = 2.6
-confidence_val = "low_confidence"
-
-# Subset data for that specific combination
-slr_subset = slr_data[
-    (slr_data["nzrise_site_id"] == site_id)
-    & (slr_data["SSP"] == ssp_val)
-    & (slr_data["scenario"] == scenario_val)
-    & (slr_data["Confidence"] == confidence_val)
-].sort_values("year")
-
-# Check if subset exists
-if slr_subset.empty:
-    print("⚠️ No data found for the selected site and scenario combination.")
-else:
-    # Create larger figure
-    fig, ax1 = plt.subplots(figsize=(14, 6))
-
-    # Define quartiles and colors
-    quartiles = ["17", "50", "83"]
-    colors = {"17": "orange", "50": "red", "83": "green"}
-
-    # Plot original and shifted series for each quartile
-    for q in quartiles:
-        if q in slr_subset.columns and f"{q}_shifted" in slr_subset.columns:
-            ax1.plot(
-                slr_subset["year"],
-                slr_subset[q],
-                color=colors[q],
-                label=f"original {q}"
-            )
-            ax1.plot(
-                slr_subset["year"],
-                slr_subset[f"{q}_shifted"],
-                color=colors[q],
-                linestyle="--",
-                label=f"shifted {q}"
-            )
-
-    # Add vertical line and annotation
-    ax1.axvline(x=custom_ref_year, color="blue", linestyle="--", linewidth=1.5)
-    ax1.text(
-        custom_ref_year + 0.5,
-        ax1.get_ylim()[1] * 0.95,
-        "custom ref year",
-        color="blue",
-        fontsize=11,
-        rotation=90,
-        va="top"
-    )
-
-    # Add horizontal line at y = 0
-    ax1.axhline(y=0, color="gray", linestyle="--", linewidth=1)
-
-    # Labels and legend
-    ax1.set_xlabel("Year", fontsize=12)
-    ax1.set_ylabel("Sea level rise (m)", fontsize=12)
-    ax1.legend(fontsize=10, ncol=2)
-
-    # Set x-axis ticks every 5 years
-    year_min = int(slr_subset["year"].min())
-    year_max = int(slr_subset["year"].max())
-    ax1.set_xticks(np.arange(year_min, year_max + 1, 5))
-    ax1.set_xticklabels(ax1.get_xticks().astype(int), rotation=45, ha="center")
-
-    # 🔹 Dynamic title
-    ax1.set_title(
-        f"Site {site_id} — SSP: {ssp_val}, Scenario: {scenario_val}, Confidence: {confidence_val}",
-        fontsize=13,
-        pad=15
-    )
-
-    # Improve spacing
-    plt.tight_layout()
-    plt.show()
 
 
 #%%
