@@ -357,8 +357,8 @@ retreat = calc_retreat(all_merged)
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
-years =  [2100]
-scenarios = [1.9]
+years =  [2025, 2100]
+scenarios = [2.6,4.5,7,8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 #slr_qt =  "50" #quantiles 17,50,83
