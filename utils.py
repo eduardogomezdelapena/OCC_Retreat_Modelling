@@ -9,6 +9,8 @@ Created on Sep  4 2025
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+from tqdm import tqdm
+
 from sklearn.neighbors import BallTree
 import math
 from shapely.geometry import Point, LineString, Polygon
@@ -135,21 +137,15 @@ def nearest_points(meta_data, coastsat_merged):
     return distances, nearest_indices
 
 def calc_retreat(all_merged, c_adjust = 0.5):
-    """ Shoreline retreat calculation. Bruun rule"""
-
-    slr_quantiles = ["17", "50", "83"]
-
-    # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
-    # a bit ad hoc, matches with some lidar measurements
-
-    #This needs to be for each site_id in all_merged
-    # clean and filter beach slopes
-    # lol= all_merged['beach_slope']
-
-    # To be filled with means from triggered sites
-    triggered_means = []
+    """ Shoreline retreat calculation. Data processing of slope and trend data. Apply Bruun rule"""
 
     def fillna_mildslop_smooth(slope):
+        """ Slope data processing and cleaning.
+        1: Fill NaNs with group mean. 
+        2: Fill in very mildly sloping transects with mean.
+        3: Smooth with signal processing filter.
+        4: Apply perturbations, to avoid chunks of coast with same mean tanb value  """
+
         # Fill NaNs with the group-wise mean
         mean_val = np.nanmean(slope)
         slope = slope.fillna(mean_val)
@@ -158,35 +154,35 @@ def calc_retreat(all_merged, c_adjust = 0.5):
         inv_condition = (slope != 0) & ((1 / slope) > 60)
         if inv_condition.any():
             slope[inv_condition] = mean_val
-            site_id = slope.name  # groupby assigns the group key to Series.name
-            triggered_means.append((site_id, mean_val))
 
-        # Apply Butterworth smoothing if enough points
+        # Apply low-pass filter to smooth lonshore variability, if enough points
         if len(slope) > 6:
             b, a = butter(2, 0.01, btype='low', analog=False) #filter to smooth longshore variability
             slope = pd.Series(filtfilt(b, a, slope), index=slope.index)
         
-        #apply perturbations to beach slope
+        #Apply perturbations to beach slope
         slope = slope * (1 + 0.05 * np.random.randn(*slope.shape))
 
         return slope
     
+    def smoothn_by_variability(x):
+        """ Satellite trend smoothing. Garcia smoother, dynamic smoothing factor s
+        with the standard deviation of the trend time series """
+        s = 100000 if x.std() > 0.2 else 10000 # s a bit adhoc, depends on stdev
+        return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
+
+
+    slr_quantiles = ["17", "50", "83"]
+  
     all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
                                       .transform(fillna_mildslop_smooth)
-
-    #Smooth historic trend with Garcia smoother, dynamic smoothing factor s
-    #with the standard deviation of the trend time series
-    def smoothn_by_variability(x):
-        s = 100000 if x.std() > 0.2 else 10000 # A bit adhoc, but works
-        return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
 
     all_merged['trend'] = all_merged.groupby('coastsat_site_id')['trend']\
             .transform(smoothn_by_variability)
     
+    # Apply Bruun rule
     # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
     # a bit ad hoc, matches with some lidar measurements
-
-    # Apply Bruun rule
     denom = c_adjust * all_merged["beach_slope"]
 
     retreat_df = (
@@ -344,138 +340,146 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
                                geometry= 'geom_points_ref2005')
 
 #%%
-#Given a custom reference year (the current is 2005), transform the SLR values for the 50 quartiles
 
 # Parameters
 slrise_ref = 2005
 custom_ref_year = 2025
 
-# Unique combos, assume not all combos will be in all sites 
-unique_combos = slr_data[["SSP", "scenario","Confidence"]].drop_duplicates()
-print(unique_combos)
+# Record start time
+start_time = time.time()
 
-# Get available years
+# Precompute available years and bounds
 available_years = sorted(slr_data["year"].unique())
-
-# Find lower and upper bounds around the custom reference year
 lower = max([y for y in available_years if y <= custom_ref_year])
 upper = min([y for y in available_years if y >= custom_ref_year])
 
-# Loop through all site IDs
-for site_id in slr_data["nzrise_site_id"].unique():
-    print(f"\n=== Processing site {site_id} ===")
-        
-    for _, combo in unique_combos.iterrows():
+print(f"Using lower year: {lower}, upper year: {upper}")
+print("assuming linear change between lower and upper year bounds")
 
-        # Extract values
-        ssp_val = combo["SSP"]
-        scenario_val = combo["scenario"]
-        confidence_val = combo["Confidence"]
+# Prepare shifted columns
+for q in ["17", "50", "83"]:
+    shifted_col = f"{q}_shifted"
+    if shifted_col not in slr_data.columns:
+        slr_data[shifted_col] = np.nan
 
-        # Subset for this site and combination
-        slr_subset = slr_data[
-            (slr_data["nzrise_site_id"] == site_id) &
-            (slr_data["SSP"] == ssp_val) &
-            (slr_data["scenario"] == scenario_val) &
-            (slr_data["Confidence"] == confidence_val)
-        ].copy()
+# Group by unique combinations of site + SSP + scenario + confidence
+group_cols = ["nzrise_site_id", "SSP", "scenario", "Confidence"]
+groups = slr_data.groupby(group_cols)
 
-        # Skip empty subsets (not all combos exist at all sites)
-        if slr_subset.empty:
-            continue
+# tqdm progress bar
+pbar = tqdm(total=len(groups), desc="Processing slr data correction to custom ref year", ncols=100)
 
-        #print(f"\nProcessing combo: SSP={ssp_val}, scenario={scenario_val}, Confidence={confidence_val}")
+# Loop over grouped data
+for (site_id, ssp_val, scenario_val, confidence_val), group in groups:
 
-        # Loop through the quartiles
-        for q in ["17", "50", "83"]:
-            # Compute decadal retreat rate (assuming linear change between lower and upper years)
-            R_lower = slr_subset.loc[slr_subset['year'] == lower, q].values
-            R_upper = slr_subset.loc[slr_subset['year'] == upper, q].values
+    # Get lower and upper rows once
+    lower_row = group.loc[group["year"] == lower]
+    upper_row = group.loc[group["year"] == upper]
 
-            Rdecade = R_upper - R_lower
-            Rperyear = Rdecade / (upper - lower)
+    # Loop through quartiles
+    for q in ["17", "50", "83"]:
+        R_lower = lower_row[q].values[0]
+        R_upper = upper_row[q].values[0]
+        Rdecade = R_upper - R_lower
+        Rperyear = Rdecade / (upper - lower)
+        correction_factor = R_lower + Rperyear * (custom_ref_year - lower)
 
-            # Correction from current reference (e.g., 2005) to new reference (e.g., 2025)
-            correction_factor = R_lower + Rperyear * (custom_ref_year - lower)
-            #print(f"correction factor at quartile {q}: {correction_factor}")
-            # Create new shifted column
-            shifted_col = f"{q}_shifted"
-            slr_subset[shifted_col] = slr_subset[q] - correction_factor
+        # Compute shifted values and assign directly via index alignment
+        slr_data.loc[group.index, f"{q}_shifted"] = group[q] - correction_factor
 
-            # --- Update the original dataset directly ---
-            mask = (
-                (slr_data["nzrise_site_id"] == site_id) &
-                (slr_data["SSP"] == ssp_val) &
-                (slr_data["scenario"] == scenario_val) &
-                (slr_data["Confidence"] == confidence_val)
+    pbar.update(1)
+
+# Record end time
+end_time = time.time()
+pbar.close()
+print(f"\n✅ Processing complete: slr data adjusted to ref year: {custom_ref_year}.")
+
+# Compute elapsed time in seconds
+elapsed_seconds = end_time - start_time
+
+print(f"\n✅ Total processing time: {elapsed_seconds/60:.2f} minutes")
+
+
+#%% Plot for specific site and scenario
+site_id = 200
+ssp_val = "ssp1"
+scenario_val = 2.6
+confidence_val = "low_confidence"
+
+# Subset data for that specific combination
+slr_subset = slr_data[
+    (slr_data["nzrise_site_id"] == site_id)
+    & (slr_data["SSP"] == ssp_val)
+    & (slr_data["scenario"] == scenario_val)
+    & (slr_data["Confidence"] == confidence_val)
+].sort_values("year")
+
+# Check if subset exists
+if slr_subset.empty:
+    print("⚠️ No data found for the selected site and scenario combination.")
+else:
+    # Create larger figure
+    fig, ax1 = plt.subplots(figsize=(14, 6))
+
+    # Define quartiles and colors
+    quartiles = ["17", "50", "83"]
+    colors = {"17": "orange", "50": "red", "83": "green"}
+
+    # Plot original and shifted series for each quartile
+    for q in quartiles:
+        if q in slr_subset.columns and f"{q}_shifted" in slr_subset.columns:
+            ax1.plot(
+                slr_subset["year"],
+                slr_subset[q],
+                color=colors[q],
+                label=f"original {q}"
             )
-            slr_data.loc[mask, shifted_col] = slr_subset[shifted_col].values
+            ax1.plot(
+                slr_subset["year"],
+                slr_subset[f"{q}_shifted"],
+                color=colors[q],
+                linestyle="--",
+                label=f"shifted {q}"
+            )
 
-
-#%%
-#%% Quick plot to check correction makes sense
-
-# Create larger figure
-fig, ax1 = plt.subplots(figsize=(14, 6))  # width, height in inches
-
-# Define quartiles and colors
-quartiles = ["17", "50", "83"]
-colors = {"17": "orange", "50": "red", "83": "green"}
-
-# Plot original and shifted series for each quartile
-for q in quartiles:
-    ax1.plot(
-        slr_subset["year"],
-        slr_subset[q],
-        color=colors[q],
-        label=f"original {q}"
-    )
-    ax1.plot(
-        slr_subset["year"],
-        slr_subset[f"{q}_shifted"],
-        color=colors[q],
-        linestyle="--",
-        label=f"shifted {q}"
+    # Add vertical line and annotation
+    ax1.axvline(x=custom_ref_year, color="blue", linestyle="--", linewidth=1.5)
+    ax1.text(
+        custom_ref_year + 0.5,
+        ax1.get_ylim()[1] * 0.95,
+        "custom ref year",
+        color="blue",
+        fontsize=11,
+        rotation=90,
+        va="top"
     )
 
-# Add vertical line and annotation
-ax1.axvline(x=custom_ref_year, color="blue", linestyle="--", linewidth=1.5)
-ax1.text(
-    custom_ref_year + 0.5,
-    ax1.get_ylim()[1] * 0.95,
-    "custom ref year",
-    color="blue",
-    fontsize=11,
-    rotation=90,
-    va="top"
-)
+    # Add horizontal line at y = 0
+    ax1.axhline(y=0, color="gray", linestyle="--", linewidth=1)
 
-# Add horizontal line at y = 0
-ax1.axhline(y=0, color="gray", linestyle="--", linewidth=1)
+    # Labels and legend
+    ax1.set_xlabel("Year", fontsize=12)
+    ax1.set_ylabel("Sea level rise (m)", fontsize=12)
+    ax1.legend(fontsize=10, ncol=2)
 
-# Labels and legend
-ax1.set_xlabel("Year", fontsize=12)
-ax1.set_ylabel("Sea level rise (m)", fontsize=12)
-ax1.legend(fontsize=10, ncol=2)
+    # Set x-axis ticks every 5 years
+    year_min = int(slr_subset["year"].min())
+    year_max = int(slr_subset["year"].max())
+    ax1.set_xticks(np.arange(year_min, year_max + 1, 5))
+    ax1.set_xticklabels(ax1.get_xticks().astype(int), rotation=45, ha="center")
 
-# Set x-axis ticks every 5 years
-year_min = int(slr_subset["year"].min())
-year_max = int(slr_subset["year"].max())
-ax1.set_xticks(np.arange(year_min, year_max + 1, 5))
-ax1.set_xticklabels(ax1.get_xticks().astype(int), rotation=45, ha="center")
+    # 🔹 Dynamic title
+    ax1.set_title(
+        f"Site {site_id} — SSP: {ssp_val}, Scenario: {scenario_val}, Confidence: {confidence_val}",
+        fontsize=13,
+        pad=15
+    )
 
-# 🔹 Dynamic title
-ax1.set_title(
-    f"Site {site_id} — SSP: {ssp_val}, Scenario: {scenario_val}, Confidence: {confidence_val}",
-    fontsize=13,
-    pad=15
-)
+    # Improve spacing
+    plt.tight_layout()
+    plt.show()
 
-# Improve spacing
-plt.tight_layout()
-plt.show()
 
-########################################################################################
 #%%
 #Step back, only Kaipara
 merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
