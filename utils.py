@@ -48,7 +48,7 @@ def load_transects(filepath: str):
 
 def load_points(filepath: str):
     """Load ref points (shoreline) and reproject, drop missing geometries.
-    Points externally generated in gen_2005ref.py"""
+    Points externally generated in gen_ref.py"""
     points = gpd.read_file(filepath)
     return points.dropna(subset=["geometry"])
 
@@ -63,7 +63,7 @@ def rename_columns(transects: gpd.GeoDataFrame,
     points = points.rename(columns={
         "site_id": "coastsat_site_id",
         "transect_id": "coastsat_transect_id",        
-        "geometry": "geom_points_ref2005"
+        "geometry": "geom_points_ref"
     })
     return transects, points
 
@@ -82,7 +82,7 @@ def load_and_merge_coastsat_data(transects_fp: str,
                       points[[
                           c for c in points.columns if c not in transects.columns or c == col_merge_label]],
                       on= col_merge_label,  how="inner")
-    merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{crs_str}", geometry= 'geom_points_ref2005')
+    merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{crs_str}", geometry= 'geom_points_ref')
 
     print(f"Merged {len(merged)} transects/points")
     return merged.reset_index(drop=True)
@@ -138,7 +138,7 @@ def nearest_points(meta_data, coastsat_merged):
 
     return distances, nearest_indices
 
-def calc_retreat(all_merged, c_adjust = 0.5):
+def calc_retreat(all_merged, c_adjust = 0.5, custom_ref_year= custom_ref_year ):
     """ Shoreline retreat calculation. Data processing of slope and trend data. Apply Bruun rule"""
 
     def fillna_mildslop_smooth(slope):
@@ -174,8 +174,9 @@ def calc_retreat(all_merged, c_adjust = 0.5):
         return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
 
 
-    slr_quantiles = ["17", "50", "83"]
-  
+    # slr_quantiles = ["17", "50", "83"]
+    slr_quantiles = ["17_shifted", "50_shifted", "83_shifted"]
+     
     all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
                                       .transform(fillna_mildslop_smooth)
 
@@ -199,7 +200,7 @@ def calc_retreat(all_merged, c_adjust = 0.5):
 
      #(Optional) Historic rate adjustment. Trend is in (m/year)
     historic_retreat_df = retreat_df.sub(
-        (all_merged["year"] - 2005) * all_merged["trend"].round(2), axis=0
+        (all_merged["year"] - custom_ref_year) * all_merged["trend"].round(2), axis=0
     )
     merged_retreat_df = pd.concat([all_merged, historic_retreat_df], axis=1)
 
@@ -304,7 +305,7 @@ def points_to_polylines(subset):
 #%%
 #CRS_NZTM , CRS_WGS84
 meta_data_fp = "NZ_VLM_final_May24.csv"
-slr_fp = "NZ_Searise_noVLM-2005_{custom_ref_year}adjusted.csv"
+slr_fp = f"NZ_Searise_noVLM-2005_{custom_ref_year}adjusted.csv"
 meta_data = load_metadata_nzrise(meta_data_fp, crs_str= CRS_WGS84 ) # gpd.DataFrame
 slr_data  = load_slrdata_nzrise(slr_fp) #pd.DataFrame
 
@@ -332,14 +333,14 @@ coastsat_merged["nzrise_site_id"]=meta_data["nzrise_site_id"].iloc[nearest_indic
 #Now merge based on nzrise_site_id
 all_merged = pd.merge( coastsat_merged, nzrise_merged,
                       on='nzrise_site_id', how='outer')
-#Print all columns, there should be 3 geometry columns (points ref 2005, coastsat transects
+#Print all columns, there should be 3 geometry columns (points ref , coastsat transects
 # and nzrise points).
 
 print(all_merged.columns)
-#Transform into geopandas? A geometry column needs to be picked, points ref 2005.
+#Transform into geopandas? A geometry column needs to be picked, points ref .
 
 all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
-                               geometry= 'geom_points_ref2005')
+                               geometry= 'geom_points_ref')
 
 
 #%%
@@ -356,51 +357,68 @@ retreat = calc_retreat(all_merged)
 #%%
 #MWE of retreat polyline in one site
 # Get unique combinations
-years =  [2005]
+years =  [2100]
 scenarios = [1.9]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 #slr_qt =  "50" #quantiles 17,50,83
 
+available_years = sorted(retreat["year"].unique())
+upper_bound = min([y for y in available_years if y >= custom_ref_year])
+
 # Quantiles to process
-slr_qt_list = ["50"]
+slr_qt_list = ["17_shifted","50_shifted","83_shifted"]
 # slr_qt_list = ["17", "50", "83"]
 
 for slr_qt in slr_qt_list:
     print(f"\n=== Processing SLR quantile: {slr_qt} ===")
         
-    for year in years:
+    for year in years: 
         for scenario in scenarios:
             start_time = time.time()  # ⏱ start timer
             print(f"Processing scenario {scenario} for year {year} (quantile {slr_qt})...")
 
-            # Subset dataframe with specific projection year & specific scenario
-            subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
-            #Scenarios SSP2-2.6 & SSP5-8.5 have duplicates
-            subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
-
-            #Calc new point location according to retreat_50
-            bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
-
-            subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
-            # Reproject to NZTM2000 (meters)
-
-            # Project reference point onto the transect line (get distance along the line)
-            ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
-                                        subset.geom_points_ref2005.to_crs(2193)  )
-
-            # Calculate new distance from start of line
-            new_distances = ref_distances_along_lines - bruun_slr_qt
-            
-            #Determine new points for shoreline , extend transects when needed
             #If year base, don't extend transects, append points as they are
-            if year == 2005 :
+            if year == custom_ref_year:
+
+                #Since we have to create data for the ref year (unless already in available years)
+                #Use next available year  to copy geometries, then set all retreats_shifted to zero
+
+                subset = retreat[(retreat['year'] == upper_bound) & (retreat['scenario'] == scenario)]
+                # set all retreats quartiles to zero
+
                 subset = subset.reset_index(drop=True)
-                subset['geom_new_points'] = subset["geom_points_ref2005"]
+                subset['geom_new_points'] = subset["geom_points_ref"]
                 #Just pass transects as they are
                 subset["extended_transects"] =  subset["geom_transect_coastsat"]
 
+                #Set to zero
+                slr_quantiles_shift = ["17_shifted", "50_shifted", "83_shifted"]
+
+                for q in slr_quantiles_shift:
+                    subset[f"retreat_{q}"]   = 0
+
             else:
+            
+                # Subset dataframe with specific projection year & specific scenario
+                subset = retreat[(retreat['year'] == year) & (retreat['scenario'] == scenario)]
+                #Scenarios SSP2-2.6 & SSP5-8.5 have duplicates
+                subset = subset.drop_duplicates(subset='coastsat_transect_id', keep='last')
+
+                #Calc new point location according to retreat_50
+                bruun_slr_qt= subset[f"retreat_{slr_qt}"]             #projected retreat 50 quantile
+
+                subset.geom_transect_coastsat.to_crs(2193).length   #transects lengths
+                # Reproject to NZTM2000 (meters)
+
+                # Project reference point onto the transect line (get distance along the line)
+                ref_distances_along_lines = subset.geom_transect_coastsat.to_crs(2193) .project(
+                                            subset.geom_points_ref.to_crs(2193)  )
+
+                # Calculate new distance from start of line
+                new_distances = ref_distances_along_lines - bruun_slr_qt
+                
+                #Determine new points for shoreline , extend transects when needed
                 new_geoms, new_transects = extend_transects_4_new_distances_points(subset, new_distances)
                 # Create a GeoSeries and convert back to WGS84
                 new_points = gpd.GeoSeries(new_geoms, crs=2193).to_crs(4326).reset_index(drop=True)
@@ -496,7 +514,7 @@ for slr_qt in slr_qt_list:
 # # Add basemap (Web Mercator reprojection)
 # # gdf_2100_web = new_points.to_crs(epsg=3857)
 # gdf_2100_web = subset.geom_new_points.to_crs(epsg=3857)
-# ref_points_web = subset.geom_points_ref2005.to_crs(epsg=3857)
+# ref_points_web = subset.geom_points_ref.to_crs(epsg=3857)
 # transects_web= subset.geom_transect_coastsat.to_crs(epsg=3857)
 
 # fig, ax = plt.subplots(figsize=(10, 10))

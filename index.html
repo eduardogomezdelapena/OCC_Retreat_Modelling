@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Shoreline retreat Aoteroa NZ </title>
+  <title>Shoreline change Aoteroa NZ </title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Leaflet -->
@@ -158,7 +158,7 @@
     <summary><strong>SSP1 — 1.9</strong></summary>
         <label>
           <span class="color-line baseline"></span>
-          <input type="checkbox" id="htrend_layer19_2005_lines"> 2005 (Baseline)
+          <input type="checkbox" id="htrend_layer19_2005_lines"> 2025 (Baseline)
         </label>                   
         <label>
           <span class="color-line" style="border-color:red; border-top-style:dashed;"></span>
@@ -244,7 +244,7 @@
       <div class="leaflet-sidebar-pane" id="home">
         <div id="attribution">
 
-          <p> Shoreline retreat projections for Aotearoa New Zealand. Data processed by Eduardo Gomez-de la Pena. Retreat was estimated using the Bruun rule, see <a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling/blob/main/README.md">README</a> for more information.</p>
+          <p> Shoreline change projections for Aotearoa New Zealand. Data processed by Eduardo Gomez-de la Pena. Change was estimated using the Bruun rule, see <a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling/blob/main/README.md">README</a> for more information.</p>
  
           <p> This work is part of the <a href="https://searise.nz/">Our Changing Coasts</a> MBIE project, under the scope of the "Sedimentation and erosion" working group. Working group research co-leads: Profs. Giovanni Coco and Karin Bryan.</p>
 
@@ -316,8 +316,8 @@
       layer85_2100_lines: { url: 'lines_shoreline_50qtl_2100_8.5.geojson', layer: null },
       
         // ✅ Historic
-      htrend_layer19_2005_lines: { url: 'htrend_lines_shoreline_50qtl_2005_1.9.geojson', layer: null },
-      htrend_layer19_2100_lines: { url: 'htrend_lines_shoreline_50qtl_2100_1.9.geojson', layer: null },
+      htrend_layer19_2005_lines: { url: 'htrend_lines_shoreline_50_shiftedqtl_2025_1.9.geojson', layer: null },
+      htrend_layer19_2100_lines: { url: 'htrend_lines_shoreline_50_shiftedqtl_2100_1.9.geojson', layer: null },
 
       htrend_layer26_2005_lines: { url: 'htrend_lines_shoreline_50qtl_2005_2.6.geojson', layer: null },
       htrend_layer26_2100_lines: { url: 'htrend_lines_shoreline_50qtl_2100_2.6.geojson', layer: null },
@@ -414,7 +414,7 @@ function loadAndToggleLayer(key, checked) {
             .then(pointsData => {
               entry.pointsLayer = L.geoJSON(pointsData, {
                 pointToLayer: (feature, latlng) => {
-                  const retreat = feature.properties.retreat_50;
+                  const retreat = feature.properties.retreat_50_shifted;
                   return L.circleMarker(latlng, {
                     radius: 8,//getRadius(retreat), //if this is activated, square error
                     fillColor: 'transparent',
@@ -425,8 +425,8 @@ function loadAndToggleLayer(key, checked) {
                   });
                 },
                 onEachFeature: (feature, layer) => {
-                  if (feature.properties && feature.properties.retreat_50 !== undefined) {
-                    layer.bindTooltip(`Projected change (50th percentile): ${feature.properties.retreat_50} m`);
+                  if (feature.properties && feature.properties.retreat_50_shifted !== undefined) {
+                    layer.bindTooltip(`Projected change (50th percentile): ${feature.properties.retreat_50_shifted} m`);
                   }
 
                   // Hover highlight for points
@@ -527,9 +527,9 @@ function loadHtrendQuantilePolygon(scenario, checked) {
     return;
   }
 
-  const hq17url = `htrend_lines_shoreline_17qtl_2100_${scenarioKey}.geojson`;
-  const hq50url = `htrend_lines_shoreline_50qtl_2100_${scenarioKey}.geojson`;
-  const hq83url = `htrend_lines_shoreline_83qtl_2100_${scenarioKey}.geojson`;
+  const hq17url = `htrend_lines_shoreline_17_shiftedqtl_2100_${scenarioKey}.geojson`;
+  const hq50url = `htrend_lines_shoreline_50_shiftedqtl_2100_${scenarioKey}.geojson`;
+  const hq83url = `htrend_lines_shoreline_83_shiftedqtl_2100_${scenarioKey}.geojson`;
 
   Promise.all([
     fetch(hq17url).then(r => r.json()),
