@@ -4,7 +4,8 @@ There are two categories of shoreline change scenarios in the dataset. The first
 
 ## 1.1 Bruun rule: shoreline response to sea level rise
 
-We use the Bruun rule to accound for shoreline change $\Delta y_{SLR}$, which is computed per site  following:
+We use the Bruun rule to account for shoreline change $\Delta y_{SLR}$, which is computed per site  following:
+
 $$
 \Delta y_{SLR} = \frac{c}{\tan \beta} \Delta  S
 $$
@@ -13,8 +14,8 @@ where $\tan \beta$ is the active profile (depth of closure to dune crest) slope,
 
 ### Assumptions of the Bruun rule: 
 
-- The beach profile is in cross shore equilibrium
-- The active beach profile starts in the depth of closue and ends in the dune crest or berm
+- The beach profile is in cross-shore equilibrium
+- The active beach profile starts in the depth of closure and ends in the dune crest or berm
 - The beach system is in sediment balance 
 - Negligible alongshore sediment transport
 - Lack of accretionary component to SLR (i.e. only erosive response is possible)
@@ -22,6 +23,7 @@ where $\tan \beta$ is the active profile (depth of closure to dune crest) slope,
 ## 1.2 Accounting for historic beach trend
 
 To account for the shoreline's historic trend in addition to sea-level rise at each site, the shoreline change ($\Delta y_{SLR + Trend}$) is calculated as:
+
 $$
 \Delta y_{SLR + Trend} = \frac{c}{\tan \beta} \Delta  S + T_{satellite}
 $$
@@ -37,17 +39,17 @@ where the historic beach trend $T_{satellite}$ is derived by fitting a linear re
 The SLR dataset has 3 percentiles for each sea level rise projection: 
 
 - 17th percentile (lower bound) — represents a likely lower estimate of SLR, meaning there’s a 17% chance the actual SLR will be lower than this value.
-- 50th percentile (median) — the central or “best estimate” of SLR, where half the modeled outcomes are higher and half are lower.
+- 50th percentile (median) — the central or “best estimate” of SLR, where half the modelled outcomes are higher and half are lower.
 - 83rd percentile (upper bound) — represents a likely upper estimate of SLR, meaning there’s a 17% chance the actual SLR will exceed this value.
 
-This convention (17th–50th–83rd) express the likely range (≈66% confidence interval) of SLR outcomes under a given emissions scenario.
+This convention (17th–50th–83rd) expresses the likely range (≈66% confidence interval) of SLR outcomes under a given emissions scenario.
 
 ### Reference year and adjustments
 
 The reference year is 2025 for both the sea-level rise and shoreline change projections.
 The reference shoreline position is calculated by averaging positions extracted from satellite images from 2024–2025.
 
-The SLR projections from the NZ SeaRise programme begin in 2005, meaning sea-level rise is set to zero at that year. To align the projections with the reference year 2025, a correction factor is applied. This factor is calculated separately for each scenario, quartile, and location in the SLR dataset.
+The SLR projections from the NZ SeaRise programme begin in 2005, meaning sea-level rise is set to zero in that year. To align the projections with the reference year 2025, a correction factor is applied. This factor is calculated separately for each scenario, quartile, and location in the SLR dataset.
 
 ## 2.2 Beach slope ($\tan \beta$) & Beach historic trend ($T_{satellite}$)
 
@@ -84,7 +86,7 @@ $$
 \Delta y_{UpperBound} = \frac{c}{\tan \beta} \Delta  S _{Q83}
 $$
 
-where $y_{Lower Bound},y_{Median},y_{UpperBound} $ correspond to the shoreline change given by its corresponding sea level rise percentile  $S _{Q17},S _{Q50},S _{Q83} $.
+where $y_{Lower Bound},y_{Median},y_{UpperBound}$ correspond to the shoreline change given by its corresponding sea level rise percentile  $S _{Q17},S _{Q50},S _{Q83} $.
 
 
 
