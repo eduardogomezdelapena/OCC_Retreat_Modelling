@@ -89,6 +89,27 @@ def points_to_lines(shoreline_ref):
     lines_gdf = lines_gdf.to_crs(epsg=4326)
     return lines_gdf
 
+def remove_river_influence(points,rivers, influence_area = 2000):
+    """ Remove intersecting points with river polygons. Buffer of 2 km """
+    
+    #Make sure they are in the same crs
+    points = points.to_crs(CRS_NZTM)
+    rivers = rivers.to_crs(CRS_NZTM)
+
+    # Create a 10 km (10,000 m) buffer around polygons
+    buffered = rivers.copy()
+    buffered["geometry"] = buffered.buffer(influence_area)
+
+    #  Spatial join to find points within 10 km of polygons
+    joined = gpd.sjoin(points, buffered, predicate="intersects", how="left")
+
+    # Keep only points NOT within the threshold km
+    points_far = joined[joined["index_right"].isna()].drop(columns="index_right")
+
+    #Reset index
+    points_far = points_far.reset_index(drop=True)
+    return (points_far.to_crs(CRS_WGS84), buffered)
+
 def sanity_plot(transects, shoreline_ref, custom_ref_year):
     """ Plots extracted shoreline and reference transects"""
     # Convert data to Web Mercator (EPSG:3857) for plotting with basemap
@@ -126,6 +147,13 @@ transects = transects[transects.site_id != 'nzd0419']
 transects = transects[transects.site_id != 'nzd0313']
 transects = transects[transects.site_id != 'nzd0314']
 
+#Delete sites with only one point
+# Count how many points per site
+site_counts = transects["site_id"].value_counts()
+# Keep only sites with strictly more than one point
+transects = transects[transects["site_id"].isin(site_counts[site_counts > 1].index)]
+
+#%%
 #Consecutive label check (ocasional bug between 000-001 ids)
 site_pair_distance = check_consecutive_labels(transects)
 #  Show flagged sites
@@ -169,19 +197,21 @@ shoreline_ref = gpd.GeoDataFrame(all_trgoups_ref, crs=CRS_NZTM)
 ##################################################################################################
 #%% Export points
 shoreline_ref = shoreline_ref.dropna(subset=['geometry'])
-shoreline_ref.to_crs(CRS_WGS84).to_file(f'points_ref_shoreline_{custom_ref_year}.geojson')
 
+#% Load NZ rivers polygons
+rivers= gpd.read_file("./preprocessing/nz-river-polygons-topo-150k.gpkg")
+rivers= gpd.GeoDataFrame(rivers, geometry="geometry")
 
 #Intersect with rivers
+shoreline_ref_noriv, buffered = remove_river_influence(shoreline_ref,rivers)
 
-
-
-
-
+#Export points
+shoreline_ref_noriv.to_crs(CRS_WGS84).to_file(f'points_ref_shoreline_{custom_ref_year}.geojson')
 
 #Export polylines
-lines_gdf = points_to_lines(shoreline_ref)
+lines_gdf = points_to_lines(shoreline_ref_noriv)
 lines_gdf.to_file(f"lines_ref_shoreline_{custom_ref_year}.geojson")
+
 #Export clean transects 
 transects_reindexed.to_file("transects_reindexed.geojson")
 

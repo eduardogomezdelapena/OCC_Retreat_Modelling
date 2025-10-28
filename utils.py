@@ -76,7 +76,6 @@ def load_and_merge_coastsat_data(transects_fp: str,
                                  col_merge_label: str = "coastsat_transect_id"):
     """Wrapper: load, clean, and merge coastsat data."""
     transects = load_transects(transects_fp)
-
     points = load_points(points_fp)
     transects, points = rename_columns(transects, points)
 
@@ -87,7 +86,17 @@ def load_and_merge_coastsat_data(transects_fp: str,
                       on= col_merge_label,  how="inner")
     merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{crs_str}", geometry= 'geom_points_ref')
 
+        # Drop transects belonging to sites where all slopes are NaN
+    empty_sites = merged.groupby('coastsat_site_id')['beach_slope'].apply(lambda x: x.isna().all())
+    merged = merged[~merged['coastsat_site_id'].isin(empty_sites[empty_sites].index)]
+    print(f"Sites where all slopes are NaN{empty_sites[empty_sites].index.tolist()}, deleted")
+
+    empty_trend_sites = merged.groupby('coastsat_site_id')['trend'].apply(lambda x: x.isna().all())
+    merged = merged[~merged['coastsat_site_id'].isin(empty_trend_sites[empty_trend_sites].index)]
+    print(f"Sites where all trends are NaN{empty_trend_sites[empty_trend_sites].index.tolist()}, deleted")
+      
     print(f"Merged {len(merged)} transects/points")
+
     return merged.reset_index(drop=True)
 # %
 def load_metadata_nzrise(filepath:str, crs_str: int):
@@ -155,6 +164,10 @@ def calc_retreat(all_merged, retreat_scen_marker,  c_adjust = 0.5, custom_ref_ye
 
         # Fill NaNs with the group-wise mean
         mean_val = np.nanmean(slope)
+        if np.isnan(mean_val):
+            site_id = slope.name  # this is the current group key from groupby
+            print(f"⚠️ Warning: all NaN slope values for site_id = {site_id}")
+    
         slope = slope.fillna(mean_val)
 
         # Replace values where 1 / slope > 60 
@@ -357,6 +370,15 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 #Now calc retreat
 # retreat = calc_retreat(merged_kaipara)
 
+# all_merged['beach_slope'] = all_merged.groupby('coastsat_site_id')['beach_slope']\
+#                                     .transform(fillna_mildslop_smooth)
+
+# zero_sites = all_merged.groupby('coastsat_site_id')['beach_slope'] \
+#                        .apply(lambda x: (x == 0).all())
+# print(zero_sites[zero_sites].index.tolist())
+
+# all_merged('coastsat_site_id')
+
 retreat = calc_retreat(all_merged, retreat_scen_marker)
 
 
@@ -365,7 +387,7 @@ retreat = calc_retreat(all_merged, retreat_scen_marker)
 # Get unique combinations
 
 years =  [2025, 2100]
-scenarios = [2.6,4.5,7,8.5]
+scenarios = [1.9]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 
