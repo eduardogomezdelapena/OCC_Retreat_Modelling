@@ -55,8 +55,8 @@ def remove_river_influence(points,rivers, influence_area = 2000):
     """ Remove intersecting points with river polygons. Buffer of 2 km """
     
     #Make sure they are in the same crs
-    points = points.to_crs(CRS_NZTM )
-    rivers = rivers.to_crs(CRS_NZTM )
+    points = points.to_crs(CRS_NZTM)
+    rivers = rivers.to_crs(CRS_NZTM)
 
     # Create a 10 km (10,000 m) buffer around polygons
     buffered = rivers.copy()
@@ -70,7 +70,7 @@ def remove_river_influence(points,rivers, influence_area = 2000):
 
     #Reset index
     points_far = points_far.reset_index(drop=True)
-    return (points_far, buffered)
+    return (points_far.to_crs(CRS_WGS84), buffered)
 
 #%% Parameters
 custom_ref_year = 2025
@@ -88,7 +88,7 @@ points_far, buffered = remove_river_influence(points,rivers)
 # %% Plot before & after
 point_plot(points, custom_ref_year)
 multipolygon_plot(rivers)
-multipolygon_plot(buffered)
 point_plot(points_far, custom_ref_year)
+multipolygon_plot(buffered)
 
 # %%
