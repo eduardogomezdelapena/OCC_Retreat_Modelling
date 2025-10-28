@@ -188,7 +188,17 @@ def calc_retreat(all_merged, retreat_scen_marker,  c_adjust = 0.5, custom_ref_ye
     def smoothn_by_variability(x):
         """ Satellite trend smoothing. Garcia smoother, dynamic smoothing factor s
         varies with the standard deviation of the trend spatial series """
-        s = 100000 if x.std() > 0.2 else 10000 # s a bit adhoc, depends on stdev
+
+        site_id = x.name
+        std_x = x.std()
+
+        # Skip smoothing if variability is very low
+        if std_x < 0.01:
+            print(f"ℹ️ Skipping smoothing for site_id = {site_id} (std = {std_x:.4f})")
+            return x.to_numpy()
+    
+        s = 100000 if std_x > 0.2 else 10000 # s a bit adhoc, depends on stdev
+    
         return smoothn(x.to_numpy(), isrobust=True, s=s)[0]
 
 
