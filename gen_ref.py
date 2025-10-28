@@ -170,6 +170,15 @@ shoreline_ref = gpd.GeoDataFrame(all_trgoups_ref, crs=CRS_NZTM)
 #%% Export points
 shoreline_ref = shoreline_ref.dropna(subset=['geometry'])
 shoreline_ref.to_crs(CRS_WGS84).to_file(f'points_ref_shoreline_{custom_ref_year}.geojson')
+
+
+#Intersect with rivers
+
+
+
+
+
+
 #Export polylines
 lines_gdf = points_to_lines(shoreline_ref)
 lines_gdf.to_file(f"lines_ref_shoreline_{custom_ref_year}.geojson")
