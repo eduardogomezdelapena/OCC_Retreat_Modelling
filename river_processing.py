@@ -78,7 +78,7 @@ CRS_NZTM = 2193  # NZ Transverse Mercator
 CRS_WGS84 = 4326 # Lat/Lon
 
 #%%
-points = load_points(f"points_ref_shoreline_{custom_ref_year}.geojson")
+points = load_points(f"htrend_points_shoreline_50_shiftedqtl_{custom_ref_year}_1.9.geojson")
 
 #% Load NZ rivers polygons
 rivers= gpd.read_file("./preprocessing/nz-river-polygons-topo-150k.gpkg")
