@@ -66,19 +66,18 @@ rivers= gpd.GeoDataFrame(rivers, geometry="geometry")
 multipolygon_plot(rivers)
 
 # %%
-
 #Make sure they are in the same crs
 points = points.to_crs(CRS_NZTM )
 rivers = rivers.to_crs(CRS_NZTM )
 
 # Create a 10 km (10,000 m) buffer around polygons
 buffered = rivers.copy()
-buffered["geometry"] = buffered.buffer(10_000)
+buffered["geometry"] = buffered.buffer(2000)
 # %%
-# Step 2. Spatial join to find points within 10 km of polygons
+#  Spatial join to find points within 10 km of polygons
 joined = gpd.sjoin(points, buffered, predicate="intersects", how="left")
 
-# Step 3. Keep only points NOT within 10 km
+# Keep only points NOT within the threshold km
 points_far = joined[joined["index_right"].isna()].drop(columns="index_right")
 
 # Optional: reset index
@@ -86,6 +85,7 @@ points_far = points_far.reset_index(drop=True)
 # %%
 point_plot(points, custom_ref_year)
 multipolygon_plot(rivers)
+multipolygon_plot(buffered)
 point_plot(points_far, custom_ref_year)
 # %%
 
@@ -94,4 +94,6 @@ print(rivers.crs)
 
 # %%
 points.geometry.iloc[0].distance(points.geometry.iloc[1])
+# %%
+
 # %%
