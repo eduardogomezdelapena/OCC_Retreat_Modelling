@@ -89,7 +89,7 @@ def points_to_lines(shoreline_ref):
     lines_gdf = lines_gdf.to_crs(epsg=4326)
     return lines_gdf
 
-def remove_river_influence(points,rivers, influence_area = 2000):
+def remove_river_influence(points,rivers, influence_area):
     """ Remove intersecting points with river polygons. Buffer of 2 km """
     
     #Make sure they are in the same crs
@@ -203,7 +203,8 @@ rivers= gpd.read_file("./preprocessing/nz-river-polygons-topo-150k.gpkg")
 rivers= gpd.GeoDataFrame(rivers, geometry="geometry")
 
 #Intersect with rivers
-shoreline_ref_noriv, buffered = remove_river_influence(shoreline_ref,rivers)
+shoreline_ref_noriv, buffered = remove_river_influence(shoreline_ref,rivers,
+                                                        influence_area = 1000)
 
 #Export points
 shoreline_ref_noriv.to_crs(CRS_WGS84).to_file(f'points_ref_shoreline_{custom_ref_year}.geojson')

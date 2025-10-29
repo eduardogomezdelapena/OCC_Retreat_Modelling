@@ -32,7 +32,7 @@ from smooth_algorithms.smoothn import smoothn
 #%%
 slrise_ref = 2005
 custom_ref_year = 2025
-retreat_scen_marker ="oslr"
+retreat_scen_marker ="htrend"
 # retreat_scen_marker = ["oslr","htrend"]
 
 # Constants
@@ -397,7 +397,7 @@ retreat = calc_retreat(all_merged, retreat_scen_marker)
 # Get unique combinations
 
 years =  [2025, 2100]
-scenarios = [2.6,4.5,7,8.5]
+scenarios = [1.9,2.6,4.5,7,8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 
