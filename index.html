@@ -82,7 +82,7 @@
            <span class="color-line baseline"></span>
           <input type="checkbox" id="layer19_2005_lines"> 2025 (Baseline) </label> 
         <label>
-          <span class="color-line" style="border-color:red"></span>   
+          <span class="color-line" style="border-color:lime"></span>   
           <input type="checkbox" id="layer19_2100_lines"> 2100 (Projection) </label>         
         <label>
           <input type="checkbox" id="quantile_2100_1.9">
@@ -95,7 +95,7 @@
           <span class="color-line baseline"></span>         
           <input type="checkbox" id="layer26_2005_lines"> 2025 (Baseline) </label>          
         <label>
-          <span class="color-line" style="border-color:lime"></span>   
+          <span class="color-line" style="border-color:cyan"></span>   
           <input type="checkbox" id="layer26_2100_lines"> 2100 (Projection) </label> 
         <label>
           <input type="checkbox" id="quantile_2100_2.6">
@@ -124,7 +124,7 @@
            <span class="color-line baseline"></span>               
           <input type="checkbox" id="layer70_2005_lines"> 2025 (Baseline) </label>        
         <label>
-           <span class="color-line" style="border-color:cyan"></span>             
+           <span class="color-line" style="border-color:deeppink"></span>             
           <input type="checkbox" id="layer70_2100_lines"> 2100 (Projection) </label> 
         <label>
           <input type="checkbox" id="quantile_2100_7.0">
@@ -139,7 +139,7 @@
            <span class="color-line baseline"></span>            
           <input type="checkbox" id="layer85_2005_lines"> 2025 (Baseline) </label>
         <label>
-           <span class="color-line" style="border-color:deeppink"></span>          
+           <span class="color-line" style="border-color:red"></span>          
           <input type="checkbox" id="layer85_2100_lines"> 2100 (Projection) </label>
         <label>
           <input type="checkbox" id="quantile_2100_8.5">
@@ -161,7 +161,7 @@
           <input type="checkbox" id="htrend_layer19_2005_lines"> 2025 (Baseline)
         </label>                   
         <label>
-          <span class="color-line" style="border-color:red; border-top-style:dashed;"></span>
+          <span class="color-line" style="border-color:lime; border-top-style:dashed;"></span>
           <input type="checkbox" id="htrend_layer19_2100_lines"> 2100 (Projection)
         </label> 
         <label>
@@ -176,7 +176,7 @@
           <input type="checkbox" id="htrend_layer26_2005_lines"> 2025 (Baseline)
         </label>                   
         <label>
-          <span class="color-line" style="border-color:lime; border-top-style:dashed;"></span>
+          <span class="color-line" style="border-color:cyan; border-top-style:dashed;"></span>
           <input type="checkbox" id="htrend_layer26_2100_lines"> 2100 (Projection)
         </label>   
         <label>
@@ -206,7 +206,7 @@
           <input type="checkbox" id="htrend_layer70_2005_lines"> 2025 (Baseline)
         </label>                   
         <label>
-          <span class="color-line" style="border-color:cyan; border-top-style:dashed;"></span>
+          <span class="color-line" style="border-color:deeppink; border-top-style:dashed;"></span>
           <input type="checkbox" id="htrend_layer70_2100_lines"> 2100 (Projection)
         </label> 
         <label>
@@ -221,7 +221,7 @@
           <input type="checkbox" id="htrend_layer85_2005_lines"> 2005 (Baseline)
         </label>                   
         <label>
-          <span class="color-line" style="border-color:deeppink; border-top-style:dashed;"></span>
+          <span class="color-line" style="border-color:red; border-top-style:dashed;"></span>
           <input type="checkbox" id="htrend_layer85_2100_lines"> 2100 (Projection)
         </label> 
         <label>
@@ -334,11 +334,11 @@
     };
 
 const sspColors = {
-  "19": "red",          // SSP1-1.9
-  "26": "lime",         // SSP2-2.6 bright green
-  "45": "orange",       // SSP2-4.5 bright orange
-  "70": "cyan",         // SSP3-7.0 bright cyan
-  "85": "deeppink"      // SSP5-8.5 bright pink
+  "19": "lime",          // SSP1-1.9 green
+  "26": "cyan",         // SSP2-2.6 cyan
+  "45": "orange",       // SSP2-4.5 orange
+  "70": "deeppink",         // SSP3-7.0 pink
+  "85": "red"      // SSP5-8.5 red
 };
 
 function loadAndToggleLayer(key, checked) {
@@ -453,11 +453,11 @@ function loadAndToggleLayer(key, checked) {
 
 // color map for each scenario (adjust to your existing color scheme)
   const scenarioColors = {
-    "1.9": "red",
-    "2.6": "lime",
+    "1.9": "lime",
+    "2.6": "cyan",
     "4.5": "orange",
-    "7.0": "cyan",
-    "8.5": "deeppink"
+    "7.0": "deeppink",
+    "8.5": "red"
   };
 
   
