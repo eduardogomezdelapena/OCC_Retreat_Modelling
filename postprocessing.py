@@ -5,104 +5,79 @@ import os
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import geodatasets
 
 #%%
 year =  [2100]
-scenario = [1.9]
+scenarios = [4.5,8.5]
 slr_qt= ["50"]
+scn_strs = ['oslr','htrend']
 
+for scenario in scenarios: 
+    for scn_str in scn_strs: 
 
-#Load only Bruun 1.9 scenario, 2100, 50th percentile
-retreat = pd.read_pickle(f"./postprocessing/htrend_scenario{scenario[0]}_year{year[0]}_quantile_{slr_qt[0]}.pkl")
-retreat = gpd.GeoDataFrame(retreat, geometry="geom_new_points", crs="EPSG:4326")
+        #Load only Bruun 1.9 scenario, 2100, 50th percentile
+        retreat = pd.read_pickle(f"./postprocessing/{scn_str}_scenario{scenario}_year{year[0]}_quantile_{slr_qt[0]}_shifted.pkl")
+        retreat = gpd.GeoDataFrame(retreat, geometry="geom_new_points", crs="EPSG:4326")
 
+        #%
+        # Load Natural Earth data
 
-#%%
-#National average
-#Projected erosion by NZ region
+        nz_outline= gpd.read_file("./postprocessing/regions/nz-coastlines-topo-150k.gpkg")
+        nz_outline = gpd.GeoDataFrame(nz_outline, geometry="geometry")
+        nz_outline = nz_outline.to_crs(retreat.crs)
 
-lol= retreat.retreat_50
+        #  Load regions
+        regions = gpd.read_file("./postprocessing/regions/regional-council-2025.gpkg")
+        regions= gpd.GeoDataFrame(regions, geometry="geometry")
+        #Make sure they are in the same crs
+        regions = regions.to_crs(retreat.crs)
 
-retreat.retreat_50.describe()
+        #Retreat by region
+        retreat_regions = gpd.sjoin(retreat, regions, how="left", predicate="within")
 
-retreat.retreat_50.median()
+        regional_summary = (
+            retreat_regions
+            .groupby("REGC2025_V1_00_NAME")["retreat_50_shifted"]
+            .median()
+            .reset_index()
+        )
+        regions_summary = regions.merge(regional_summary, on="REGC2025_V1_00_NAME", how="left")
 
-unique_sites = retreat["coastsat_site_id"].unique()
+        # % Plot
+        import matplotlib.pyplot as plt
 
-# %%
+        fig, ax = plt.subplots(figsize=(8, 10))
+        regions_summary.plot(
+            column="retreat_50_shifted",
+            cmap="coolwarm",
+            legend=True,
+            edgecolor="black",
+            linewidth=0.5,
+            ax=ax,
+            vmin=-45,   
+            vmax=45     
+        )
+        nz_outline.plot(ax=ax, color="black", linewidth=0.6)
 
-unique_transects = retreat["coastsat_transect_id"].unique()
+        if scn_str == 'oslr':
+            scn_str_tit = "Only Sea-level rise"
+        elif scn_str == 'htrend':
+            scn_str_tit = 'SLR + Historic trend'
 
-trend= retreat.trend
-#%% Load regions
+        if scenario == 1.9:
+            scenario_tit = "SSP1—1.9 "
+        elif scenario == 4.5:
+            scenario_tit = 'SSP2—4.5'
+        elif scenario == 8.5:
+            scenario_tit = 'SSP5—8.5'
 
-regions = gpd.read_file("./postprocessing/regions/regional-council-2025.gpkg")
-regions= gpd.GeoDataFrame(regions, geometry="geometry")
-regions.plot()
-#Make sure they are in the same crs
-regions = regions.to_crs(retreat.crs)
-# %%
-#Retreat by region
+        ax.set_title(f"Median Coastal Change by Region (m): year 2100 \n {scn_str_tit}, {scenario_tit}", fontsize=14)
+        ax.axis("off")
+         
+        print(f'Min {scenario_tit}, {scn_str_tit}: {regions_summary.retreat_50_shifted.min()}')
+        print(f'Max {scenario_tit}, {scn_str_tit}: {regions_summary.retreat_50_shifted.max()}')
 
-
-retreat_regions = gpd.sjoin(retreat, regions, how="left", predicate="within")
-
-# %%
-regional_summary = (
-    retreat_regions
-    .groupby("REGC2025_V1_00_NAME")["retreat_50"]
-    .median()
-    .reset_index()
-)
-
-regions_summary = regions.merge(regional_summary, on="REGC2025_V1_00_NAME", how="left")
-
-# %%
-import matplotlib.pyplot as plt
-
-fig, ax = plt.subplots(figsize=(8, 10))
-regions_summary.plot(
-    column="retreat_50",
-    cmap="coolwarm",
-    legend=True,
-    edgecolor="black",
-    linewidth=0.5,
-    ax=ax
-)
-ax.set_title("Median Coastal Change by Region (m)", fontsize=14)
-ax.axis("off")
-plt.show()
-
-# %%
-import folium
-import branca
-
-values = regions_summary['retreat_50'].dropna()
-colormap = branca.colormap.LinearColormap(
-    colors=['blue','white','red'],
-    vmin=values.min(), vmax=values.max()
-).to_step(n=8)
-
-m = folium.Map(location=[-41.0, 174.0], zoom_start=5)
-
-def style(feature):
-    v = feature['properties'].get('retreat_50')
-    return {
-        'fillColor': '#gray' if v is None else colormap(v),
-        'color': 'black',
-        'weight': 0.5,
-        'fillOpacity': 0.7
-    }
-
-folium.GeoJson(
-    regions_summary.__geo_interface__,
-    style_function=style,
-    tooltip=folium.GeoJsonTooltip(fields=["REGC2025_V1_00_NAME", "retreat_50"])
-).add_to(m)
-
-colormap.caption = "Mean shoreline change (m)"
-colormap.add_to(m)
-
-# display / save
-m.save("./postprocessing/trial_SPP1_retreat_map.html")
-# %%
+        output_path = f'./postprocessing/figs/{scn_str}_scenario{scenario}_year{year[0]}_quantile_{slr_qt[0]}_map.png'
+        plt.savefig(output_path, bbox_inches="tight", transparent = True)
+        # %%
