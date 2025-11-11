@@ -34,9 +34,9 @@ where the historic beach trend $T_{satellite}$ is derived by fitting a linear re
 
 ## 2.1 SLR scenarios ($\Delta S$)
 
-[SLR scenarios](https://searise.nz/maps/) are sourced from the NZ SeaRise: Te Tai Pari O Aotearoa programme, which provides location-specific sea-level projections every 2 km along the coast of Aotearoa New Zealand, along with an open-access [data repository](https://zenodo.org/records/11398538). 
+[SLR scenarios](https://searise.nz/maps/) are sourced from the NZ SeaRise: Te Tai Pari O Aotearoa programme, which provides location-specific sea-level projections every 2 km along the coast of Aotearoa New Zealand, along with an open-access [data repository](https://zenodo.org/records/11398538). The SLR scenarios correspond to five Shared Socioeconomic Pathways (SSPs) developed by the Intergovernmental Panel on Climate Change (IPCC): SSP1–1.9, SSP1–2.6, SSP2–4.5, SSP3–7.0, and SSP5–8.5.
 
-The SLR dataset has 3 percentiles for each sea level rise projection: 
+For each scenario, the SLR dataset has 3 percentiles: 
 
 - 17th percentile (lower bound) — represents a likely lower estimate of SLR, meaning there’s a 17% chance the actual SLR will be lower than this value.
 - 50th percentile (median) — the central or “best estimate” of SLR, where half the modelled outcomes are higher and half are lower.
@@ -75,18 +75,18 @@ To improve the spatial continuity and ensure smooth longshore variability within
 The uncertainty bands in the shoreline change projections correspond to the results obtained under each percentile of the sea-level rise projections when applying the Bruun rule. In this sense, for each site, it is applied as follows:
 
 $$
-\Delta y_{Lower Bound} = \frac{c}{\tan \beta} \Delta  S _{Q17}
+\Delta y_{Lower Bound} = \frac{c}{\tan \beta} \Delta  S _{P17}
 $$
 
 $$
-\Delta y_{Median} = \frac{c}{\tan \beta} \Delta  S _{Q50}
+\Delta y_{Median} = \frac{c}{\tan \beta} \Delta  S _{P50}
 $$
 
 $$
-\Delta y_{UpperBound} = \frac{c}{\tan \beta} \Delta  S _{Q83}
+\Delta y_{UpperBound} = \frac{c}{\tan \beta} \Delta  S _{P83}
 $$
 
-where $y_{Lower Bound},y_{Median},y_{UpperBound}$ correspond to the shoreline change given by its corresponding sea level rise percentile  $S _{Q17},S _{Q50},S _{Q83} $.
+where $y_{Lower Bound},y_{Median},y_{UpperBound}$ correspond to the shoreline change given by its corresponding sea level rise percentile  $S _{P17},S _{P50},S _{P83} $.
 
 
 
