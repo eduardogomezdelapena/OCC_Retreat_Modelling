@@ -203,8 +203,9 @@ rivers= gpd.read_file("./preprocessing/nz-river-polygons-topo-150k.gpkg")
 rivers= gpd.GeoDataFrame(rivers, geometry="geometry")
 
 #Intersect with rivers
-shoreline_ref_noriv, buffered = remove_river_influence(shoreline_ref,rivers,
-                                                        influence_area = 1000)
+# shoreline_ref_noriv, buffered = remove_river_influence(shoreline_ref,rivers,
+#                                                         influence_area = 1000)
+shoreline_ref_noriv = shoreline_ref
 
 #Export points
 shoreline_ref_noriv.to_crs(CRS_WGS84).to_file(f'points_ref_shoreline_{custom_ref_year}.geojson')
