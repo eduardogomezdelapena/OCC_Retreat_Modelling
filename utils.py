@@ -344,8 +344,8 @@ merged= pd.merge(meta_data,slr_data,
 nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_WGS84}", geometry= 'geom_nzrise')
 
 coastsat_merged = load_and_merge_coastsat_data(
-    "transects_reindexed.geojson",
-    f"points_ref_shoreline_{custom_ref_year}.geojson",
+    "transects_reindexed_Nickupdate.geojson",
+    f"points_ref_shoreline_{custom_ref_year}_Nickupdate.geojson",
     CRS_WGS84
 )
 
