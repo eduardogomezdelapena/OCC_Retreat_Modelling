@@ -207,14 +207,14 @@ shoreline_ref_noriv, buffered = remove_river_influence(shoreline_ref,rivers,
                                                         influence_area = 1000)
 
 #Export points
-shoreline_ref_noriv.to_crs(CRS_WGS84).to_file(f'points_ref_shoreline_{custom_ref_year}.geojson')
+shoreline_ref_noriv.to_crs(CRS_WGS84).to_file(f'points_ref_shoreline_{custom_ref_year}_Nickupdate.geojson')
 
 #Export polylines
 lines_gdf = points_to_lines(shoreline_ref_noriv)
-lines_gdf.to_file(f"lines_ref_shoreline_{custom_ref_year}.geojson")
+lines_gdf.to_file(f"lines_ref_shoreline_{custom_ref_year}_Nickupdate.geojson")
 
 #Export clean transects 
-transects_reindexed.to_file("transects_reindexed.geojson")
+transects_reindexed.to_file("transects_reindexed_Nickupdate.geojson")
 
 # %%
 
