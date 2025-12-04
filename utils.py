@@ -362,7 +362,7 @@ coastsat_merged["nzrise_site_id"]=meta_data["nzrise_site_id"].iloc[nearest_indic
 
 #Now merge based on nzrise_site_id
 all_merged = pd.merge( coastsat_merged, nzrise_merged,
-                      on='nzrise_site_id', how='outer')
+                      on='nzrise_site_id', how='left')
 #Print all columns, there should be 3 geometry columns (points ref , coastsat transects
 # and nzrise points).
 
