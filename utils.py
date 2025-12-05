@@ -32,7 +32,7 @@ from smooth_algorithms.smoothn import smoothn
 #%%
 slrise_ref = 2005
 custom_ref_year = 2025
-retreat_scen_marker ="htrend"
+retreat_scen_marker ="oslr"
 # retreat_scen_marker = ["oslr","htrend"]
 
 # Constants
