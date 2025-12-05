@@ -293,6 +293,7 @@ def extend_transects_4_new_distances_points(subset, new_distances):
         if new_dist < 0:
             new_line = LineString([new_point] + coords)
         elif new_dist > line.length:
+            #print(row.coastsat_transect_id)
             new_line = LineString(coords + [new_point])
         else:
             new_line = line  # unchanged
@@ -372,7 +373,9 @@ print(all_merged.columns)
 all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
                                geometry= 'geom_points_ref')
 
-
+all_merged = all_merged[
+    ~all_merged['coastsat_site_id'].isin(['nzd0581', 'nzd0580'])
+]
 #%%
 #Step back, only Kaipara
 # merged_kaipara= all_merged[all_merged.coastsat_site_id == 'nzd0126']
@@ -391,6 +394,13 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 
 retreat = calc_retreat(all_merged, retreat_scen_marker)
 
+#'nzd0580-0008' is the last print in the debugging
+# pos = (
+#     subset
+#     .reset_index(drop=True)
+#     .index[subset['coastsat_transect_id'] == 'nzd0580-0008']
+#     .tolist()[0]
+# )
 
 #%%
 #MWE of retreat polyline in one site
