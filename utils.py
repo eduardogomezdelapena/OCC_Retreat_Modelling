@@ -213,12 +213,34 @@ def calc_retreat(all_merged, retreat_scen_marker,  c_adjust = 0.5, custom_ref_ye
     
     # Apply Bruun rule
     # c_adjust = 0.5 to adjust the Bruun profile with the shoreface profile
-    # a bit ad hoc, matches with some lidar measurements
-    denom = c_adjust * all_merged["beach_slope"]
+    # a bit ad hoc, but matches with lidar measurements from LINZ 
+    # denom = c_adjust * all_merged["beach_slope"]
+
+# --- Build denom per SLR quantile (3 cases) ---
+    # Base quantity, same for all quantiles
+    base_denom = c_adjust * all_merged["beach_slope"]
+
+    # Create a DataFrame to hold denom for each SLR quantile
+    denom = pd.DataFrame(index=all_merged.index)
+
+    for q in slr_quantiles:
+        if "17" in q:
+            # Case 1: 17th percentile
+            # here we multiply angle by 1.2?
+            denom[q] = base_denom
+        elif "50" in q:
+            # Case 2: 50th percentile
+            # (customise this expression as needed)
+            denom[q] = base_denom
+        elif "83" in q:
+            # Case 3: 83rd percentile
+            # here we multiply angle by 0.8?
+            denom[q] = base_denom
+
 
     retreat_df = (
         all_merged[slr_quantiles]
-        .div(denom , axis=0)
+        .div(denom[slr_quantiles] , axis=0)
         .rename(columns=lambda c: f"retreat_{c}")
         .round(2)  # ensures 3 decimals
     )
