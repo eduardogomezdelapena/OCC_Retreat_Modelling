@@ -32,7 +32,7 @@ from smooth_algorithms.smoothn import smoothn
 #%%
 slrise_ref = 2005
 custom_ref_year = 2025
-retreat_scen_marker ="oslr"
+retreat_scen_marker ="htrend"
 # retreat_scen_marker = ["oslr","htrend"]
 
 # Constants
@@ -218,24 +218,26 @@ def calc_retreat(all_merged, retreat_scen_marker,  c_adjust = 0.5, custom_ref_ye
 
 # --- Build denom per SLR quantile (3 cases) ---
     # Base quantity, same for all quantiles
-    base_denom = c_adjust * all_merged["beach_slope"]
 
     # Create a DataFrame to hold denom for each SLR quantile
+    base_slope = all_merged["beach_slope"]
     denom = pd.DataFrame(index=all_merged.index)
 
     for q in slr_quantiles:
         if "17" in q:
             # Case 1: 17th percentile
-            # here we multiply angle by 1.2?
-            denom[q] = base_denom
+            # here we multiply angle by 1.2?   
+
+            denom[q] = c_adjust * (1.20 * base_slope)
+
         elif "50" in q:
             # Case 2: 50th percentile
-            # (customise this expression as needed)
-            denom[q] = base_denom
+            # base
+            denom[q] = c_adjust * base_slope
         elif "83" in q:
             # Case 3: 83rd percentile
             # here we multiply angle by 0.8?
-            denom[q] = base_denom
+            denom[q] = c_adjust * (0.8 * base_slope)
 
 
     retreat_df = (
@@ -430,6 +432,7 @@ retreat = calc_retreat(all_merged, retreat_scen_marker)
 
 years =  [2025, 2100]
 scenarios = [1.9,2.6,4.5,7,8.5]
+# scenarios = [1.9,2.6,4.5,7,8.5]
 # years =  [2005, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100]
 # unique_scenarios = [1.9,2.6,4.5,7,8.5]
 
