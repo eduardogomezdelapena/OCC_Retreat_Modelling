@@ -111,7 +111,7 @@ y_clean = y[mask].values
 boot_slopes = block_bootstrap_slopes(
     t_clean,
     y_clean,
-    block_size= 24*3 , #Every 3 years
+    block_size= 24*5 , #Every 5 years, fortnightly data
     n_boot=1000
 )
 #%%
@@ -119,7 +119,7 @@ boot_slopes = block_bootstrap_slopes(
 ci_5, ci_50, ci_95 = np.percentile(boot_slopes, [5, 50, 95])
 
 # Probability trend is positive
-p_positive = np.mean(boot_slopes < 0)
+p_positive = np.mean(boot_slopes > 0)
 
 print("Bootstrap trend uncertainty:")
 print(f"Median slope: {ci_50:.3f} m/yr")
@@ -128,13 +128,96 @@ print(f"P(slope > 0) = {p_positive:.2f}")
 # %%
 plt.figure(figsize=(6, 4))
 plt.hist(boot_slopes, bins=40, density=True, alpha=0.7)
-plt.axvline(slope, color="k", linestyle="--", label="OLS slope")
+plt.axvline(slope, color="k", linestyle="--", label="OLS slope") #Ordinary Least Squares Slope
 plt.axvline(ci_5, color="r", linestyle=":")
+plt.axvline(ci_50, color="k", linestyle=":", label = "Median slope")
 plt.axvline(ci_95, color="r", linestyle=":", label="5–95% CI")
 plt.xlabel("Trend slope (m/year)")
 plt.ylabel("Density")
 plt.title(f"{transect_id} – bootstrapped trend uncertainty")
 plt.legend()
 plt.tight_layout()
+plt.show()
+# %%
+
+#Monte Carlo simulations
+
+def mc_shoreline_change(
+    c, tan_beta, delta_S,
+    r_hat, r_low, r_high,
+    dt=75,              #2025 as baseline year, projections to 2100
+    n=200_000,
+    dist="normal"     # "normal" or "triangular"
+):
+    """
+    Monte Carlo propagation for:
+
+    Δy = (c/tanβ)*ΔS + (r_sat * dt)
+
+    Inputs:
+    - c, tan_beta, delta_S: deterministic terms
+    -r_* are rates (e.g., m/yr). dt in years.
+
+    """
+
+    base = (c / tan_beta) * delta_S
+
+    if dist == "normal":
+        sigma_r = (r_high - r_low) / (2 * 1.96)
+        r = np.random.normal(loc=r_hat, scale=sigma_r, size=n)
+
+    elif dist == "triangular":
+        r = np.random.triangular(left=r_low, mode=r_hat, right=r_high, size=n)
+
+    else:
+        raise ValueError("dist must be 'normal' or 'triangular'")
+
+    dy = base + r * dt
+
+    summary = {
+        "dt_years": dt,
+        "base_term_m": float(base),
+        "trend_rate_mean": float(np.mean(r)),
+        "trend_rate_p05": float(np.quantile(r, 0.05)),
+        "trend_rate_p95": float(np.quantile(r, 0.95)),
+
+        "dy_median_m": float(np.median(dy)),
+        "dy_p05_m": float(np.quantile(dy, 0.05)),
+        "dy_p95_m": float(np.quantile(dy, 0.95)),
+    }
+    return dy, summary
+
+#%%
+
+dy, summ = mc_shoreline_change(
+    c=1.0,
+    tan_beta=0.0075,
+    delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
+    r_hat=ci_50,       # e.g., -12 m over the horizon (or per your definition)
+    r_low=ci_5,
+    r_high=ci_95,
+    dist="triangular",
+    n=200_000
+)
+
+summ
+
+# %%
+
+plt.figure()
+plt.hist(dy, bins=100, density=True)
+plt.axvline(np.percentile(dy, 5))
+plt.axvline(np.percentile(dy, 50))
+plt.axvline(np.percentile(dy, 95))
+plt.xlabel("Δy (m)")
+plt.ylabel("Probability density")
+plt.title("Monte Carlo shoreline change projection")
+plt.show()
+# %%
+plt.figure()
+plt.plot(np.sort(dy))
+plt.xlabel("Monte Carlo realisation")
+plt.ylabel("Δy (m)")
+plt.title("Spread of projected shoreline change")
 plt.show()
 # %%
