@@ -147,7 +147,9 @@ def mc_shoreline_change(
     r_hat, r_low, r_high,
     dt=75,              #2025 as baseline year, projections to 2100
     n=200_000,
-    dist="normal"     # "normal" or "triangular"
+    dist="normal",     # "normal" or "triangular"
+    p_low=0.5,
+    p_high=1.5
 ):
     """
     Monte Carlo propagation for:
@@ -172,11 +174,20 @@ def mc_shoreline_change(
     else:
         raise ValueError("dist must be 'normal' or 'triangular'")
 
-    dy = base + r * dt
+    # Sample persistence factor p
+    p = np.random.uniform(low=p_low, high=p_high, size=n)
+
+    # Propagate
+    dy = base + (p * r * dt)
 
     summary = {
         "dt_years": dt,
         "base_term_m": float(base),
+
+        "p_mean": float(np.mean(p)),
+        "p_p05": float(np.quantile(p, 0.05)),
+        "p_p95": float(np.quantile(p, 0.95)),
+
         "trend_rate_mean": float(np.mean(r)),
         "trend_rate_p05": float(np.quantile(r, 0.05)),
         "trend_rate_p95": float(np.quantile(r, 0.95)),
@@ -197,10 +208,14 @@ dy, summ = mc_shoreline_change(
     r_low=ci_5,
     r_high=ci_95,
     dist="triangular",
-    n=200_000
+    n=200_000,
+    p_low=0.5,
+    p_high=1.5
 )
 
 summ
+
+
 
 # %%
 
@@ -219,5 +234,37 @@ plt.plot(np.sort(dy))
 plt.xlabel("Monte Carlo realisation")
 plt.ylabel("Δy (m)")
 plt.title("Spread of projected shoreline change")
+plt.show()
+# %%
+
+# Statistics
+median = np.median(dy)
+q1 = np.quantile(dy, 0.25)
+q3 = np.quantile(dy, 0.75)
+
+
+
+plt.figure()
+plt.boxplot(dy, vert=True, whis=[5, 95], showfliers=False)
+plt.ylabel("Δy (m)")
+plt.title("Monte Carlo distribution of shoreline change Δy, Orewa")
+
+# Annotations (placed to the right)
+x_text = 1.1
+
+plt.text(x_text, median,
+         f"Median = {median:.2f} m",
+         va="center")
+
+plt.text(x_text, q1,
+         f"Q1 = {q1:.2f} m",
+         va="center")
+
+plt.text(x_text, q3,
+         f"Q3 = {q3:.2f} m",
+         va="center")
+
+
+
 plt.show()
 # %%
