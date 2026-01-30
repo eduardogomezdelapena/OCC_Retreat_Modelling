@@ -22,13 +22,13 @@ df = pd.read_csv(url, header=0)
 # Quick look at the data
 print(df.columns)
 
-# %%
-# Ensure datetime
+# %% Reproducing linear fit as displayed in e-research coastsat dashboard
+
+# Ensure datetime and pick site
 df["dates"] = pd.to_datetime(df["dates"])
 
 transect_id = site_id + "-0187"
 
-#%%
 #Conver to decimal years (for linear fit)
 t = df["dates"]
 y = df[transect_id]
@@ -38,22 +38,19 @@ t_years = (
     + (t.dt.dayofyear - 1) / 365.25
 )
 
-#%%
 # Remove NaNs
 mask = np.isfinite(t_years) & np.isfinite(y)
 
-coef = np.polyfit(t_years[mask], y[mask], 1)
-
 # Linear regression: y = a*t + b
-
+coef = np.polyfit(t_years[mask], y[mask], 1)
 slope, intercept = coef
 y_fit = slope * t_years + intercept
 print(f"Linear trend for {transect_id}:")
 print(f"Trend slope: {slope:.3f} m/year")
 print(f"  Intercept = {intercept:.2f} m")
-#%%
+
 # ------------------------
-# Plot
+# Plot linear fit
 # ------------------------
 plt.figure(figsize=(10, 4))
 plt.plot(t, y, ".", alpha=0.6, label="Observed")
@@ -66,7 +63,7 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-# %% Bootstrap
+# %% Bootstrap the trend, function DEFINITION
 
 def block_bootstrap_slopes(t, y, block_size, n_boot):
     """
@@ -98,13 +95,14 @@ def block_bootstrap_slopes(t, y, block_size, n_boot):
             idx.extend(range(start, start + block_size))
 
         idx = np.array(idx[:n])  # trim to length n
-        coef = np.polyfit(t[idx], y[idx], 1)
+        coef = np.polyfit(t[idx], y[idx], 1) # Calculate linear fit
         slopes[i] = coef[0]
 
     return slopes
 
-#%%
+#%% Bootstrap function APPLIED
 
+#Apply NaN removal mask
 t_clean = t_years[mask].values
 y_clean = y[mask].values
 
@@ -114,7 +112,7 @@ boot_slopes = block_bootstrap_slopes(
     block_size= 24*5 , #Every 5 years, fortnightly data
     n_boot=1000
 )
-#%%
+
 # Confidence intervals
 ci_5, ci_50, ci_95 = np.percentile(boot_slopes, [5, 50, 95])
 
@@ -125,7 +123,10 @@ print("Bootstrap trend uncertainty:")
 print(f"Median slope: {ci_50:.3f} m/yr")
 print(f"5–95% CI: [{ci_5:.3f}, {ci_95:.3f}] m/yr")
 print(f"P(slope > 0) = {p_positive:.2f}")
-# %%
+
+# --------------------------------------------------------------
+# Plot Bootstrapped trend uncertainty
+# --------------------------------------------------------------
 plt.figure(figsize=(6, 4))
 plt.hist(boot_slopes, bins=40, density=True, alpha=0.7)
 plt.axvline(slope, color="k", linestyle="--", label="OLS slope") #Ordinary Least Squares Slope
@@ -139,8 +140,7 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 # %%
-
-#Monte Carlo simulations
+#Monte Carlo simulations. Function DEFINITION
 
 def mc_shoreline_change(
     c, tan_beta, delta_S,
@@ -198,13 +198,13 @@ def mc_shoreline_change(
     }
     return dy, summary
 
-#%%
+#%%  #Monte Carlo simulations. Function APPLIED
 
 dy, summ = mc_shoreline_change(
     c=1.0,
     tan_beta=0.0075,
     delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
-    r_hat=ci_50,       # e.g., -12 m over the horizon (or per your definition)
+    r_hat=ci_50,       
     r_low=ci_5,
     r_high=ci_95,
     dist="triangular",
@@ -215,9 +215,9 @@ dy, summ = mc_shoreline_change(
 
 summ
 
-
-
-# %%
+# --------------------------------------------------------------
+# Plot Monte Carlo shoreline projections
+# --------------------------------------------------------------
 
 plt.figure()
 plt.hist(dy, bins=100, density=True)
@@ -228,21 +228,14 @@ plt.xlabel("Δy (m)")
 plt.ylabel("Probability density")
 plt.title("Monte Carlo shoreline change projection")
 plt.show()
-# %%
-plt.figure()
-plt.plot(np.sort(dy))
-plt.xlabel("Monte Carlo realisation")
-plt.ylabel("Δy (m)")
-plt.title("Spread of projected shoreline change")
-plt.show()
-# %%
 
+# --------------------------------------------------------------
+# Plot Monte Carlo BOXPLOT shoreline projections
+# ---------
 # Statistics
 median = np.median(dy)
 q1 = np.quantile(dy, 0.25)
 q3 = np.quantile(dy, 0.75)
-
-
 
 plt.figure()
 plt.boxplot(dy, vert=True, whis=[5, 95], showfliers=False)
@@ -263,7 +256,6 @@ plt.text(x_text, q1,
 plt.text(x_text, q3,
          f"Q3 = {q3:.2f} m",
          va="center")
-
 
 
 plt.show()
