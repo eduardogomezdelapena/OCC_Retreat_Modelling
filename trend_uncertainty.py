@@ -144,38 +144,48 @@ plt.show()
 
 def mc_shoreline_change(
     c, tan_beta, delta_S,
-    r_hat, r_low, r_high,
-    dt=75,              #2025 as baseline year, projections to 2100
+    r_samples,
+    dt=75,                      # 2025 as baseline year, projections to 2100
     n=200_000,
-    dist="normal",     # "normal" or "triangular"
-    p_low=0.5,
-    p_high=1.5
+    dist="normal",              # "normal" or "triangular"
+    p_low=0.5,  p_high=1.5,     # persistance factor range
+    random_state = None         # Seeding randomness
 ):
     """
-    Monte Carlo propagation for:
+    Monte Carlo propagation for shoreline change using an
+    empirical (bootstrap) distribution of shoreline trend rates:
 
-    Δy = (c/tanβ)*ΔS + (r_sat * dt)
+    Δy = (c/tanβ) * ΔS + (p * r_sat * dt)
 
-    Inputs:
+    Parameters:
     - c, tan_beta, delta_S: deterministic terms
-    -r_* are rates (e.g., m/yr). dt in years.
+    - p is persistance factor
+    - r_sat are rates (e.g., m/yr).
+    - dt in years.
+
+    Arrays:
+    ----------
+    r_samples : array-like
+        Empirical bootstrap samples of shoreline trend rate r_sat (m/yr).
+        Sampling is performed with replacement.
 
     """
 
+    rng = np.random.default_rng(random_state)
+
+    # --- deterministic component ---
     base = (c / tan_beta) * delta_S
 
-    if dist == "normal":
-        sigma_r = (r_high - r_low) / (2 * 1.96)
-        r = np.random.normal(loc=r_hat, scale=sigma_r, size=n)
+    # --- empirical sampling of trend rate ---
+    r_samples = np.asarray(r_samples)
+    r_samples = r_samples[np.isfinite(r_samples)]
+    if r_samples.size == 0:
+        raise ValueError("r_samples is empty after removing non-finite values.")
 
-    elif dist == "triangular":
-        r = np.random.triangular(left=r_low, mode=r_hat, right=r_high, size=n)
-
-    else:
-        raise ValueError("dist must be 'normal' or 'triangular'")
+    r = rng.choice(r_samples, size=n, replace=True)
 
     # Sample persistence factor p
-    p = np.random.uniform(low=p_low, high=p_high, size=n)
+    p = rng.uniform(low=p_low, high=p_high, size=n)
 
     # Propagate
     dy = base + (p * r * dt)
@@ -204,10 +214,7 @@ dy, summ = mc_shoreline_change(
     c=1.0,
     tan_beta=0.0075,
     delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
-    r_hat=ci_50,       
-    r_low=ci_5,
-    r_high=ci_95,
-    dist="triangular",
+    r_samples = boot_slopes,
     n=200_000,
     p_low=0.5,
     p_high=1.5
