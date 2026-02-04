@@ -139,6 +139,40 @@ plt.title(f"{transect_id} – bootstrapped trend uncertainty")
 plt.legend()
 plt.tight_layout()
 plt.show()
+
+# %% Save routine
+
+from pathlib import Path
+import numpy as np
+
+out_dir = Path("bootstrap_trend_distributions")
+out_dir.mkdir(parents=True, exist_ok=True)
+
+# after you compute boot_slopes ...
+np.savez_compressed(
+    out_dir / f"{site_id}__{transect_id}__boot_slopes.npz",
+    boot_slopes=boot_slopes,
+    site_id=site_id,
+    transect_id=transect_id,
+    block_size=24*5,
+    n_boot=1000,
+    ols_slope=slope,
+    t_start=float(np.nanmin(t_clean)),
+    t_end=float(np.nanmax(t_clean)),
+)
+#%% CSV saving
+# import pandas as pd
+# from pathlib import Path
+
+# out_dir = Path("bootstrap_trend_distributions")
+# out_dir.mkdir(parents=True, exist_ok=True)
+
+# pd.DataFrame({
+#     "site_id": site_id,
+#     "transect_id": transect_id,
+#     "boot_slope_m_per_yr": boot_slopes
+# }).to_csv(out_dir / f"{site_id}__{transect_id}__boot_slopes.csv", index=False)
+
 # %%
 #Monte Carlo simulations. Function DEFINITION
 
@@ -210,11 +244,15 @@ def mc_shoreline_change(
 
 #%%  #Monte Carlo simulations. Function APPLIED
 
+data = np.load(out_dir / f"{site_id}__{transect_id}__boot_slopes.npz", allow_pickle=True)
+boot_slopes_test = data["boot_slopes"]
+
+
 dy, summ = mc_shoreline_change(
     c=1.0,
     tan_beta=0.0075,
     delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
-    r_samples = boot_slopes,
+    r_samples = boot_slopes_test,
     n=200_000,
     p_low=0.5,
     p_high=1.5
