@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 
 # Declare site t ID
 site_id = "nzd0161"
+transect_id = site_id + "-0187"
 
 # URL to the raw CSV file on GitHub
 url = (
@@ -27,7 +28,7 @@ print(df.columns)
 # Ensure datetime and pick site
 df["dates"] = pd.to_datetime(df["dates"])
 
-transect_id = site_id + "-0187"
+
 
 #Conver to decimal years (for linear fit)
 t = df["dates"]
@@ -65,7 +66,9 @@ plt.show()
 
 # %% Bootstrap the trend, function DEFINITION
 
-def block_bootstrap_slopes(t, y, block_size, n_boot):
+def block_bootstrap_slopes(t, y, block_size, n_boot,
+                            random_state = None   
+                               ):
     """
     Block bootstrap for linear trend slopes.
 
@@ -85,13 +88,16 @@ def block_bootstrap_slopes(t, y, block_size, n_boot):
     slopes : array
         Bootstrapped slope estimates
     """
+
+    rng = np.random.default_rng(random_state)
+
     n = len(y)
     slopes = np.zeros(n_boot)
 
     for i in range(n_boot):
         idx = []
         while len(idx) < n:
-            start = np.random.randint(0, n - block_size + 1)
+            start = rng.integers(0, n - block_size + 1)
             idx.extend(range(start, start + block_size))
 
         idx = np.array(idx[:n])  # trim to length n
