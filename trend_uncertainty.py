@@ -2,15 +2,12 @@
 # -*- coding: utf-8 -*-
 """Script for satellite trend bootsrapping, using Orewa as study case"""
 #%%
-#0138 is Orewa, download the smoothed, tidally corrected time series
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-#%%
+#%% Read data, declare site t ID
 
-# Declare site t ID
 site_id = "nzd0161"
-
 
 # URL to the raw CSV file on GitHub
 url = (
@@ -23,10 +20,12 @@ df = pd.read_csv(url, header=0)
 # Quick look at the data
 print(df.columns)
 
+seed = 42 
+
 # %% Bootstrap the trend, function DEFINITION
 
 def block_bootstrap_slopes(t, y, block_size, n_boot,
-                            random_state = None   
+                            random_state = seed   
                                ):
     """
     Block bootstrap for linear trend slopes.
@@ -75,7 +74,7 @@ def mc_shoreline_change(
     n=200_000,
     dist="normal",              # "normal" or "triangular"
     p_low=0.5,  p_high=1.5,     # persistance factor range
-    random_state = None         # Seeding randomness
+    random_state = seed         # Seeding randomness
 ):
     """
     Monte Carlo propagation for shoreline change using an
@@ -136,167 +135,156 @@ def mc_shoreline_change(
 
 # %% Reproducing linear fit as displayed in e-research coastsat dashboard
 
-transect_id = site_id + "-0187"
+#transect_id = site_id + "-0187"
 
 # Ensure datetime and pick site
 df["dates"] = pd.to_datetime(df["dates"])
 
 #Conver to decimal years (for linear fit)
 t = df["dates"]
-y = df[transect_id]
+#y = df[transect_id]
 
 t_years = (
     t.dt.year
     + (t.dt.dayofyear - 1) / 365.25
 )
 
-# Remove NaNs
-mask = np.isfinite(t_years) & np.isfinite(y)
 
-# Linear regression: y = a*t + b
-coef = np.polyfit(t_years[mask], y[mask], 1)
-slope, intercept = coef
-y_fit = slope * t_years + intercept
-print(f"Linear trend for {transect_id}:")
-print(f"Trend slope: {slope:.3f} m/year")
-print(f"  Intercept = {intercept:.2f} m")
+transect_cols = [
+    c for c in df.columns
+    if c.startswith(site_id + "-")
+]
 
-# ------------------------
-# Plot linear fit
-# ------------------------
-plt.figure(figsize=(10, 4))
-plt.plot(t, y, ".", alpha=0.6, label="Observed")
-plt.plot(t, y_fit, "-", linewidth=2, label="Linear trend")
+results = {}
+#Loop definition
+for transect_id in transect_cols:
 
-plt.xlabel("Time")
-plt.ylabel("Shoreline position (m)")
-plt.title(f"{transect_id} shoreline time series")
-plt.legend()
-plt.tight_layout()
-plt.show()
+    y = df[transect_id]
+    # Remove NaNs
+    mask = np.isfinite(y)
 
+    #% Bootstrap function APPLIED
 
-#%% Bootstrap function APPLIED
+    #Apply NaN removal mask
+    t_clean = t_years[mask].values
+    y_clean = y[mask].values
 
-#Apply NaN removal mask
-t_clean = t_years[mask].values
-y_clean = y[mask].values
+    #Guardrails 
+    if len(y_clean) < 10 * block_size:
+        continue
 
-boot_slopes = block_bootstrap_slopes(
-    t_clean,
-    y_clean,
-    block_size= 24*5 , #Every 5 years, fortnightly data
-    n_boot=1000
-)
+    
+    boot_slopes = block_bootstrap_slopes(
+        t_clean,
+        y_clean,
+        block_size= 24*5 , #Every 5 years, fortnightly data
+        n_boot=1000
+    )
 
-# Confidence intervals
-ci_5, ci_50, ci_95 = np.percentile(boot_slopes, [5, 50, 95])
+    # Confidence intervals
+    ci_5, ci_50, ci_95 = np.percentile(boot_slopes, [5, 50, 95])
+    print(f"Transect id: {transect_id}")
+    # print("Bootstrap trend uncertainty:")
+    # print(f"Median slope: {ci_50:.3f} m/yr")
+    # print(f"5–95% CI: [{ci_5:.3f}, {ci_95:.3f}] m/yr")
 
-# Probability trend is positive
-p_positive = np.mean(boot_slopes > 0)
+    # # --------------------------------------------------------------
+    # # Plot Bootstrapped trend uncertainty
+    # # --------------------------------------------------------------
+    # plt.figure(figsize=(6, 4))
+    # plt.hist(boot_slopes, bins=40, density=True, alpha=0.7)
+    # plt.axvline(slope, color="k", linestyle="--", label="OLS slope") #Ordinary Least Squares Slope
+    # plt.axvline(ci_5, color="r", linestyle=":")
+    # plt.axvline(ci_50, color="k", linestyle=":", label = "Median slope")
+    # plt.axvline(ci_95, color="r", linestyle=":", label="5–95% CI")
+    # plt.xlabel("Trend slope (m/year)")
+    # plt.ylabel("Density")
+    # plt.title(f"{transect_id} – bootstrapped trend uncertainty")
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
 
-print("Bootstrap trend uncertainty:")
-print(f"Median slope: {ci_50:.3f} m/yr")
-print(f"5–95% CI: [{ci_5:.3f}, {ci_95:.3f}] m/yr")
-print(f"P(slope > 0) = {p_positive:.2f}")
+    # % Save bootstrap distribution routine
 
-# --------------------------------------------------------------
-# Plot Bootstrapped trend uncertainty
-# --------------------------------------------------------------
-plt.figure(figsize=(6, 4))
-plt.hist(boot_slopes, bins=40, density=True, alpha=0.7)
-plt.axvline(slope, color="k", linestyle="--", label="OLS slope") #Ordinary Least Squares Slope
-plt.axvline(ci_5, color="r", linestyle=":")
-plt.axvline(ci_50, color="k", linestyle=":", label = "Median slope")
-plt.axvline(ci_95, color="r", linestyle=":", label="5–95% CI")
-plt.xlabel("Trend slope (m/year)")
-plt.ylabel("Density")
-plt.title(f"{transect_id} – bootstrapped trend uncertainty")
-plt.legend()
-plt.tight_layout()
-plt.show()
+    # from pathlib import Path
+    # import numpy as np
 
-# %% Save bootstrap distribution routine
+    # out_dir = Path("bootstrap_trend_distributions")
+    # out_dir.mkdir(parents=True, exist_ok=True)
 
-from pathlib import Path
-import numpy as np
+    # # after you compute boot_slopes ...
+    # np.savez_compressed(
+    #     out_dir / f"{site_id}__{transect_id}__boot_slopes.npz",
+    #     boot_slopes=boot_slopes,
+    #     site_id=site_id,
+    #     transect_id=transect_id,
+    #     block_size=24*5,
+    #     n_boot=1000,
+    #     ols_slope=slope,
+    #     t_start=float(np.nanmin(t_clean)),
+    #     t_end=float(np.nanmax(t_clean)),
+    # )
 
-out_dir = Path("bootstrap_trend_distributions")
-out_dir.mkdir(parents=True, exist_ok=True)
+    # #%%  #Monte Carlo simulations. Function APPLIED
 
-# after you compute boot_slopes ...
-np.savez_compressed(
-    out_dir / f"{site_id}__{transect_id}__boot_slopes.npz",
-    boot_slopes=boot_slopes,
-    site_id=site_id,
-    transect_id=transect_id,
-    block_size=24*5,
-    n_boot=1000,
-    ols_slope=slope,
-    t_start=float(np.nanmin(t_clean)),
-    t_end=float(np.nanmax(t_clean)),
-)
-
-#%%  #Monte Carlo simulations. Function APPLIED
-
-data = np.load(out_dir / f"{site_id}__{transect_id}__boot_slopes.npz", allow_pickle=True)
-boot_slopes_test = data["boot_slopes"]
+    # data = np.load(out_dir / f"{site_id}__{transect_id}__boot_slopes.npz", allow_pickle=True)
+    # boot_slopes_test = data["boot_slopes"]
 
 
-dy, summ = mc_shoreline_change(
-    c=1.0,
-    tan_beta=0.0075,
-    delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
-    r_samples = boot_slopes_test,
-    n=200_000,
-    p_low=0.5,
-    p_high=1.5
-)
+    dy, summ = mc_shoreline_change(
+        c=1.0,
+        tan_beta=0.0075,
+        delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
+        r_samples = boot_slopes,
+        n=200_000,
+        p_low=0.5,
+        p_high=1.5
+    )
 
-summ
+    results[transect_id] = summ
 
-# --------------------------------------------------------------
-# Plot Monte Carlo shoreline projections
-# --------------------------------------------------------------
+    # # --------------------------------------------------------------
+    # # Plot Monte Carlo shoreline projections
+    # # --------------------------------------------------------------
 
-plt.figure()
-plt.hist(dy, bins=100, density=True)
-plt.axvline(np.percentile(dy, 5))
-plt.axvline(np.percentile(dy, 50))
-plt.axvline(np.percentile(dy, 95))
-plt.xlabel("Δy (m)")
-plt.ylabel("Probability density")
-plt.title("Monte Carlo shoreline change projection")
-plt.show()
+    # plt.figure()
+    # plt.hist(dy, bins=100, density=True)
+    # plt.axvline(np.percentile(dy, 5))
+    # plt.axvline(np.percentile(dy, 50))
+    # plt.axvline(np.percentile(dy, 95))
+    # plt.xlabel("Δy (m)")
+    # plt.ylabel("Probability density")
+    # plt.title("Monte Carlo shoreline change projection")
+    # plt.show()
 
-# --------------------------------------------------------------
-# Plot Monte Carlo BOXPLOT shoreline projections
-# ---------
-# Statistics
-median = np.median(dy)
-q1 = np.quantile(dy, 0.25)
-q3 = np.quantile(dy, 0.75)
+    # # --------------------------------------------------------------
+    # # Plot Monte Carlo BOXPLOT shoreline projections
+    # # ---------
+    # # Statistics
+    # median = np.median(dy)
+    # q1 = np.quantile(dy, 0.25)
+    # q3 = np.quantile(dy, 0.75)
 
-plt.figure()
-plt.boxplot(dy, vert=True, whis=[5, 95], showfliers=False)
-plt.ylabel("Δy (m)")
-plt.title("Monte Carlo distribution of shoreline change Δy, Orewa")
+    # plt.figure()
+    # plt.boxplot(dy, vert=True, whis=[5, 95], showfliers=False)
+    # plt.ylabel("Δy (m)")
+    # plt.title("Monte Carlo distribution of shoreline change Δy, Orewa")
 
-# Annotations (placed to the right)
-x_text = 1.1
+    # # Annotations (placed to the right)
+    # x_text = 1.1
 
-plt.text(x_text, median,
-         f"Median = {median:.2f} m",
-         va="center")
+    # plt.text(x_text, median,
+    #         f"Median = {median:.2f} m",
+    #         va="center")
 
-plt.text(x_text, q1,
-         f"Q1 = {q1:.2f} m",
-         va="center")
+    # plt.text(x_text, q1,
+    #         f"Q1 = {q1:.2f} m",
+    #         va="center")
 
-plt.text(x_text, q3,
-         f"Q3 = {q3:.2f} m",
-         va="center")
+    # plt.text(x_text, q3,
+    #         f"Q3 = {q3:.2f} m",
+    #         va="center")
 
 
-plt.show()
+    # plt.show()
 # %%
