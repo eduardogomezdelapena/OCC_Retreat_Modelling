@@ -5,20 +5,27 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-#%% Read data, declare site t ID
+#%% Read data, declare sites ID
 
-site_id = "nzd0161"
+#Which directories exist under data/
+import requests
 
-# URL to the raw CSV file on GitHub
-url = (
-    "https://raw.githubusercontent.com/UoA-eResearch/CoastSat/main/data/"
-    f"{site_id}/transect_time_series_tidally_corrected_smoothed.csv"
+owner = "UoA-eResearch"
+repo = "CoastSat"
+path = "data"
+
+url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+resp = requests.get(url)
+resp.raise_for_status()
+
+nzd_sites = sorted(
+    item["name"]
+    for item in resp.json()
+    if item["type"] == "dir" and "nzd" in item["name"]
 )
-# Load the CSV into a pandas DataFrame
-df = pd.read_csv(url, header=0)
 
-# Quick look at the data
-print(df.columns)
+print(f"{len(nzd_sites)} NZD sites found")
+print(nzd_sites[:10])
 
 seed = 42 
 
@@ -135,71 +142,142 @@ def mc_shoreline_change(
 
 # %% Reproducing linear fit as displayed in e-research coastsat dashboard
 
-#transect_id = site_id + "-0187"
+dy_rows = []
 
-# Ensure datetime and pick site
-df["dates"] = pd.to_datetime(df["dates"])
+nzd_sites_trial = nzd_sites[0:5]
+#Try only 2 sites first
+for site_id in nzd_sites_trial:
 
-#Conver to decimal years (for linear fit)
-t = df["dates"]
-#y = df[transect_id]
+    # URL to the raw CSV file on GitHub
+    url = (
+        "https://raw.githubusercontent.com/UoA-eResearch/CoastSat/main/data/"
+        f"{site_id}/transect_time_series_tidally_corrected_smoothed.csv"
+    )
+    # Load the CSV into a pandas DataFrame
+    df = pd.read_csv(url, header=0)
 
-t_years = (
-    t.dt.year
-    + (t.dt.dayofyear - 1) / 365.25
-)
+    # Ensure datetime and pick site
+    df["dates"] = pd.to_datetime(df["dates"])
+
+    #Conver to decimal years (for linear fit)
+    t = df["dates"]
+    #y = df[transect_id]
+
+    t_years = (
+        t.dt.year
+        + (t.dt.dayofyear - 1) / 365.25
+    )
+
+    transect_cols = [
+        c for c in df.columns
+        if c.startswith(site_id + "-")
+    ]
+
+    #Transect loop 
+    for transect_id in transect_cols:
+
+        y = df[transect_id]
+        # Remove NaNs
+        mask = np.isfinite(y)
+
+        #% Bootstrap function APPLIED
+
+        #Apply NaN removal mask
+        t_clean = t_years[mask].values
+        y_clean = y[mask].values
+
+        ###############################
+        #Guardrails 
+        block_size = 24 * 5 #5 years of fortnightly data
+        if len(y_clean) < 100:  # continue if length of data is at least 10 years eq.
+            continue
+        
+        boot_slopes = block_bootstrap_slopes(
+            t_clean,
+            y_clean,
+            block_size= 24*5 , #Every 5 years, fortnightly data
+            n_boot=1000
+        )
+
+        dy, summ = mc_shoreline_change(
+            c=1.0,
+            tan_beta=0.0075,
+            delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
+            r_samples = boot_slopes,
+            n=200_000,
+            p_low=0.5,
+            p_high=1.5
+        )
 
 
-transect_cols = [
-    c for c in df.columns
-    if c.startswith(site_id + "-")
+
+        dy_rows.append({
+                "site_id": site_id,
+                "transect_id": transect_id,
+                "n_obs": int(y_clean.size),
+                "n_boot": 1000,
+                "n_mc": 200_000,
+                "dt_years": float(summ["dt_years"]),
+                "base_term_m": float(summ["base_term_m"]),
+                "dy_p05_m": float(summ["dy_p05_m"]),
+                "dy_median_m": float(summ["dy_median_m"]),
+                "dy_p95_m": float(summ["dy_p95_m"]),
+            })
+        
+        print(site_id, transect_id)
+
+#Loop ends
+dy_df = (
+        pd.DataFrame(dy_rows)
+        .sort_values(["site_id", "transect_id"])
+        .reset_index(drop=True)
+    )
+
+
+print(dy_df.head())
+# %% Quick plot
+
+dy_df["dy_ci90_len_m"] = dy_df["dy_p95_m"] - dy_df["dy_p05_m"]
+
+plt.figure()
+plt.hist(dy_df["dy_ci90_len_m"].dropna(), bins=40)
+plt.xlabel("CI length (dy_p95 - dy_p05) [m]")
+plt.ylabel("Count")
+plt.title("Distribution of dy 5–95% CI length (all transects)")
+plt.show()
+# %% Plot by site (median CI length per site)
+
+plt.figure(figsize=(12, 5))
+labels = dy_df["site_id"].unique()
+
+for i, (site_id, g) in enumerate(dy_df.groupby("site_id"), start=1):
+    y = g["dy_ci90_len_m"].values
+    x = np.full_like(y, i, dtype=float)
+    plt.plot(x, y, "o", alpha=0.4)
+
+plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
+plt.ylabel("dy 5–95% CI length [m]")
+plt.title("Transect-level CI length spread per site")
+plt.tight_layout()
+plt.show()
+# %%
+
+# CI length (if not already computed)
+dy_df["dy_ci90_len_m"] = dy_df["dy_p95_m"] - dy_df["dy_p05_m"]
+
+# Group CI lengths by site
+groups = [
+    g["dy_ci90_len_m"].values
+    for _, g in dy_df.groupby("site_id")
 ]
 
-results = {}
-#Loop definition
-for transect_id in transect_cols:
+labels = dy_df["site_id"].unique()
 
-    y = df[transect_id]
-    # Remove NaNs
-    mask = np.isfinite(y)
-
-    #% Bootstrap function APPLIED
-
-    #Apply NaN removal mask
-    t_clean = t_years[mask].values
-    y_clean = y[mask].values
-
-    ###############################
-    #Guardrails 
-    # if len(y_clean) < 10 * block_size:
-    #     continue
-
-    
-    boot_slopes = block_bootstrap_slopes(
-        t_clean,
-        y_clean,
-        block_size= 24*5 , #Every 5 years, fortnightly data
-        n_boot=1000
-    )
-
-    # Confidence intervals
-    ci_5, ci_50, ci_95 = np.percentile(boot_slopes, [5, 50, 95])
-    print(f"Transect id: {transect_id}")
-    # print("Bootstrap trend uncertainty:")
-    # print(f"Median slope: {ci_50:.3f} m/yr")
-    # print(f"5–95% CI: [{ci_5:.3f}, {ci_95:.3f}] m/yr")
-
-    dy, summ = mc_shoreline_change(
-        c=1.0,
-        tan_beta=0.0075,
-        delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
-        r_samples = boot_slopes,
-        n=200_000,
-        p_low=0.5,
-        p_high=1.5
-    )
-
-    results[transect_id] = summ
-
- 
+plt.figure(figsize=(12, 5))
+plt.boxplot(groups, showfliers=True)
+plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
+plt.ylabel("dy 5–95% CI length [m]")
+plt.title("Spread of shoreline-change uncertainty per site")
+plt.tight_layout()
+plt.show()
 # %%
