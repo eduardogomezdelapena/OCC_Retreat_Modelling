@@ -144,7 +144,7 @@ def mc_shoreline_change(
 
 dy_rows = []
 
-nzd_sites_trial = nzd_sites[0:5]
+nzd_sites_trial = nzd_sites[0:50]
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
 
@@ -189,13 +189,13 @@ for site_id in nzd_sites_trial:
         ###############################
         #Guardrails 
         block_size = 24 * 5 #5 years of fortnightly data
-        if len(y_clean) < 100:  # continue if length of data is at least 10 years eq.
+        if len(y_clean) < block_size:  # continue if length of data is at least 5 years eq.
             continue
         
         boot_slopes = block_bootstrap_slopes(
             t_clean,
             y_clean,
-            block_size= 24*5 , #Every 5 years, fortnightly data
+            block_size= block_size, 
             n_boot=1000
         )
 
@@ -208,8 +208,6 @@ for site_id in nzd_sites_trial:
             p_low=0.5,
             p_high=1.5
         )
-
-
 
         dy_rows.append({
                 "site_id": site_id,
@@ -278,6 +276,22 @@ plt.boxplot(groups, showfliers=True)
 plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
 plt.ylabel("dy 5–95% CI length [m]")
 plt.title("Spread of shoreline-change uncertainty per site")
+
+# --- reference lines ---
+for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
+    plt.axhline(
+        y,
+        color="red",
+        linestyle="--",
+        linewidth=1
+    )
+    plt.text(
+        0.5, y,
+        txt,
+        color="red",
+        fontsize=9,
+        va="bottom"
+    )
 plt.tight_layout()
 plt.show()
 # %%
