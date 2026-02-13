@@ -31,9 +31,12 @@ seed = 42
 
 # %% Bootstrap the trend, function DEFINITION
 
-def block_bootstrap_slopes(t, y, block_size, n_boot,
-                            random_state = seed   
-                               ):
+def block_bootstrap_slopes(
+    t, y,
+    block_years: float = 5.0,
+    n_boot: int = 1000,
+    random_state=0,
+):
     """
     Block bootstrap for linear trend slopes.
 
@@ -53,21 +56,42 @@ def block_bootstrap_slopes(t, y, block_size, n_boot,
     slopes : array
         Bootstrapped slope estimates
     """
-
     rng = np.random.default_rng(random_state)
 
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    # Sort by time
+    order = np.argsort(t)
+    t = t[order]
+    y = y[order]
+
     n = len(y)
-    slopes = np.zeros(n_boot)
+    if n < 2:
+        raise ValueError("Need at least 2 observations total.")
+
+    # Precompute end index for each start: end = first index with t >= t[start] + block_years
+    ends = np.searchsorted(t, t + block_years, side="left")
+
+    # Valid starts must yield at least 2 points in the window to fit a slope
+    valid_starts = np.where((ends - np.arange(n)) >= 2)[0]
+    if valid_starts.size == 0:
+        raise ValueError(
+            f"No 5-year windows contain >=2 observations. "
+            f"Try shorter block_years or check data density."
+        )
+
+    slopes = np.empty(n_boot, dtype=float)
 
     for i in range(n_boot):
         idx = []
         while len(idx) < n:
-            start = rng.integers(0, n - block_size + 1)
-            idx.extend(range(start, start + block_size))
+            start = rng.choice(valid_starts)
+            end = ends[start]          # exclusive
+            idx.extend(range(start, end))  # ALL obs in [t[start], t[start]+5)
 
-        idx = np.array(idx[:n])  # trim to length n
-        coef = np.polyfit(t[idx], y[idx], 1) # Calculate linear fit
-        slopes[i] = coef[0]
+        idx = np.asarray(idx[:n])
+        slopes[i] = np.polyfit(t[idx], y[idx], 1)[0]
 
     return slopes
 
@@ -144,7 +168,7 @@ def mc_shoreline_change(
 
 dy_rows = []
 
-nzd_sites_trial = nzd_sites[0:50]
+nzd_sites_trial = nzd_sites[0:11]
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
 
@@ -188,15 +212,13 @@ for site_id in nzd_sites_trial:
 
         ###############################
         #Guardrails 
-        block_size = 24 * 5 #5 years of fortnightly data
-        if len(y_clean) < block_size:  # continue if length of data is at least 5 years eq.
-            continue
-        
+        block_years = 5.0
+
         boot_slopes = block_bootstrap_slopes(
-            t_clean,
-            y_clean,
-            block_size= block_size, 
-            n_boot=1000
+            t_clean, y_clean,
+            block_years=block_years,
+            n_boot=1000,
+            random_state=seed
         )
 
         dy, summ = mc_shoreline_change(
@@ -292,6 +314,8 @@ for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
         fontsize=9,
         va="bottom"
     )
+
+plt.ylim(0,650)
 plt.tight_layout()
 plt.show()
 # %%
