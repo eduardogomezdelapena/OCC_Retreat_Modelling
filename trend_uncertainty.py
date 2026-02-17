@@ -163,12 +163,102 @@ def mc_shoreline_change(
         "dy_p95_m": float(np.quantile(dy, 0.95)),
     }
     return dy, summary
+#%%
+def passes_seasonal_guardrail(
+    dates,
+    min_obs_per_season,
+    max_failed_years,
+    verbose: bool = False,
+):
+    """
+    Check that each calendar year has at least `min_obs_per_season`
+    observations in each season (NZ seasons).
+
+    Parameters
+    ----------
+    dates : pandas Series (datetime64)
+        Observation timestamps (NaNs already removed).
+    min_obs_per_season : int
+        Minimum number of observations required per season per year.
+    max_failed_years : int
+        Allow up to this many years to fail the rule.
+        (0 = strict Option B)
+    verbose : bool
+        If True, prints diagnostics when failing.
+
+    Returns
+    -------
+    bool
+        True if transect passes the rule, False otherwise.
+    """
+
+    if len(dates) == 0:
+        return False
+
+    def nz_season_from_month(month: int) -> str:
+        if month in (12, 1, 2):
+            return "summer"
+        if month in (3, 4, 5):
+            return "autumn"
+        if month in (6, 7, 8):
+            return "winter"
+        return "spring"
+
+    years = dates.dt.year.values
+    seasons = dates.dt.month.map(nz_season_from_month).values
+
+    all_years = np.arange(years.min(), years.max() + 1)
+    all_seasons = np.array(["summer", "autumn", "winter", "spring"], dtype=object)
+
+    # Count observations per (year, season)
+    ys = pd.DataFrame({"year": years, "season": seasons})
+    counts = (
+        ys.value_counts()
+          .rename("n")
+          .reset_index()
+    )
+
+    # Complete grid to include missing combinations
+    grid = pd.MultiIndex.from_product(
+        [all_years, all_seasons],
+        names=["year", "season"]
+    ).to_frame(index=False)
+
+    counts_full = (
+        grid.merge(counts, on=["year", "season"], how="left")
+            .fillna({"n": 0})
+    )
+
+    # Identify failing year-season combinations
+    counts_full["fail"] = counts_full["n"] < min_obs_per_season
+
+    # Count failing years (if ANY season fails in that year)
+    failed_years = (
+        counts_full.groupby("year")["fail"]
+        .any()
+        .sum()
+    )
+
+    if failed_years > max_failed_years:
+        if verbose:
+            bad = counts_full[counts_full["fail"]]
+            print(
+                f"Seasonal guardrail failed: "
+                f"{failed_years} failing years "
+                f"(allowed {max_failed_years}). "
+                f"Examples: {bad.head(6).to_dict(orient='records')}"
+            )
+        return False
+
+    return True
 
 # %% Reproducing linear fit as displayed in e-research coastsat dashboard
 
 dy_rows = []
 
-nzd_sites_trial = nzd_sites[0:11]
+# nzd_sites_trial = nzd_sites[0:11]
+
+nzd_sites_trial = ["nzd0161"]
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
 
@@ -209,6 +299,17 @@ for site_id in nzd_sites_trial:
         #Apply NaN removal mask
         t_clean = t_years[mask].values
         y_clean = y[mask].values
+
+        dates_clean = df["dates"][mask]
+
+        if not passes_seasonal_guardrail(
+            dates_clean,
+            min_obs_per_season=1,
+            max_failed_years=10,   # strict Option B
+            verbose=False
+        ):
+            print(f"Skipping {site_id} {transect_id}: seasonal guardrail")
+            continue
 
         ###############################
         #Guardrails 
