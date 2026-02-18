@@ -164,11 +164,148 @@ def mc_shoreline_change(
     }
     return dy, summary
 
+#%%
+
+def filter_to_longest_consecutive_year_run(
+    t_years_clean,
+    y_clean,
+    years_clean,
+    min_consecutive,
+    min_obs_per_year,
+):
+    """
+    Keep only observations that fall within the longest consecutive run of years
+    where each year has >= min_obs_per_year observations (after NaN removal).
+    Require run length >= min_consecutive.
+
+    Returns:
+      t_filt, y_filt, meta (dict)
+    """
+    t_years_clean = np.asarray(t_years_clean, dtype=float)
+    y_clean = np.asarray(y_clean, dtype=float)
+    years_clean = np.asarray(years_clean, dtype=int)
+
+    if y_clean.size == 0:
+        return t_years_clean, y_clean, {
+            "status": "empty_after_nan_filter",
+            "kept_years": [],
+            "removed_years_no_obs": [],
+            "removed_years_low_obs": [],
+            "removed_years_nonconsecutive": [],
+            "min_consecutive": int(min_consecutive),
+            "min_obs_per_year": int(min_obs_per_year),
+            "n_obs_before": 0,
+            "n_obs_after": 0,
+        }
+
+    # Count obs per year
+    year_vals, counts = np.unique(years_clean, return_counts=True)
+    year_vals = year_vals.astype(int)
+    counts = counts.astype(int)
+
+    y_min, y_max = int(year_vals.min()), int(year_vals.max())
+    span_years = np.arange(y_min, y_max + 1, dtype=int)
+
+    # Years with 0 obs (within the span)
+    removed_years_no_obs = sorted(list(set(span_years) - set(year_vals.tolist())))
+
+    # Years with >0 obs but fewer than required
+    removed_years_low_obs = sorted(year_vals[counts < min_obs_per_year].tolist())
+
+    # Years eligible (meet threshold)
+    eligible_years = year_vals[counts >= min_obs_per_year]
+    eligible_years.sort()
+
+    if eligible_years.size == 0:
+        meta = {
+            "status": "no_years_meet_min_obs",
+            "kept_years": [],
+            "removed_years_no_obs": removed_years_no_obs,
+            "removed_years_low_obs": removed_years_low_obs,
+            "removed_years_nonconsecutive": sorted(year_vals.tolist()),
+            "min_consecutive": int(min_consecutive),
+            "min_obs_per_year": int(min_obs_per_year),
+            "n_obs_before": int(y_clean.size),
+            "n_obs_after": 0,
+            "year_span_min": y_min,
+            "year_span_max": y_max,
+        }
+        return np.array([]), np.array([]), meta
+
+    # Find consecutive runs among eligible years
+    runs = []
+    start = eligible_years[0]
+    prev = eligible_years[0]
+    for yr in eligible_years[1:]:
+        if yr == prev + 1:
+            prev = yr
+        else:
+            runs.append((start, prev))
+            start = yr
+            prev = yr
+    runs.append((start, prev))
+
+    run_lengths = np.array([end - st + 1 for st, end in runs], dtype=int)
+    best_idx = int(np.argmax(run_lengths))
+    best_run = runs[best_idx]
+    best_len = int(run_lengths[best_idx])
+
+    if best_len < min_consecutive:
+        meta = {
+            "status": "insufficient_consecutive_years",
+            "kept_years": [],
+            "removed_years_no_obs": removed_years_no_obs,
+            "removed_years_low_obs": removed_years_low_obs,
+            "removed_years_nonconsecutive": sorted(eligible_years.tolist()),
+            "best_run_start": int(best_run[0]),
+            "best_run_end": int(best_run[1]),
+            "best_run_len": best_len,
+            "min_consecutive": int(min_consecutive),
+            "min_obs_per_year": int(min_obs_per_year),
+            "n_obs_before": int(y_clean.size),
+            "n_obs_after": 0,
+            "year_span_min": y_min,
+            "year_span_max": y_max,
+        }
+        return np.array([]), np.array([]), meta
+
+    kept_years = np.arange(best_run[0], best_run[1] + 1, dtype=int)
+    kept_set = set(kept_years.tolist())
+
+    removed_years_nonconsecutive = sorted([int(y) for y in eligible_years if y not in kept_set])
+
+    keep_mask = np.isin(years_clean, kept_years)
+
+    t_filt = t_years_clean[keep_mask]
+    y_filt = y_clean[keep_mask]
+
+    meta = {
+        "status": "ok",
+        "kept_years": kept_years.tolist(),
+        "removed_years_no_obs": removed_years_no_obs,
+        "removed_years_low_obs": removed_years_low_obs,
+        "removed_years_nonconsecutive": removed_years_nonconsecutive,
+        "best_run_start": int(best_run[0]),
+        "best_run_end": int(best_run[1]),
+        "best_run_len": best_len,
+        "min_consecutive": int(min_consecutive),
+        "min_obs_per_year": int(min_obs_per_year),
+        "n_obs_before": int(y_clean.size),
+        "n_obs_after": int(y_filt.size),
+        "year_span_min": y_min,
+        "year_span_max": y_max,
+    }
+    return t_filt, y_filt, meta
+
 # %% Reproducing linear fit as displayed in e-research coastsat dashboard
 
 dy_rows = []
+meta_rows = []
 
-nzd_sites_trial = nzd_sites[0:11]
+# nzd_sites_trial = nzd_sites[0:11]
+# nzd_sites_trial = ["nzd0161"]
+nzd_sites_trial = ["nzd0001"]
+
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
 
@@ -209,6 +346,25 @@ for site_id in nzd_sites_trial:
         #Apply NaN removal mask
         t_clean = t_years[mask].values
         y_clean = y[mask].values
+        years_clean = df.loc[mask, "dates"].dt.year.values  # year per observation (after NaN filter)
+
+        # ---- NEW: filter to consecutive years (min 5) with observations ----
+        t_clean, y_clean, meta = filter_to_longest_consecutive_year_run(
+            t_clean, y_clean, years_clean,
+            min_consecutive=5,
+            min_obs_per_year=3
+        )
+
+        meta_rows.append({
+            "site_id": site_id,
+            "transect_id": transect_id,
+            **meta
+        })
+
+        # If not enough consecutive years, skip bootstrap for this transect
+        if meta["status"] != "ok":
+            print(f"SKIP {site_id} {transect_id}: {meta['status']} (best_run_len={meta.get('best_run_len')})")
+            continue
 
         ###############################
         #Guardrails 
@@ -255,6 +411,14 @@ dy_df = (
 
 
 print(dy_df.head())
+
+meta_df = pd.DataFrame(meta_rows).sort_values(["site_id", "transect_id"]).reset_index(drop=True)
+
+# Optional: store as CSV locally
+# meta_df.to_csv("transect_year_filter_meta.csv", index=False)
+
+print(meta_df.head())
+
 # %% Quick plot
 
 dy_df["dy_ci90_len_m"] = dy_df["dy_p95_m"] - dy_df["dy_p05_m"]
