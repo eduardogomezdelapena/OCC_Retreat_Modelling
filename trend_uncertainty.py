@@ -29,13 +29,71 @@ print(nzd_sites[:10])
 
 seed = 42 
 
-# %% Bootstrap the trend, function DEFINITION
+#%%  Filter to longest run of consecutive years with min obs. Function DEFINITION
+def filter_to_longest_consecutive_year_run(
+    t, y, years,
+    min_consecutive,
+    min_obs_per_year,
+    site_id,
+    transect_id,
+):
+    # Convert to numpy arrays for easier processing
+    t, y, years = map(np.asarray, (t, y, years))
 
+    # Initialize metadata
+    meta = {
+        "site_id": site_id,
+        "transect_id": transect_id,
+        "status": None,
+        "kept_years": [],
+        "removed_years": [],
+    }
+
+    # Basic checks
+    if y.size == 0:
+        meta["status"] = "empty"
+        return t[:0], y[:0], meta
+
+    # Count observations per year and find eligible years
+    yr, ct = np.unique(years.astype(int), return_counts=True)
+    eligible = np.sort(yr[ct >= min_obs_per_year])
+
+    # If no years meet the minimum obs/year, return empty with metadata
+    if eligible.size == 0:
+        meta["status"] = "no_years_meet_min_obs"
+        meta["removed_years"] = yr.tolist()
+        return t[:0], y[:0], meta
+
+    # Find longest run of consecutive eligible years
+    blocks = np.split(eligible, np.where(np.diff(eligible) != 1)[0] + 1)
+    # Select the longest block (if multiple have same length, the first is chosen)
+    best = max(blocks, key=len)
+
+    # If the longest run is shorter than min_consecutive, return empty with metadata
+    if len(best) < min_consecutive:
+        # Report the reason for skipping in metadata
+        meta["status"] = "insufficient_consecutive_years"
+        meta["removed_years"] = yr.tolist()
+        return t[:0], y[:0], meta
+    
+    # Otherwise, keep only observations from the best run of consecutive years  
+    keep = np.arange(best[0], best[-1] + 1, dtype=int)
+    # Mask to keep only observations from the selected years
+    mask = np.isin(years, keep)
+
+    # Metadata reporting
+    meta["status"] = "ok"
+    meta["kept_years"] = keep.tolist()
+    meta["removed_years"] = sorted(set(yr.tolist()) - set(keep.tolist()))
+     
+    return t[mask], y[mask], meta
+
+# %% Bootstrap the trend, function DEFINITION
 def block_bootstrap_slopes(
     t, y,
-    block_years: float = 5.0,
-    n_boot: int = 1000,
-    random_state=0,
+    block_years,
+    n_boot,
+    random_state,
 ):
     """
     Block bootstrap for linear trend slopes.
@@ -56,6 +114,7 @@ def block_bootstrap_slopes(
     slopes : array
         Bootstrapped slope estimates
     """
+    
     rng = np.random.default_rng(random_state)
 
     t = np.asarray(t, dtype=float)
@@ -95,17 +154,14 @@ def block_bootstrap_slopes(
 
     return slopes
 
-# %%
-#Monte Carlo simulations. Function DEFINITION
-
+# %% Monte Carlo simulations. Function DEFINITION
 def mc_shoreline_change(
     c, tan_beta, delta_S,
     r_samples,
+    random_state,
+    p_low, p_high,
     dt=75,                      # 2025 as baseline year, projections to 2100
-    n=200_000,
-    dist="normal",              # "normal" or "triangular"
-    p_low=0.5,  p_high=1.5,     # persistance factor range
-    random_state = seed         # Seeding randomness
+    n=200_000   
 ):
     """
     Monte Carlo propagation for shoreline change using an
@@ -164,62 +220,13 @@ def mc_shoreline_change(
     }
     return dy, summary
 
-#%%
-
-def filter_to_longest_consecutive_year_run(
-    t, y, years,
-    min_consecutive,
-    min_obs_per_year,
-    site_id,
-    transect_id,
-):
-    t, y, years = map(np.asarray, (t, y, years))
-
-    meta = {
-        "site_id": site_id,
-        "transect_id": transect_id,
-        "status": None,
-        "kept_years": [],
-        "removed_years": [],
-    }
-
-    if y.size == 0:
-        meta["status"] = "empty"
-        return t[:0], y[:0], meta
-
-    yr, ct = np.unique(years.astype(int), return_counts=True)
-    eligible = np.sort(yr[ct >= min_obs_per_year])
-
-    if eligible.size == 0:
-        meta["status"] = "no_years_meet_min_obs"
-        meta["removed_years"] = yr.tolist()
-        return t[:0], y[:0], meta
-
-    # Split into consecutive blocks
-    blocks = np.split(eligible, np.where(np.diff(eligible) != 1)[0] + 1)
-    best = max(blocks, key=len)
-
-    if len(best) < min_consecutive:
-        meta["status"] = "insufficient_consecutive_years"
-        meta["removed_years"] = yr.tolist()
-        return t[:0], y[:0], meta
-
-    keep = np.arange(best[0], best[-1] + 1, dtype=int)
-    mask = np.isin(years, keep)
-
-    meta["status"] = "ok"
-    meta["kept_years"] = keep.tolist()
-    meta["removed_years"] = sorted(set(yr.tolist()) - set(keep.tolist()))
-
-    return t[mask], y[mask], meta
-
-# %% Reproducing linear fit as displayed in e-research coastsat dashboard
+# %% Main loop: load data, apply filters, bootstrap, Monte Carlo
 
 dy_rows = []
 meta_rows = []
 
-nzd_sites_trial = nzd_sites[0:11]
-# nzd_sites_trial = ["nzd0161"]
+# nzd_sites_trial = nzd_sites[0:11]
+nzd_sites_trial = ["nzd0001"]
 # nzd_sites_trial = ["nzd0161"]
 
 #Try only 2 sites first
@@ -249,7 +256,6 @@ for site_id in nzd_sites_trial:
         c for c in df.columns
         if c.startswith(site_id + "-")
     ]
-
     # transect_cols=['nzd0161-0187']
 
     #Transect loop 
@@ -259,14 +265,12 @@ for site_id in nzd_sites_trial:
         # Remove NaNs
         mask = np.isfinite(y)
 
-        #% Bootstrap function APPLIED
-
         #Apply NaN removal mask
         t_clean = t_years[mask].values
         y_clean = y[mask].values
         years_clean = df.loc[mask, "dates"].dt.year.values  # year per observation (after NaN filter)
 
-        # ---- NEW: filter to consecutive years (min 5) with observations ----
+        # ---- filter to consecutive years (min 5) with min observations ----
         t_clean, y_clean, meta = filter_to_longest_consecutive_year_run(
             t_clean, y_clean, years_clean,
             min_consecutive=5,
@@ -287,12 +291,11 @@ for site_id in nzd_sites_trial:
             continue
 
         ###############################
-        #Guardrails 
-        block_years = 3.0
+        #Applying bootstrap and Monte Carlo functions
 
         boot_slopes = block_bootstrap_slopes(
             t_clean, y_clean,
-            block_years=block_years,
+            block_years= 3.0,
             n_boot=1000,
             random_state=seed
         )
@@ -302,11 +305,12 @@ for site_id in nzd_sites_trial:
             tan_beta=0.0075,
             delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
             r_samples = boot_slopes,
-            n=200_000,
-            p_low=0.5,
+            random_state= seed,
+            p_low=0.5,  # persistance factor range
             p_high=1.5
         )
 
+        # Store results
         dy_rows.append({
                 "site_id": site_id,
                 "transect_id": transect_id,
@@ -329,14 +333,8 @@ dy_df = (
         .reset_index(drop=True)
     )
 
-
 print(dy_df.head())
-
 meta_df = pd.DataFrame(meta_rows).sort_values(["site_id", "transect_id"]).reset_index(drop=True)
-
-# Optional: store as CSV locally
-# meta_df.to_csv("transect_year_filter_meta.csv", index=False)
-
 print(meta_df.head())
 
 # %% Quick plot
