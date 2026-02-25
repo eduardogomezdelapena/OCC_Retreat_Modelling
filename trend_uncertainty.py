@@ -32,8 +32,8 @@ seed = 42
 #%%  Filter to longest run of consecutive years with min obs. Function DEFINITION
 def filter_to_longest_consecutive_year_run(
     t, y, years,
-    min_consecutive,
-    min_obs_per_year,
+    min_consecutive, # min # of consecutive years required to keep any data
+    min_obs_per_year, # min # of observations per year to consider that year eligible
     site_id,
     transect_id,
 ):
@@ -85,7 +85,8 @@ def filter_to_longest_consecutive_year_run(
     meta["status"] = "ok"
     meta["kept_years"] = keep.tolist()
     meta["removed_years"] = sorted(set(yr.tolist()) - set(keep.tolist()))
-     
+
+    # Return filtered time, shoreline, and metadata 
     return t[mask], y[mask], meta
 
 # %% Bootstrap the trend, function DEFINITION
@@ -114,22 +115,24 @@ def block_bootstrap_slopes(
     slopes : array
         Bootstrapped slope estimates
     """
-    
+    # Set up random generator
     rng = np.random.default_rng(random_state)
 
+    # Convert to numpy arrays and ensure they are 1D
     t = np.asarray(t, dtype=float)
     y = np.asarray(y, dtype=float)
 
-    # Sort by time
+    # Sort by time (just in case)
     order = np.argsort(t)
     t = t[order]
     y = y[order]
 
+    # Basic checks
     n = len(y)
     if n < 2:
         raise ValueError("Need at least 2 observations total.")
 
-    # Precompute end index for each start: end = first index with t >= t[start] + block_years
+    # Find block start indices and corresponding end indices
     ends = np.searchsorted(t, t + block_years, side="left")
 
     # Valid starts must yield at least 2 points in the window to fit a slope
