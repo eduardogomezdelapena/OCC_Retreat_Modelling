@@ -25,15 +25,31 @@ nzd_sites = sorted(
 )
 
 print(f"{len(nzd_sites)} NZD sites found")
-print(nzd_sites[:10])
 
+# Define random seed for reproducibility
 seed = 42 
+
+#%% Download data for a given site, and convert to decimal years. Function DEFINITION
+def load_transect_data(site_id):
+    url = (
+        "https://raw.githubusercontent.com/UoA-eResearch/CoastSat/main/data/"
+        f"{site_id}/transect_time_series_tidally_corrected_smoothed.csv"
+    )
+    df = pd.read_csv(url, header=0)
+    df["dates"] = pd.to_datetime(df["dates"])
+    # Convert to decimal years (for linear fit)
+    t_years = (
+        df["dates"].dt.year
+        + (df["dates"].dt.dayofyear - 1) / 365.25
+    )
+    # Return time in decimal years, and the full dataframe
+    return t_years, df
 
 #%%  Filter to longest run of consecutive years with min obs. Function DEFINITION
 def filter_to_longest_consecutive_year_run(
     t, y, years,
-    min_consecutive, # min # of consecutive years required to keep any data
-    min_obs_per_year, # min # of observations per year to consider that year eligible
+    min_consecutive, # min no. of consecutive years required to keep any data
+    min_obs_per_year, # min no. of observations per year to consider that year eligible
     site_id,
     transect_id,
 ):
@@ -86,7 +102,7 @@ def filter_to_longest_consecutive_year_run(
     meta["kept_years"] = keep.tolist()
     meta["removed_years"] = sorted(set(yr.tolist()) - set(keep.tolist()))
 
-    # Return filtered time, shoreline, and metadata 
+    # Return filtered (decimal) time, shoreline, and metadata 
     return t[mask], y[mask], meta
 
 # %% Bootstrap the trend, function DEFINITION
@@ -142,7 +158,7 @@ def block_bootstrap_slopes(
             f"No 5-year windows contain >=2 observations. "
             f"Try shorter block_years or check data density."
         )
-
+    
     slopes = np.empty(n_boot, dtype=float)
 
     for i in range(n_boot):
@@ -161,10 +177,10 @@ def block_bootstrap_slopes(
 def mc_shoreline_change(
     c, tan_beta, delta_S,
     r_samples,
-    random_state,
     p_low, p_high,
+    random_state,   
     dt=75,                      # 2025 as baseline year, projections to 2100
-    n=200_000   
+    n=200_000,
 ):
     """
     Monte Carlo propagation for shoreline change using an
@@ -228,33 +244,25 @@ def mc_shoreline_change(
 dy_rows = []
 meta_rows = []
 
+from pathlib import Path
+out_dir = Path("original_plots_ts")
+
 # nzd_sites_trial = nzd_sites[0:11]
-nzd_sites_trial = ["nzd0001"]
+nzd_sites_trial = ["nzd0010"]
 # nzd_sites_trial = ["nzd0161"]
 
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
 
-    # URL to the raw CSV file on GitHub
-    url = (
-        "https://raw.githubusercontent.com/UoA-eResearch/CoastSat/main/data/"
-        f"{site_id}/transect_time_series_tidally_corrected_smoothed.csv"
-    )
-    # Load the CSV into a pandas DataFrame
-    df = pd.read_csv(url, header=0)
+    # Create output directory for this sites plots
+    site_dir = out_dir / site_id
+    site_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ensure datetime and pick site
-    df["dates"] = pd.to_datetime(df["dates"])
+    # Load data for the site (all transects), and convert to decimal years.
+    # The function returns time in decimal years, and the full dataframe.
+    t_years, df = load_transect_data(site_id)
 
-    #Conver to decimal years (for linear fit)
-    t = df["dates"]
-    #y = df[transect_id]
-
-    t_years = (
-        t.dt.year
-        + (t.dt.dayofyear - 1) / 365.25
-    )
-
+    # Define transect columns (those that start with site_id + "-")
     transect_cols = [
         c for c in df.columns
         if c.startswith(site_id + "-")
@@ -264,16 +272,30 @@ for site_id in nzd_sites_trial:
     #Transect loop 
     for transect_id in transect_cols:
 
+        # Extract shoreline position for this transect
         y = df[transect_id]
-        # Remove NaNs
-        mask = np.isfinite(y)
 
-        #Apply NaN removal mask
+
+        fig = plt.figure(figsize=(10, 4))
+        plt.plot(t_years, y, "o-", label="Original data")
+        plt.xlabel("Time (decimal years)")
+        plt.ylabel("Shoreline position (m)")
+        plt.title(f"{site_id} {transect_id} – Original shoreline time series")
+        plt.legend()
+        plt.xlim(t_years.min() , t_years.max() )
+        plt.tight_layout()
+        plt.savefig(site_dir / f"{site_id}_{transect_id}_original_timeseries.png", dpi=300)    
+        plt.close()
+
+
+        # Filter out NaN values (and corresponding time and year arrays)
+        mask = np.isfinite(y)
         t_clean = t_years[mask].values
         y_clean = y[mask].values
-        years_clean = df.loc[mask, "dates"].dt.year.values  # year per observation (after NaN filter)
+        # Extract non-decimal years for the after NaN observations
+        years_clean = df.loc[mask, "dates"].dt.year.values  
 
-        # ---- filter to consecutive years (min 5) with min observations ----
+        # Filter to consecutive years (min 5) with min observations/per year
         t_clean, y_clean, meta = filter_to_longest_consecutive_year_run(
             t_clean, y_clean, years_clean,
             min_consecutive=5,
@@ -294,7 +316,7 @@ for site_id in nzd_sites_trial:
             continue
 
         ###############################
-        #Applying bootstrap and Monte Carlo functions
+        #Apply bootstrap and Monte Carlo functions
 
         boot_slopes = block_bootstrap_slopes(
             t_clean, y_clean,
@@ -308,9 +330,9 @@ for site_id in nzd_sites_trial:
             tan_beta=0.0075,
             delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
             r_samples = boot_slopes,
-            random_state= seed,
             p_low=0.5,  # persistance factor range
-            p_high=1.5
+            p_high=1.5,
+            random_state= seed,
         )
 
         # Store results
