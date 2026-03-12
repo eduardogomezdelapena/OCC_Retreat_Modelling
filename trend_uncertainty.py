@@ -247,8 +247,8 @@ meta_rows = []
 from pathlib import Path
 out_dir = Path("original_plots_ts")
 
-# nzd_sites_trial = nzd_sites[0:11]
-nzd_sites_trial = ["nzd0010"]
+nzd_sites_trial = nzd_sites[0:11]
+# nzd_sites_trial = ["nzd0010"]
 # nzd_sites_trial = ["nzd0161"]
 
 #Try only 2 sites first
@@ -298,8 +298,8 @@ for site_id in nzd_sites_trial:
         # Filter to consecutive years (min 5) with min observations/per year
         t_clean, y_clean, meta = filter_to_longest_consecutive_year_run(
             t_clean, y_clean, years_clean,
-            min_consecutive=5,
-            min_obs_per_year=1,
+            min_consecutive=7,
+            min_obs_per_year=3,
             site_id = site_id,
             transect_id = transect_id,
         )
