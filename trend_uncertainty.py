@@ -239,6 +239,59 @@ def mc_shoreline_change(
     }
     return dy, summary
 
+#%%
+
+import pandas as pd
+import geopandas as gpd
+from utils import load_metadata_nzrise, load_slrdata_nzrise, load_and_merge_coastsat_data, nearest_points
+#% Define constants, load data, and merge datasets (similar to merge_slr_sat.py)
+
+# Constants
+CRS_WGS84 = 4326 # Lat/Lon
+custom_ref_year = 2025
+
+
+meta_data_fp = "NZ_VLM_final_May24.csv"
+slr_fp = f"NZ_Searise_noVLM-2005_{custom_ref_year}adjusted.csv"
+meta_data = load_metadata_nzrise(meta_data_fp, crs_str= CRS_WGS84 ) # gpd.DataFrame
+slr_data  = load_slrdata_nzrise(slr_fp) #pd.DataFrame
+
+merged= pd.merge(meta_data,slr_data,
+                        on='nzrise_site_id', how='outer')
+nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_WGS84}", geometry= 'geom_nzrise')
+
+coastsat_merged = load_and_merge_coastsat_data(
+    "transects_reindexed_Nickupdate.geojson",
+    f"points_ref_shoreline_{custom_ref_year}_Nickupdate.geojson",
+    CRS_WGS84
+)
+
+#Calculate distances to nearest NZRise points
+distances, nearest_indices = nearest_points(meta_data,
+                                             coastsat_merged)
+
+#Merge nzrise_merged & coastsat_merged, based on nearest_indices
+#to each coastsat_transect_id there is a matching nzrise_site_id
+#nzrise_site_id is repeated, repeat also coastsat_transect_id as many times needed
+#add column of nzrise_site_id to coastsat_merged
+
+coastsat_merged["nzrise_site_id"]=meta_data["nzrise_site_id"].iloc[nearest_indices].values
+
+#Now merge based on nzrise_site_id
+all_merged = pd.merge( coastsat_merged, nzrise_merged,
+                      on='nzrise_site_id', how='left')
+#Print all columns, there should be 3 geometry columns (points ref , coastsat transects
+# and nzrise points).
+
+print(all_merged.columns)
+#Transform into geopandas? A geometry column needs to be picked, points ref .
+
+all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
+                               geometry= 'geom_points_ref')
+
+
+
+
 # %% Main loop: load data, apply filters, bootstrap, Monte Carlo
 
 dy_rows = []
@@ -247,8 +300,8 @@ meta_rows = []
 from pathlib import Path
 out_dir = Path("original_plots_ts")
 
-nzd_sites_trial = nzd_sites[0:11]
-# nzd_sites_trial = ["nzd0010"]
+# nzd_sites_trial = nzd_sites[0:11]
+nzd_sites_trial = ["nzd0003"]
 # nzd_sites_trial = ["nzd0161"]
 
 #Try only 2 sites first
@@ -276,16 +329,16 @@ for site_id in nzd_sites_trial:
         y = df[transect_id]
 
 
-        fig = plt.figure(figsize=(10, 4))
-        plt.plot(t_years, y, "o-", label="Original data")
-        plt.xlabel("Time (decimal years)")
-        plt.ylabel("Shoreline position (m)")
-        plt.title(f"{site_id} {transect_id} – Original shoreline time series")
-        plt.legend()
-        plt.xlim(t_years.min() , t_years.max() )
-        plt.tight_layout()
-        plt.savefig(site_dir / f"{site_id}_{transect_id}_original_timeseries.png", dpi=300)    
-        plt.close()
+        # fig = plt.figure(figsize=(10, 4))
+        # plt.plot(t_years, y, "o-", label="Original data")
+        # plt.xlabel("Time (decimal years)")
+        # plt.ylabel("Shoreline position (m)")
+        # plt.title(f"{site_id} {transect_id} – Original shoreline time series")
+        # plt.legend()
+        # plt.xlim(t_years.min() , t_years.max() )
+        # plt.tight_layout()
+        # plt.savefig(site_dir / f"{site_id}_{transect_id}_original_timeseries.png", dpi=300)    
+        # plt.close()
 
 
         # Filter out NaN values (and corresponding time and year arrays)
@@ -316,7 +369,7 @@ for site_id in nzd_sites_trial:
             continue
 
         ###############################
-        #Apply bootstrap and Monte Carlo functions
+        # Apply bootstrap and Monte Carlo functions
 
         boot_slopes = block_bootstrap_slopes(
             t_clean, y_clean,
@@ -325,9 +378,30 @@ for site_id in nzd_sites_trial:
             random_state=seed
         )
 
+        # Extract tan_beta (beach slope) from the coastsat data for this transect
+        if "beach_slope" not in coastsat_merged.columns:
+            raise KeyError("Expected 'beach_slope' column in coastsat_merged")
+
+        mask_tb = (
+            (coastsat_merged["coastsat_site_id"] == site_id)
+            & (coastsat_merged["coastsat_transect_id"] == transect_id)
+        )
+        if not mask_tb.any():
+            print(f"Skipping {site_id} {transect_id}: no matching tan_beta in coastsat_merged")
+            continue
+
+        tan_vals = coastsat_merged.loc[mask_tb, "beach_slope"]
+        if len(tan_vals) > 1:
+            # In case of duplicates, average them
+            tan_beta = float(tan_vals.mean())
+        else:
+            tan_beta = float(tan_vals.iloc[0])
+
+        print(f"{site_id} {transect_id}: tan_beta = {tan_beta}")
+
         dy, summ = mc_shoreline_change(
             c=1.0,
-            tan_beta=0.0075,
+            tan_beta=tan_beta ,
             delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
             r_samples = boot_slopes,
             p_low=0.5,  # persistance factor range
@@ -343,6 +417,7 @@ for site_id in nzd_sites_trial:
                 "n_boot": 1000,
                 "n_mc": 200_000,
                 "dt_years": float(summ["dt_years"]),
+                "tan_beta": float(tan_beta),
                 "base_term_m": float(summ["base_term_m"]),
                 "dy_p05_m": float(summ["dy_p05_m"]),
                 "dy_median_m": float(summ["dy_median_m"]),
@@ -425,14 +500,23 @@ for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
 plt.ylim(0,650)
 plt.tight_layout()
 plt.show()
-# %%
-plt.figure(figsize=(6, 4))
-plt.hist(boot_slopes, bins=40, density=True, alpha=0.7)
 
-plt.xlabel("Trend slope (m/year)")
-plt.ylabel("Density")
-plt.title(f"{transect_id} – bootstrapped trend uncertainty")
-plt.legend()
+# %%
+# Plot dy_median_m by site (boxplot)
+plt.figure(figsize=(12, 5))
+groups_median = [
+    g["dy_median_m"].values
+    for _, g in dy_df.groupby("site_id")
+]
+
+labels = dy_df["site_id"].unique()
+
+plt.boxplot(groups_median, showfliers=True)
+plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
+plt.ylabel("Median shoreline change (m)")
+plt.title("Median shoreline change per site")
 plt.tight_layout()
 plt.show()
+
+
 # %%
