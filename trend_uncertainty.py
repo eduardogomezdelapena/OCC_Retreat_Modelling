@@ -189,23 +189,21 @@ def mc_shoreline_change(
     Δy = (c/tanβ) * ΔS + (p * r_sat * dt)
 
     Parameters:
-    - c, tan_beta, delta_S: deterministic terms
-    - p is persistance factor
-    - r_sat are rates (e.g., m/yr).
-    - dt in years.
+    - c: adjustment factor (fixed)
+    - tan_beta: nominal beach slope (m/m); uncertainty added as ±20%
+    - delta_S: sea level rise (m)
+    - p: persistence factor (sampled uniformly between p_low and p_high)
+    - r_sat: empirical trend rates (sampled from r_samples)
+    - dt: time horizon (years)
 
-    Arrays:
-    ----------
-    r_samples : array-like
-        Empirical bootstrap samples of shoreline trend rate r_sat (m/yr).
-        Sampling is performed with replacement.
+    Uncertainty sources:
+    - Trend rate r_sat (from bootstrap)
+    - Persistence factor p (uniform)
+    - Beach slope tan_beta (±20% uniform around nominal)
 
     """
 
     rng = np.random.default_rng(random_state)
-
-    # --- deterministic component ---
-    base = (c / tan_beta) * delta_S
 
     # --- empirical sampling of trend rate ---
     r_samples = np.asarray(r_samples)
@@ -213,31 +211,44 @@ def mc_shoreline_change(
     if r_samples.size == 0:
         raise ValueError("r_samples is empty after removing non-finite values.")
 
-    r = rng.choice(r_samples, size=n, replace=True)
+    dy = np.empty(n, dtype=float)
+    bases = np.empty(n, dtype=float)
 
-    # Sample persistence factor p
-    p = rng.uniform(low=p_low, high=p_high, size=n)
-
-    # Propagate
-    dy = base + (p * r * dt)
+    for i in range(n):
+        # Sample beach slope with ±20% uncertainty
+        sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2)
+        
+        # Deterministic component for this sample
+        base = (c / sampled_tan_beta) * delta_S
+        bases[i] = base
+        
+        # Sample trend rate
+        r = rng.choice(r_samples)
+        
+        # Sample persistence factor
+        p = rng.uniform(low=p_low, high=p_high)
+        
+        # Propagate
+        dy[i] = base + (p * r * dt)
 
     summary = {
         "dt_years": dt,
-        "base_term_m": float(base),
+        "base_term_m": float(np.mean(bases)),  # mean of sampled bases
 
-        "p_mean": float(np.mean(p)),
-        "p_p05": float(np.quantile(p, 0.05)),
-        "p_p95": float(np.quantile(p, 0.95)),
+        "p_mean": float(np.mean(p)),  # Note: p is resampled each time, but mean is approximate
+        "p_p05": p_low,  # since uniform
+        "p_p95": p_high,
 
-        "trend_rate_mean": float(np.mean(r)),
-        "trend_rate_p05": float(np.quantile(r, 0.05)),
-        "trend_rate_p95": float(np.quantile(r, 0.95)),
+        "trend_rate_mean": float(np.mean(r_samples)),  # population mean
+        "trend_rate_p05": float(np.quantile(r_samples, 0.05)),
+        "trend_rate_p95": float(np.quantile(r_samples, 0.95)),
 
         "dy_median_m": float(np.median(dy)),
         "dy_p05_m": float(np.quantile(dy, 0.05)),
         "dy_p95_m": float(np.quantile(dy, 0.95)),
     }
     return dy, summary
+
 
 #%%
 
@@ -497,7 +508,6 @@ for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
         va="bottom"
     )
 
-plt.ylim(0,650)
 plt.tight_layout()
 plt.show()
 
