@@ -300,6 +300,21 @@ print(all_merged.columns)
 all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
                                geometry= 'geom_points_ref')
 
+# Alias CoastSat IDs to names used in the transect processing loop.
+all_merged["site_id"] = all_merged["coastsat_site_id"]
+all_merged["transect_id"] = all_merged["coastsat_transect_id"]
+
+# Keep only the requested climate pathway for SLR extraction.
+scenario_target = "2.6"
+ssp_target = "ssp1"
+target_year = custom_ref_year + 75  # 2025 baseline to 2100
+
+all_merged = all_merged[
+    (all_merged["scenario"].astype(str) == scenario_target)
+    & (all_merged["SSP"].astype(str).str.lower() == ssp_target)
+].copy()
+all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
+
 
 
 
@@ -408,12 +423,36 @@ for site_id in nzd_sites_trial:
         else:
             tan_beta = float(tan_vals.iloc[0])
 
-        print(f"{site_id} {transect_id}: tan_beta = {tan_beta}")
+        # Extract median shifted SLR (50th percentile) for this transect.
+        mask_slr = (
+            (all_merged["site_id"] == site_id)
+            & (all_merged["transect_id"] == transect_id)
+            & (all_merged["year"] == target_year)
+            & (all_merged["scenario"].astype(str) == scenario_target)
+            & (all_merged["SSP"].astype(str).str.lower() == ssp_target)
+        )
+  
+        if not mask_slr.any():
+            print(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
+            continue
+
+        slr_vals = all_merged.loc[mask_slr, "50_shifted"].dropna()  
+
+        if len(slr_vals) > 1:
+                # In case of duplicates, average them.
+                delta_s = float(slr_vals.mean())
+        else:
+                delta_s = float(slr_vals.iloc[0])
+
+        print(
+            f"{site_id} {transect_id}: tan_beta = {tan_beta}, "
+            f"delta_S(50_shifted) = {delta_s} m for {ssp_target}-{scenario_target}, year={target_year}"
+        )
 
         dy, summ = mc_shoreline_change(
             c=1.0,
             tan_beta=tan_beta ,
-            delta_S=0.55,      # meters of SLR term in 2100 (SSP2-4.5)
+            delta_S=delta_s,    # meters of SLR from NZRise median projection
             r_samples = boot_slopes,
             p_low=0.5,  # persistance factor range
             p_high=1.5,
@@ -429,6 +468,10 @@ for site_id in nzd_sites_trial:
                 "n_mc": 200_000,
                 "dt_years": float(summ["dt_years"]),
                 "tan_beta": float(tan_beta),
+                "delta_S_m": float(delta_s),
+                "slr_year": int(target_year),
+                "scenario": scenario_target,
+                "SSP": ssp_target,
                 "base_term_m": float(summ["base_term_m"]),
                 "dy_p05_m": float(summ["dy_p05_m"]),
                 "dy_median_m": float(summ["dy_median_m"]),
