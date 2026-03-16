@@ -497,7 +497,7 @@ out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
 debug_variance_plots = True
 
-nzd_sites_trial = nzd_sites[0:11]
+nzd_sites_trial = nzd_sites[0:5]
 # nzd_sites_trial = ["nzd0003"]
 # nzd_sites_trial = ["nzd0161"]
 
@@ -765,6 +765,7 @@ labels = dy_df["site_id"].unique()
 plt.figure(figsize=(12, 5))
 plt.boxplot(groups, showfliers=True)
 plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
+plt.ylim(0, 1000)
 plt.ylabel("dy 5–95% CI length [m]")
 plt.title("Spread of shoreline-change uncertainty per site")
 
@@ -801,6 +802,7 @@ plt.boxplot(groups_median, showfliers=True)
 plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
 plt.ylabel("Median shoreline change (m)")
 plt.title("Median shoreline change per site")
+plt.ylim(-50, 100)
 plt.tight_layout()
 plt.show()
 
