@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from statistics import NormalDist
 #%% Read data, declare sites ID
 
 #Which directories exist under data/
@@ -179,19 +180,25 @@ def mc_shoreline_change(
     r_samples,
     p_low, p_high,
     random_state,   
+    delta_S_q17,
+    delta_S_q50,
+    delta_S_q83,
     dt=75,                      # 2025 as baseline year, projections to 2100
     n=200_000,
+    return_delta_s_samples=False,
 ):
     """
     Monte Carlo propagation for shoreline change using an
-    empirical (bootstrap) distribution of shoreline trend rates:
+    empirical (bootstrap) distribution of shoreline trend rates.
 
     Δy = (c/tanβ) * ΔS + (p * r_sat * dt)
 
     Parameters:
     - c: adjustment factor (fixed)
     - tan_beta: nominal beach slope (m/m); uncertainty added as ±20%
-    - delta_S: sea level rise (m)
+        - delta_S: sea level rise (m), used directly if quantiles are not supplied
+        - delta_S_q17, delta_S_q50, delta_S_q83: optional shifted SLR quantiles
+            used to fit a Gaussian SLR distribution for sampling
     - p: persistence factor (sampled uniformly between p_low and p_high)
     - r_sat: empirical trend rates (sampled from r_samples)
     - dt: time horizon (years)
@@ -200,6 +207,7 @@ def mc_shoreline_change(
     - Trend rate r_sat (from bootstrap)
     - Persistence factor p (uniform)
     - Beach slope tan_beta (±20% uniform around nominal)
+    - SLR delta_S (deterministic or Gaussian from 17/50/83 quantiles)
 
     """
 
@@ -211,33 +219,56 @@ def mc_shoreline_change(
     if r_samples.size == 0:
         raise ValueError("r_samples is empty after removing non-finite values.")
 
-    dy = np.empty(n, dtype=float)
-    bases = np.empty(n, dtype=float)
+    # If quantiles are provided, fit a Gaussian to SLR quantiles and sample delta_S.
+    # For a Normal distribution: q_p = mu + sigma*z_p.
+    use_slr_gaussian = all(v is not None for v in (delta_S_q17, delta_S_q50, delta_S_q83))
+    z83 = NormalDist().inv_cdf(0.83)
 
-    for i in range(n):
-        # Sample beach slope with ±20% uncertainty
-        sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2)
-        
-        # Deterministic component for this sample
-        base = (c / sampled_tan_beta) * delta_S
-        bases[i] = base
-        
-        # Sample trend rate
-        r = rng.choice(r_samples)
-        
-        # Sample persistence factor
-        p = rng.uniform(low=p_low, high=p_high)
-        
-        # Propagate
-        dy[i] = base + (p * r * dt)
+    if use_slr_gaussian:
+        q17 = float(delta_S_q17)
+        q50 = float(delta_S_q50)
+        q83 = float(delta_S_q83)
+
+        if not (q17 <= q50 <= q83):
+            raise ValueError("Expected SLR quantiles to satisfy q17 <= q50 <= q83.")
+
+        sigma_low = (q50 - q17) / z83
+        sigma_high = (q83 - q50) / z83
+        slr_sigma = float(np.mean([sigma_low, sigma_high]))
+        slr_mu = q50
+
+        if not np.isfinite(slr_sigma) or slr_sigma < 0.0:
+            raise ValueError("Derived SLR sigma is invalid from q17/q50/q83.")
+
+        sampled_delta_s = rng.normal(loc=slr_mu, scale=slr_sigma, size=n)
+
+    else:
+        sampled_delta_s = np.full(n, float(delta_S), dtype=float)
+        slr_mu = float(delta_S)
+        slr_sigma = 0.0
+
+    # Vectorized Monte Carlo sampling for speed and reproducibility.
+    sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2, size=n)
+
+    bases = (c / sampled_tan_beta) * sampled_delta_s
+    sampled_r = rng.choice(r_samples, size=n)
+    sampled_p = rng.uniform(low=p_low, high=p_high, size=n)
+    dy = bases + (sampled_p * sampled_r * dt)
 
     summary = {
         "dt_years": dt,
         "base_term_m": float(np.mean(bases)),  # mean of sampled bases
 
-        "p_mean": float(np.mean(p)),  # Note: p is resampled each time, but mean is approximate
+        "p_mean": float(np.mean(sampled_p)),
         "p_p05": p_low,  # since uniform
         "p_p95": p_high,
+
+        "slr_sampling": "gaussian_q17_q50_q83" if use_slr_gaussian else "deterministic",
+        "delta_S_mean_m": float(np.mean(sampled_delta_s)),
+        "delta_S_p05_m": float(np.quantile(sampled_delta_s, 0.05)),
+        "delta_S_p95_m": float(np.quantile(sampled_delta_s, 0.95)),
+        "delta_S_mu_m": float(slr_mu),
+        "delta_S_sigma_m": float(slr_sigma),
 
         "trend_rate_mean": float(np.mean(r_samples)),  # population mean
         "trend_rate_p05": float(np.quantile(r_samples, 0.05)),
@@ -247,7 +278,55 @@ def mc_shoreline_change(
         "dy_p05_m": float(np.quantile(dy, 0.05)),
         "dy_p95_m": float(np.quantile(dy, 0.95)),
     }
+
+    if return_delta_s_samples:
+        return dy, summary, sampled_delta_s
+
     return dy, summary
+
+
+def plot_delta_s_debug_histogram(
+    sampled_delta_s,
+    summary,
+    q17,
+    q50,
+    q83,
+    site_id,
+    transect_id,
+    ssp,
+    scenario,
+    year,
+    out_fp,
+):
+    """Save a debug histogram of sampled SLR for one transect."""
+    sampled_delta_s = np.asarray(sampled_delta_s, dtype=float)
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.hist(sampled_delta_s, bins=50, density=True, alpha=0.55, color="steelblue")
+
+    mu = float(summary.get("delta_S_mu_m", np.nan))
+    sigma = float(summary.get("delta_S_sigma_m", np.nan))
+
+    if np.isfinite(mu) and np.isfinite(sigma) and sigma > 0:
+        x_low = float(np.quantile(sampled_delta_s, 0.001))
+        x_high = float(np.quantile(sampled_delta_s, 0.999))
+        x = np.linspace(x_low, x_high, 400)
+        pdf = (1.0 / (sigma * np.sqrt(2.0 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+        ax.plot(x, pdf, color="black", linewidth=2.0, label="Gaussian fit")
+
+    ax.axvline(q17, color="tab:orange", linestyle="--", linewidth=1.5, label="q17 target")
+    ax.axvline(q50, color="tab:green", linestyle="--", linewidth=1.5, label="q50 target")
+    ax.axvline(q83, color="tab:red", linestyle="--", linewidth=1.5, label="q83 target")
+
+    ax.set_xlabel("Sampled delta_S [m]")
+    ax.set_ylabel("Density")
+    ax.set_title(
+        f"{site_id} {transect_id} delta_S samples ({ssp}-{scenario}, year={year})"
+    )
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_fp, dpi=180)
+    plt.close(fig)
 
 
 #%%
@@ -325,6 +404,7 @@ meta_rows = []
 
 from pathlib import Path
 out_dir = Path("original_plots_ts")
+debug_slr_histograms = True
 
 # nzd_sites_trial = nzd_sites[0:11]
 nzd_sites_trial = ["nzd0003"]
@@ -423,7 +503,7 @@ for site_id in nzd_sites_trial:
         else:
             tan_beta = float(tan_vals.iloc[0])
 
-        # Extract median shifted SLR (50th percentile) for this transect.
+        # Extract shifted SLR quantiles for this transect.
         mask_slr = (
             (all_merged["site_id"] == site_id)
             & (all_merged["transect_id"] == transect_id)
@@ -436,28 +516,58 @@ for site_id in nzd_sites_trial:
             print(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
             continue
 
-        slr_vals = all_merged.loc[mask_slr, "50_shifted"].dropna()  
+        slr_q17_vals = all_merged.loc[mask_slr, "17_shifted"].dropna()
+        slr_q50_vals = all_merged.loc[mask_slr, "50_shifted"].dropna()
+        slr_q83_vals = all_merged.loc[mask_slr, "83_shifted"].dropna()
 
-        if len(slr_vals) > 1:
-                # In case of duplicates, average them.
-                delta_s = float(slr_vals.mean())
-        else:
-                delta_s = float(slr_vals.iloc[0])
+        if slr_q17_vals.empty or slr_q50_vals.empty or slr_q83_vals.empty:
+            print(
+                f"Skipping {site_id} {transect_id}: missing one or more shifted SLR quantiles"
+            )
+            continue
+
+        delta_s_q17 = float(slr_q17_vals.mean())
+        delta_s_q50 = float(slr_q50_vals.mean())
+        delta_s_q83 = float(slr_q83_vals.mean())
 
         print(
             f"{site_id} {transect_id}: tan_beta = {tan_beta}, "
-            f"delta_S(50_shifted) = {delta_s} m for {ssp_target}-{scenario_target}, year={target_year}"
+            f"delta_S_shifted(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
+            f"for {ssp_target}-{scenario_target}, year={target_year}"
         )
 
-        dy, summ = mc_shoreline_change(
+        mc_result = mc_shoreline_change(
             c=1.0,
             tan_beta=tan_beta ,
-            delta_S=delta_s,    # meters of SLR from NZRise median projection
+            delta_S=delta_s_q50,
             r_samples = boot_slopes,
             p_low=0.5,  # persistance factor range
             p_high=1.5,
             random_state= seed,
+            delta_S_q17=delta_s_q17,
+            delta_S_q50=delta_s_q50,
+            delta_S_q83=delta_s_q83,
+            return_delta_s_samples=debug_slr_histograms,
         )
+
+        if debug_slr_histograms:
+            dy, summ, sampled_delta_s = mc_result
+            debug_hist_fp = site_dir / f"{site_id}_{transect_id}_deltaS_hist.png"
+            plot_delta_s_debug_histogram(
+                sampled_delta_s=sampled_delta_s,
+                summary=summ,
+                q17=delta_s_q17,
+                q50=delta_s_q50,
+                q83=delta_s_q83,
+                site_id=site_id,
+                transect_id=transect_id,
+                ssp=ssp_target,
+                scenario=scenario_target,
+                year=target_year,
+                out_fp=debug_hist_fp,
+            )
+        else:
+            dy, summ = mc_result
 
         # Store results
         dy_rows.append({
@@ -468,7 +578,10 @@ for site_id in nzd_sites_trial:
                 "n_mc": 200_000,
                 "dt_years": float(summ["dt_years"]),
                 "tan_beta": float(tan_beta),
-                "delta_S_m": float(delta_s),
+                "delta_S_q17_m": float(delta_s_q17),
+                "delta_S_q50_m": float(delta_s_q50),
+                "delta_S_q83_m": float(delta_s_q83),
+                "delta_S_sigma_m": float(summ["delta_S_sigma_m"]),
                 "slr_year": int(target_year),
                 "scenario": scenario_target,
                 "SSP": ssp_target,
