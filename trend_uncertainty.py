@@ -184,6 +184,7 @@ def mc_shoreline_change(
     delta_S_q50,
     delta_S_q83,
     dt=75,                      # 2025 as baseline year, projections to 2100
+    trend_resample_years=5,     # resample trend every 5 years by default
     n=200_000,
     return_delta_s_samples=False,
 ):
@@ -191,7 +192,8 @@ def mc_shoreline_change(
     Monte Carlo propagation for shoreline change using an
     empirical (bootstrap) distribution of shoreline trend rates.
 
-    Δy = (c/tanβ) * ΔS + (p * r_sat * dt)
+    Δy = (c/tanβ) * ΔS + p * Σ(r_sat,i * Δt_i)
+    where r_sat,i is re-sampled every `trend_resample_years`.
 
     Parameters:
     - c: adjustment factor (fixed)
@@ -202,6 +204,7 @@ def mc_shoreline_change(
     - p: persistence factor (sampled uniformly between p_low and p_high)
     - r_sat: empirical trend rates (sampled from r_samples)
     - dt: time horizon (years)
+    - trend_resample_years: interval length (years) for re-sampling r_sat
 
     Uncertainty sources:
     - Trend rate r_sat (from bootstrap)
@@ -218,6 +221,22 @@ def mc_shoreline_change(
     r_samples = r_samples[np.isfinite(r_samples)]
     if r_samples.size == 0:
         raise ValueError("r_samples is empty after removing non-finite values.")
+
+    if dt <= 0:
+        raise ValueError("dt must be > 0.")
+
+    if trend_resample_years <= 0:
+        raise ValueError("trend_resample_years must be > 0.")
+
+    # Build segment lengths that partition dt. For dt=75 and step=5 -> 15 segments.
+    n_full_segments = int(np.floor(dt / trend_resample_years))
+    remainder_years = float(dt - (n_full_segments * trend_resample_years))
+
+    segment_lengths = np.full(n_full_segments, float(trend_resample_years), dtype=float)
+    if remainder_years > 1e-12:
+        segment_lengths = np.append(segment_lengths, remainder_years)
+    if segment_lengths.size == 0:
+        segment_lengths = np.array([float(dt)], dtype=float)
 
     # If quantiles are provided, fit a Gaussian to SLR quantiles and sample delta_S.
     # For a Normal distribution: q_p = mu + sigma*z_p.
@@ -251,12 +270,17 @@ def mc_shoreline_change(
     sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2, size=n)
 
     bases = (c / sampled_tan_beta) * sampled_delta_s
-    sampled_r = rng.choice(r_samples, size=n)
     sampled_p = rng.uniform(low=p_low, high=p_high, size=n)
-    dy = bases + (sampled_p * sampled_r * dt)
+
+    # Re-sample trend rate for each segment (e.g., 15 draws for dt=75 with 5-year segments).
+    sampled_r_segments = rng.choice(r_samples, size=(n, segment_lengths.size))
+    trend_accumulated = (sampled_r_segments * segment_lengths).sum(axis=1)
+    dy = bases + (sampled_p * trend_accumulated)
 
     summary = {
         "dt_years": dt,
+        "trend_resample_years": float(trend_resample_years),
+        "n_trend_segments": int(segment_lengths.size),
         "base_term_m": float(np.mean(bases)),  # mean of sampled bases
 
         "p_mean": float(np.mean(sampled_p)),
@@ -547,6 +571,7 @@ for site_id in nzd_sites_trial:
             delta_S_q17=delta_s_q17,
             delta_S_q50=delta_s_q50,
             delta_S_q83=delta_s_q83,
+            trend_resample_years=5,
             return_delta_s_samples=debug_slr_histograms,
         )
 
