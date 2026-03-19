@@ -411,6 +411,236 @@ def plot_single_run_segments(
     plt.close(fig)
 
 
+def plot_observed_and_projected_single_run(
+    t_obs,
+    y_obs,
+    projection_start_year,
+    dy_segments,
+    r_segments,
+    slr_years,
+    slr_q17_values,
+    slr_q50_values,
+    slr_q83_values,
+    dt,
+    segment_years,
+    site_id,
+    transect_id,
+    out_fp,
+):
+    """Plot observed time series and single-run projection with dashed 5-year trend lines."""
+    t_obs = np.asarray(t_obs, dtype=float).ravel()
+    y_obs = np.asarray(y_obs, dtype=float).ravel()
+    dy_segments = np.asarray(dy_segments, dtype=float).ravel()
+    r_segments = np.asarray(r_segments, dtype=float).ravel()
+    slr_years = np.asarray(slr_years, dtype=float).ravel()
+    slr_q17_values = np.asarray(slr_q17_values, dtype=float).ravel()
+    slr_q50_values = np.asarray(slr_q50_values, dtype=float).ravel()
+    slr_q83_values = np.asarray(slr_q83_values, dtype=float).ravel()
+
+    if t_obs.size == 0 or y_obs.size == 0:
+        raise ValueError("Observed time series is empty.")
+    if t_obs.size != y_obs.size:
+        raise ValueError("Observed time and shoreline arrays have different lengths.")
+    if dy_segments.size == 0:
+        raise ValueError("dy_segments is empty; expected projected segments.")
+    if r_segments.size != dy_segments.size:
+        raise ValueError("r_segments and dy_segments must have the same length.")
+    if slr_years.size != slr_q17_values.size:
+        raise ValueError("slr_years and slr_q17_values must have the same length.")
+    if slr_years.size != slr_q50_values.size:
+        raise ValueError("slr_years and slr_q50_values must have the same length.")
+    if slr_years.size != slr_q83_values.size:
+        raise ValueError("slr_years and slr_q83_values must have the same length.")
+
+    order = np.argsort(t_obs)
+    t_obs = t_obs[order]
+    y_obs = y_obs[order]
+
+    seg_durations = np.full(dy_segments.size, float(segment_years), dtype=float)
+    remainder = dt % segment_years
+    if remainder > 0:
+        seg_durations[-1] = float(remainder)
+
+    seg_starts = projection_start_year + np.concatenate(([0.0], np.cumsum(seg_durations)[:-1]))
+    seg_ends = seg_starts + seg_durations
+
+    # Anchor projection at the observation closest to the projection start year.
+    baseline_idx = int(np.argmin(np.abs(t_obs - projection_start_year)))
+    baseline_y = float(y_obs[baseline_idx])
+
+    cum_dy = np.cumsum(dy_segments)
+    proj_years = np.concatenate(([projection_start_year], seg_ends))
+    proj_shoreline = baseline_y + np.concatenate(([0.0], cum_dy))
+    seg_start_shoreline = baseline_y + np.concatenate(([0.0], cum_dy[:-1]))
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(t_obs, y_obs, color="tab:blue", marker="o", markersize=2.5, linewidth=1.2, label="Observed")
+    ax.plot(
+        proj_years,
+        proj_shoreline,
+        color="tab:green",
+        marker="o",
+        markersize=3.0,
+        linewidth=2.0,
+        label="Projected single run",
+    )
+
+    first_label = True
+    for i in range(dy_segments.size):
+        x0 = seg_starts[i]
+        x1 = seg_ends[i]
+        y0 = seg_start_shoreline[i]
+        y1 = y0 + r_segments[i] * seg_durations[i]
+
+        ax.plot(
+            [x0, x1],
+            [y0, y1],
+            linestyle="--",
+            color="tab:orange",
+            linewidth=1.1,
+            alpha=0.85,
+            label="Sampled 5-year trend" if first_label else None,
+        )
+        first_label = False
+
+    ax_slr = None
+    if slr_years.size > 0:
+        slr_order = np.argsort(slr_years)
+        slr_years = slr_years[slr_order]
+        slr_q17_values = slr_q17_values[slr_order]
+        slr_q50_values = slr_q50_values[slr_order]
+        slr_q83_values = slr_q83_values[slr_order]
+
+        ax_slr = ax.twinx()
+        ax_slr.plot(
+            slr_years,
+            slr_q50_values,
+            color="deeppink",
+            linewidth=2.0,
+            marker="o",
+            markersize=3.0,
+            alpha=0.9,
+            label="SLR projection",
+        )
+        ax_slr.plot(
+            slr_years,
+            slr_q17_values,
+            color="lightpink",
+            linewidth=1.2,
+            linestyle="--",
+            alpha=0.95,
+            label="SLR bounds (q17/q83)",
+        )
+        ax_slr.plot(
+            slr_years,
+            slr_q83_values,
+            color="lightpink",
+            linewidth=1.2,
+            linestyle="--",
+            alpha=0.95,
+        )
+        ax_slr.set_ylabel("SLR change from 2025 [m]", color="deeppink")
+        ax_slr.tick_params(axis="y", colors="deeppink")
+        ax_slr.spines["right"].set_color("deeppink")
+
+    ax.axvline(projection_start_year, color="gray", linestyle=":", linewidth=1.0)
+    ax.set_xlabel("Year (decimal)")
+    ax.set_ylabel("Shoreline position [m]")
+    ax.set_title(f"Observed + projected path with 5-year trend segments: {site_id} {transect_id}")
+    ax.grid(alpha=0.25)
+
+    handles, labels = ax.get_legend_handles_labels()
+    if ax_slr is not None:
+        handles_slr, labels_slr = ax_slr.get_legend_handles_labels()
+        handles.extend(handles_slr)
+        labels.extend(labels_slr)
+    ax.legend(handles, labels, loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_fp, dpi=180)
+    plt.close(fig)
+
+
+def plot_observed_only_time_series(
+    t_obs,
+    y_obs,
+    site_id,
+    transect_id,
+    out_fp,
+):
+    """Plot only the observed shoreline time series for one transect."""
+    t_obs = np.asarray(t_obs, dtype=float).ravel()
+    y_obs = np.asarray(y_obs, dtype=float).ravel()
+
+    if t_obs.size == 0 or y_obs.size == 0:
+        raise ValueError("Observed time series is empty.")
+    if t_obs.size != y_obs.size:
+        raise ValueError("Observed time and shoreline arrays have different lengths.")
+
+    order = np.argsort(t_obs)
+    t_obs = t_obs[order]
+    y_obs = y_obs[order]
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(
+        t_obs,
+        y_obs,
+        color="tab:blue",
+        marker="o",
+        markersize=2.5,
+        linewidth=1.3,
+        label="Observed",
+    )
+    ax.set_xlabel("Year (decimal)")
+    ax.set_ylabel("Shoreline position [m]")
+    ax.set_title(f"Observed shoreline time series: {site_id} {transect_id}")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_fp, dpi=180)
+    plt.close(fig)
+
+
+def plot_original_time_series_before_filter(
+    t_raw,
+    y_raw,
+    site_id,
+    transect_id,
+    out_fp,
+):
+    """Plot the original transect time series before any filtering rules are applied."""
+    t_raw = np.asarray(t_raw, dtype=float).ravel()
+    y_raw = np.asarray(y_raw, dtype=float).ravel()
+
+    if t_raw.size == 0 or y_raw.size == 0:
+        raise ValueError("Original time series is empty.")
+    if t_raw.size != y_raw.size:
+        raise ValueError("Original time and shoreline arrays have different lengths.")
+
+    order = np.argsort(t_raw)
+    t_raw = t_raw[order]
+    y_raw = y_raw[order]
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(
+        t_raw,
+        y_raw,
+        color="tab:purple",
+        marker="o",
+        markersize=2.5,
+        linewidth=1.1,
+        alpha=0.9,
+        label="Original series (pre-filter)",
+    )
+    ax.set_xlabel("Time (decimal years)")
+    ax.set_ylabel("Shoreline position [m]")
+    ax.set_title(f"Original shoreline series before filtering: {site_id} {transect_id}")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_fp, dpi=180)
+    plt.close(fig)
+
+
 #%%
 
 import pandas as pd
@@ -620,6 +850,61 @@ for site_id in nzd_sites_trial:
         delta_s_q50 = float(slr_q50_vals.mean())
         delta_s_q83 = float(slr_q83_vals.mean())
 
+        slr_series = (
+            all_merged.loc[
+                (all_merged["site_id"] == site_id)
+                & (all_merged["transect_id"] == transect_id),
+                ["year", "17_shifted", "50_shifted", "83_shifted"],
+            ]
+            .dropna()
+            .groupby("year", as_index=False)[["17_shifted", "50_shifted", "83_shifted"]]
+            .mean()
+            .sort_values("year")
+        )
+
+        slr_projection_years = np.array([], dtype=float)
+        slr_projection_q17 = np.array([], dtype=float)
+        slr_projection_q50 = np.array([], dtype=float)
+        slr_projection_q83 = np.array([], dtype=float)
+
+        slr_series_plot = slr_series.loc[slr_series["year"] <= target_year].copy()
+        if not slr_series_plot.empty:
+            year_values = slr_series_plot["year"].to_numpy(dtype=float)
+            if year_values.min() <= custom_ref_year <= year_values.max():
+                has_baseline_year = bool(np.isclose(year_values, custom_ref_year).any())
+
+                for col in ["17_shifted", "50_shifted", "83_shifted"]:
+                    col_values = slr_series_plot[col].to_numpy(dtype=float)
+                    baseline_value = float(np.interp(custom_ref_year, year_values, col_values))
+                    slr_series_plot[col] = col_values - baseline_value
+
+                if not has_baseline_year:
+                    slr_series_plot = pd.concat(
+                        [
+                            pd.DataFrame(
+                                [{
+                                    "year": float(custom_ref_year),
+                                    "17_shifted": 0.0,
+                                    "50_shifted": 0.0,
+                                    "83_shifted": 0.0,
+                                }]
+                            ),
+                            slr_series_plot,
+                        ],
+                        ignore_index=True,
+                    )
+
+                slr_series_plot = (
+                    slr_series_plot.loc[slr_series_plot["year"] >= custom_ref_year]
+                    .sort_values("year")
+                    .reset_index(drop=True)
+                )
+
+                slr_projection_years = slr_series_plot["year"].to_numpy(dtype=float)
+                slr_projection_q17 = slr_series_plot["17_shifted"].to_numpy(dtype=float)
+                slr_projection_q50 = slr_series_plot["50_shifted"].to_numpy(dtype=float)
+                slr_projection_q83 = slr_series_plot["83_shifted"].to_numpy(dtype=float)
+
         print(
             f"{site_id} {transect_id}: tan_beta = {tan_beta}, "
             f"delta_S_shifted(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
@@ -627,6 +912,15 @@ for site_id in nzd_sites_trial:
         )
 
         if run_single_preview and not single_preview_done:
+            preview_prefilter_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_prefilter.png"
+            plot_original_time_series_before_filter(
+                t_raw=t_years.values,
+                y_raw=y.values,
+                site_id=site_id,
+                transect_id=transect_id,
+                out_fp=preview_prefilter_plot_fp,
+            )
+
             preview_result = mc_shoreline_change(
                 c=1.0,
                 tan_beta=tan_beta,
@@ -667,6 +961,33 @@ for site_id in nzd_sites_trial:
                 out_fp=preview_plot_fp,
             )
 
+            preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
+            plot_observed_and_projected_single_run(
+                t_obs=t_clean,
+                y_obs=y_clean,
+                projection_start_year=float(custom_ref_year),
+                dy_segments=preview_dy,
+                r_segments=preview_r_samples,
+                slr_years=slr_projection_years,
+                slr_q17_values=slr_projection_q17,
+                slr_q50_values=slr_projection_q50,
+                slr_q83_values=slr_projection_q83,
+                dt=preview_dt,
+                segment_years=preview_segment_years,
+                site_id=site_id,
+                transect_id=transect_id,
+                out_fp=preview_ts_plot_fp,
+            )
+
+            preview_obs_only_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_only.png"
+            plot_observed_only_time_series(
+                t_obs=t_clean,
+                y_obs=y_clean,
+                site_id=site_id,
+                transect_id=transect_id,
+                out_fp=preview_obs_only_plot_fp,
+            )
+
             preview_df = pd.DataFrame({
                 "segment_id": np.arange(1, preview_dy.size + 1, dtype=int),
                 "segment_years": preview_durations,
@@ -678,7 +999,7 @@ for site_id in nzd_sites_trial:
             preview_df.to_csv(preview_csv_fp, index=False)
 
             print(
-                f"Single-run preview saved: {preview_plot_fp} and {preview_csv_fp} "
+                f"Single-run preview saved: {preview_plot_fp}, {preview_ts_plot_fp}, {preview_obs_only_plot_fp}, {preview_prefilter_plot_fp}, and {preview_csv_fp} "
                 f"(total dy = {preview_dy.sum():.2f} m)."
             )
 
