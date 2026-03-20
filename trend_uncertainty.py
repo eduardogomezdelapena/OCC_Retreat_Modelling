@@ -53,16 +53,18 @@ def load_transect_data(site_id):
     # Return time in decimal years, and the full dataframe
     return t_years, df
 
-#%%  Filter to longest run of consecutive years with min obs. Function DEFINITION
+#%% Filter to most recent continuous segment separated by long gaps. Function DEFINITION
 def filter_to_longest_consecutive_year_run(
-    t, y, years,
-    min_consecutive, # min no. of consecutive years required to keep any data
-    min_obs_per_year, # min no. of observations per year to consider that year eligible
+    t, y, dates,
+    min_span_years,
+    max_gap_months,
     site_id,
     transect_id,
 ):
     # Convert to numpy arrays for easier processing
-    t, y, years = map(np.asarray, (t, y, years))
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+    dates = pd.DatetimeIndex(pd.to_datetime(np.asarray(dates)))
 
     # Initialize metadata
     meta = {
@@ -71,6 +73,10 @@ def filter_to_longest_consecutive_year_run(
         "status": None,
         "kept_years": [],
         "removed_years": [],
+        "segment_start": None,
+        "segment_end": None,
+        "segment_span_years": None,
+        "n_long_gaps": 0,
     }
 
     # Basic checks
@@ -78,39 +84,56 @@ def filter_to_longest_consecutive_year_run(
         meta["status"] = "empty"
         return t[:0], y[:0], meta
 
-    # Count observations per year and find eligible years
-    yr, ct = np.unique(years.astype(int), return_counts=True)
-    eligible = np.sort(yr[ct >= min_obs_per_year])
+    if t.size != y.size or t.size != dates.size:
+        raise ValueError("Time, shoreline, and date arrays must have the same length.")
 
-    # If no years meet the minimum obs/year, return empty with metadata
-    if eligible.size == 0:
-        meta["status"] = "no_years_meet_min_obs"
-        meta["removed_years"] = yr.tolist()
+    order = np.argsort(dates)
+    t = t[order]
+    y = y[order]
+    dates = dates[order]
+
+    all_years = sorted(np.unique(dates.year).tolist())
+
+    previous_dates = pd.Series(dates[:-1])
+    next_dates = pd.Series(dates[1:])
+    gap_breaks = next_dates > (previous_dates + pd.DateOffset(months=int(max_gap_months)))
+    break_indices = np.where(gap_breaks.to_numpy())[0] + 1
+    meta["n_long_gaps"] = int(break_indices.size)
+
+    segment_starts = np.r_[0, break_indices]
+    segment_ends = np.r_[break_indices, t.size]
+
+    selected_segment = None
+    for start_idx, end_idx in zip(segment_starts[::-1], segment_ends[::-1]):
+        if end_idx - start_idx < 2:
+            continue
+
+        span_years = (dates[end_idx - 1] - dates[start_idx]).days / 365.25
+        if span_years >= min_span_years:
+            selected_segment = (start_idx, end_idx, span_years)
+            break
+
+    if selected_segment is None:
+        meta["status"] = "insufficient_recent_span"
+        meta["removed_years"] = all_years
         return t[:0], y[:0], meta
 
-    # Find longest run of consecutive eligible years
-    blocks = np.split(eligible, np.where(np.diff(eligible) != 1)[0] + 1)
-    # Select the longest block (if multiple have same length, the first is chosen)
-    best = max(blocks, key=len)
+    start_idx, end_idx, span_years = selected_segment
+    mask = np.zeros(t.size, dtype=bool)
+    mask[start_idx:end_idx] = True
 
-    # If the longest run is shorter than min_consecutive, return empty with metadata
-    if len(best) < min_consecutive:
-        # Report the reason for skipping in metadata
-        meta["status"] = "insufficient_consecutive_years"
-        meta["removed_years"] = yr.tolist()
-        return t[:0], y[:0], meta
-    
-    # Otherwise, keep only observations from the best run of consecutive years  
-    keep = np.arange(best[0], best[-1] + 1, dtype=int)
-    # Mask to keep only observations from the selected years
-    mask = np.isin(years, keep)
+    kept_dates = dates[mask]
+    kept_years = sorted(np.unique(kept_dates.year).tolist())
 
     # Metadata reporting
     meta["status"] = "ok"
-    meta["kept_years"] = keep.tolist()
-    meta["removed_years"] = sorted(set(yr.tolist()) - set(keep.tolist()))
+    meta["kept_years"] = kept_years
+    meta["removed_years"] = sorted(set(all_years) - set(kept_years))
+    meta["segment_start"] = kept_dates[0].isoformat()
+    meta["segment_end"] = kept_dates[-1].isoformat()
+    meta["segment_span_years"] = float(span_years)
 
-    # Return filtered (decimal) time, shoreline, and metadata 
+    # Return filtered (decimal) time, shoreline, and metadata
     return t[mask], y[mask], meta
 
 # %% Bootstrap the trend, function DEFINITION
@@ -439,8 +462,8 @@ for site_id in nzd_sites_trial:
     # transect_cols=['nzd0161-0187']
 
     #Transect loop 
-    # for transect_id in ["nzd0003-0031"]:
-    for transect_id in transect_cols:        
+    for transect_id in ["nzd0003-0014"]:
+    # for transect_id in transect_cols:        
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -458,18 +481,17 @@ for site_id in nzd_sites_trial:
         # plt.close()
 
 
-        # Filter out NaN values (and corresponding time and year arrays)
+        # Filter out NaN values (and corresponding time and date arrays)
         mask = np.isfinite(y)
         t_clean = t_years[mask].values
         y_clean = y[mask].values
-        # Extract non-decimal years for the after NaN observations
-        years_clean = df.loc[mask, "dates"].dt.year.values  
+        dates_clean = df.loc[mask, "dates"].values
 
-        # Filter to consecutive years (min 5) with min observations/per year
+        # Keep the most recent segment without a gap longer than 9 months.
         t_clean, y_clean, meta = filter_to_longest_consecutive_year_run(
-            t_clean, y_clean, years_clean,
-            min_consecutive=7,
-            min_obs_per_year=3,
+            t_clean, y_clean, dates_clean,
+            min_span_years=5,
+            max_gap_months=9,
             site_id = site_id,
             transect_id = transect_id,
         )
@@ -482,7 +504,7 @@ for site_id in nzd_sites_trial:
 
         # If not enough consecutive years, skip bootstrap for this transect
         if meta["status"] != "ok":
-            print(f"SKIP {site_id} {transect_id}: {meta['status']} (best_run_len={meta.get('best_run_len')})")
+            print(f"SKIP {site_id} {transect_id}: {meta['status']}")
             continue
 
         ###############################
@@ -617,8 +639,8 @@ for site_id in nzd_sites_trial:
                 tan_beta=tan_beta,
                 delta_S=delta_s_q50,
                 r_samples=boot_slopes,
-                p_low=0.5,
-                p_high=1.5,
+                p_low=0.9,
+                p_high=1,
                 random_state=single_preview_random_state,
                 delta_S_q17=delta_s_q17,
                 delta_S_q50=delta_s_q50,
