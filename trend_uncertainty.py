@@ -53,6 +53,26 @@ def load_transect_data(site_id):
     # Return time in decimal years, and the full dataframe
     return t_years, df
 
+
+def build_loess_time_grid(t, n_grid=None):
+    t = np.asarray(t, dtype=float)
+
+    if t.ndim != 1:
+        raise ValueError("LOESS time input must be one-dimensional.")
+
+    if t.size == 0:
+        return t.copy(), t.copy(), 0.0
+
+    t0 = float(np.min(t))
+    t_numeric = t - t0
+
+    if n_grid is None:
+        t_grid = t_numeric.copy()
+    else:
+        t_grid = np.linspace(t_numeric.min(), t_numeric.max(), num=int(n_grid))
+
+    return t_numeric, t_grid, t0
+
 #%% Filter to most recent continuous segment separated by long gaps. Function DEFINITION
 def filter_to_longest_consecutive_year_run(
     t, y, dates,
@@ -420,8 +440,6 @@ all_merged = all_merged[
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 
 
-
-
 # %% Main loop: load data, apply filters, bootstrap, Monte Carlo
 
 dy_rows = []
@@ -507,7 +525,36 @@ for site_id in nzd_sites_trial:
             print(f"SKIP {site_id} {transect_id}: {meta['status']}")
             continue
 
-        ###############################
+        import matplotlib.pyplot as plt
+        plt.plot(t_clean, y_clean, "o-", label="Filtered data") 
+        # Apply LOESS smoothing to the cleaned time series.
+        
+        plt.plot(t_clean, y_clean, "*-", label="Original data") 
+
+        from loess.loess_1d import loess_1d
+
+        t_loess, t_loess_grid, t_loess_origin = build_loess_time_grid(
+            t_clean,
+            n_grid=max(200, t_clean.size),
+        )
+
+        plt.plot(t_loess, y_clean, "o-", label="Cleaned data")
+
+#%%
+        x_smooth, y_smooth, _ = loess_1d(
+            t_loess,
+            y_clean,
+            xnew=t_loess_grid,
+            frac=0.4,
+            degree=2,
+        )
+        t_smooth = x_smooth + t_loess_origin
+
+        plt.plot(t_clean, y_clean, "*-", label="Original data") 
+        plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed")
+# ──────────────────────────────────────────────────────────────────────────
+#%%
+        
         # Apply bootstrap and Monte Carlo functions
 
         boot_slopes = block_bootstrap_slopes(
