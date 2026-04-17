@@ -487,18 +487,6 @@ for site_id in nzd_sites_trial:
         y = df[transect_id]
 
 
-        # fig = plt.figure(figsize=(10, 4))
-        # plt.plot(t_years, y, "o-", label="Original data")
-        # plt.xlabel("Time (decimal years)")
-        # plt.ylabel("Shoreline position (m)")
-        # plt.title(f"{site_id} {transect_id} – Original shoreline time series")
-        # plt.legend()
-        # plt.xlim(t_years.min() , t_years.max() )
-        # plt.tight_layout()
-        # plt.savefig(site_dir / f"{site_id}_{transect_id}_original_timeseries.png", dpi=300)    
-        # plt.close()
-
-
         # Filter out NaN values (and corresponding time and date arrays)
         mask = np.isfinite(y)
         t_clean = t_years[mask].values
@@ -526,40 +514,60 @@ for site_id in nzd_sites_trial:
             continue
 
         import matplotlib.pyplot as plt
-        plt.plot(t_clean, y_clean, "o-", label="Filtered data") 
+
+#%
         # Apply LOESS smoothing to the cleaned time series.
         
-        plt.plot(t_clean, y_clean, "*-", label="Original data") 
-
         from loess.loess_1d import loess_1d
 
         t_loess, t_loess_grid, t_loess_origin = build_loess_time_grid(
             t_clean,
             n_grid=max(200, t_clean.size),
         )
+#%
 
-        plt.plot(t_loess, y_clean, "o-", label="Cleaned data")
+        # Dynamic frac based on 5-year window
+        target_window_years = 5.0
+        total_timespan_years = t_clean.max() - t_clean.min()
+        frac = target_window_years / total_timespan_years
+        frac = np.clip(frac, 0.1, 0.9)  # Keep within reasonable bounds
 
-#%%
         x_smooth, y_smooth, _ = loess_1d(
             t_loess,
             y_clean,
             xnew=t_loess_grid,
-            frac=0.4,
+            frac=frac,  # Dynamically set for ~5 year window
             degree=2,
         )
+
         t_smooth = x_smooth + t_loess_origin
 
+        fig = plt.figure()
         plt.plot(t_clean, y_clean, "*-", label="Original data") 
         plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed")
-# ──────────────────────────────────────────────────────────────────────────
-#%%
+        plt.xlabel("Time (decimal years)")
+        plt.ylabel("Shoreline position (m)")
+        plt.title(f"{site_id} {transect_id} – LOESS smoothed shoreline")
+        plt.legend()
+        plt.tight_layout()
+        # plt.close()
+
+#%
+
+#%
         
         # Apply bootstrap and Monte Carlo functions
 
+        # boot_slopes = block_bootstrap_slopes(
+        #     t_clean, y_clean,
+        #     block_years= 3.0,
+        #     n_boot=1000,
+        #     random_state=seed
+        # )
+
         boot_slopes = block_bootstrap_slopes(
-            t_clean, y_clean,
-            block_years= 3.0,
+            t_smooth, y_smooth,
+            block_years= 5.0,
             n_boot=1000,
             random_state=seed
         )
@@ -848,5 +856,5 @@ if dy_df.empty:
 else:
     plot_uncertainty_summary(dy_df)
 
-
+print("Script completed.")
 # %%
