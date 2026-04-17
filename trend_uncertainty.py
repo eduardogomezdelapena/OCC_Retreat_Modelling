@@ -450,11 +450,12 @@ out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
 full_mc_n = 200_000
 
-# Single-run diagnostics: one simulated 75-year path (15 x 5-year segments).
+# Single-run diagnostics: one simulated 75-year path (15 x 5-year segments)
+# per transect.
 run_single_preview = True
-stop_after_single_preview = True
+# Keep single-run diagnostics enabled, but do not stop the full batch.
+stop_after_single_preview = False
 single_preview_random_state = seed
-single_preview_done = False
 stop_full_run = False
 
 # nzd_sites_trial = nzd_sites[0:11]
@@ -480,8 +481,8 @@ for site_id in nzd_sites_trial:
     # transect_cols=['nzd0161-0187']
 
     #Transect loop 
-    for transect_id in ["nzd0003-0014"]:
-    # for transect_id in transect_cols:        
+    # for transect_id in ["nzd0003-0014"]:
+    for transect_id in transect_cols[0:10]:        
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -497,7 +498,7 @@ for site_id in nzd_sites_trial:
         t_clean, y_clean, meta = filter_to_longest_consecutive_year_run(
             t_clean, y_clean, dates_clean,
             min_span_years=5,
-            max_gap_months=9,
+            max_gap_months=10,
             site_id = site_id,
             transect_id = transect_id,
         )
@@ -550,7 +551,9 @@ for site_id in nzd_sites_trial:
         plt.title(f"{site_id} {transect_id} – LOESS smoothed shoreline")
         plt.legend()
         plt.tight_layout()
-        # plt.close()
+        loess_plot_fp = site_dir / f"{site_id}_{transect_id}_loess_smoothed.png"
+        fig.savefig(loess_plot_fp, dpi=200, bbox_inches="tight")
+        plt.close(fig)
 
 #%
 
@@ -679,7 +682,7 @@ for site_id in nzd_sites_trial:
             f"for {ssp_target}-{scenario_target}, year={target_year}"
         )
 
-        if run_single_preview and not single_preview_done:
+        if run_single_preview:
             preview_prefilter_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_prefilter.png"
             plot_original_time_series_before_filter(
                 t_raw=t_years.values,
@@ -771,7 +774,6 @@ for site_id in nzd_sites_trial:
                 f"(total dy = {preview_dy.sum():.2f} m)."
             )
 
-            single_preview_done = True
             if stop_after_single_preview:
                 stop_full_run = True
                 break
