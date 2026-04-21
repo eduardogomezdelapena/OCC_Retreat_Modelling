@@ -497,7 +497,7 @@ out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
 debug_variance_plots = True
 
-nzd_sites_trial = nzd_sites[0:5]
+nzd_sites_trial = nzd_sites[0:3]
 # nzd_sites_trial = ["nzd0003"]
 # nzd_sites_trial = ["nzd0161"]
 
