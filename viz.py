@@ -18,12 +18,27 @@ def plot_observed_and_projected_single_run(
     site_id,
     transect_id,
     out_fp,
+    t_loess=None,
+    y_loess=None,
 ):
-    """Plot observed time series and single-run projection with dashed 5-year trend lines."""
+    """Plot observed shoreline and projected trajectories.
+
+    Supports either:
+    - single realization: dy_segments shape (n_segments,)
+    - ensemble realizations: dy_segments shape (n_realizations, n_segments)
+
+    In ensemble mode, plots the mean projected shoreline with a 5-95% envelope.
+    """
     t_obs = np.asarray(t_obs, dtype=float).ravel()
     y_obs = np.asarray(y_obs, dtype=float).ravel()
-    dy_segments = np.asarray(dy_segments, dtype=float).ravel()
-    r_segments = np.asarray(r_segments, dtype=float).ravel()
+    if t_loess is not None and y_loess is not None:
+        t_loess = np.asarray(t_loess, dtype=float).ravel()
+        y_loess = np.asarray(y_loess, dtype=float).ravel()
+    else:
+        t_loess = None
+        y_loess = None
+    dy_segments = np.asarray(dy_segments, dtype=float)
+    r_segments = np.asarray(r_segments, dtype=float)
     slr_years = np.asarray(slr_years, dtype=float).ravel()
     slr_q17_values = np.asarray(slr_q17_values, dtype=float).ravel()
     slr_q50_values = np.asarray(slr_q50_values, dtype=float).ravel()
@@ -33,10 +48,28 @@ def plot_observed_and_projected_single_run(
         raise ValueError("Observed time series is empty.")
     if t_obs.size != y_obs.size:
         raise ValueError("Observed time and shoreline arrays have different lengths.")
+    if t_loess is not None and t_loess.size != y_loess.size:
+        raise ValueError("LOESS time and shoreline arrays have different lengths.")
     if dy_segments.size == 0:
         raise ValueError("dy_segments is empty; expected projected segments.")
-    if r_segments.size != dy_segments.size:
-        raise ValueError("r_segments and dy_segments must have the same length.")
+    if dy_segments.ndim == 1:
+        dy_matrix = dy_segments[np.newaxis, :]
+    elif dy_segments.ndim == 2:
+        dy_matrix = dy_segments
+    else:
+        raise ValueError("dy_segments must be a 1D or 2D array.")
+
+    if r_segments.size == 0:
+        raise ValueError("r_segments is empty; expected projected trend segments.")
+    if r_segments.ndim == 1:
+        r_matrix = r_segments[np.newaxis, :]
+    elif r_segments.ndim == 2:
+        r_matrix = r_segments
+    else:
+        raise ValueError("r_segments must be a 1D or 2D array.")
+
+    if r_matrix.shape[1] != dy_matrix.shape[1]:
+        raise ValueError("r_segments and dy_segments must have the same number of segments.")
     if slr_years.size != slr_q17_values.size:
         raise ValueError("slr_years and slr_q17_values must have the same length.")
     if slr_years.size != slr_q50_values.size:
@@ -47,8 +80,13 @@ def plot_observed_and_projected_single_run(
     order = np.argsort(t_obs)
     t_obs = t_obs[order]
     y_obs = y_obs[order]
+    if t_loess is not None:
+        loess_order = np.argsort(t_loess)
+        t_loess = t_loess[loess_order]
+        y_loess = y_loess[loess_order]
 
-    seg_durations = np.full(dy_segments.size, float(segment_years), dtype=float)
+    n_segments = dy_matrix.shape[1]
+    seg_durations = np.full(n_segments, float(segment_years), dtype=float)
     remainder = dt % segment_years
     if remainder > 0:
         seg_durations[-1] = float(remainder)
@@ -59,29 +97,66 @@ def plot_observed_and_projected_single_run(
     baseline_idx = int(np.argmin(np.abs(t_obs - projection_start_year)))
     baseline_y = float(y_obs[baseline_idx])
 
-    cum_dy = np.cumsum(dy_segments)
+    cum_dy = np.cumsum(dy_matrix, axis=1)
     proj_years = np.concatenate(([projection_start_year], seg_ends))
-    proj_shoreline = baseline_y + np.concatenate(([0.0], cum_dy))
-    seg_start_shoreline = baseline_y + np.concatenate(([0.0], cum_dy[:-1]))
+    proj_shoreline_all = baseline_y + np.concatenate(
+        [np.zeros((dy_matrix.shape[0], 1)), cum_dy],
+        axis=1,
+    )
+    proj_shoreline_mean = np.mean(proj_shoreline_all, axis=0)
+    proj_shoreline_q05 = np.quantile(proj_shoreline_all, 0.05, axis=0)
+    proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
+
+    dy_mean = np.mean(dy_matrix, axis=0)
+    seg_start_shoreline = baseline_y + np.concatenate(([0.0], np.cumsum(dy_mean)[:-1]))
+    r_mean = np.mean(r_matrix, axis=0)
 
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(t_obs, y_obs, color="tab:blue", marker="o", markersize=2.5, linewidth=1.2, label="Observed")
-    ax.plot(
-        proj_years,
-        proj_shoreline,
-        color="tab:green",
-        marker="o",
-        markersize=3.0,
-        linewidth=2.0,
-        label="Projected single run",
-    )
+    if t_loess is not None and t_loess.size > 0:
+        ax.plot(
+            t_loess,
+            y_loess,
+            color="black",
+            linewidth=1.6,
+            alpha=0.9,
+            label="LOESS smoothed",
+        )
+    if dy_matrix.shape[0] > 1:
+        ax.fill_between(
+            proj_years,
+            proj_shoreline_q05,
+            proj_shoreline_q95,
+            color="tab:green",
+            alpha=0.22,
+            label="Projected envelope (5-95%)",
+        )
+        ax.plot(
+            proj_years,
+            proj_shoreline_mean,
+            color="tab:green",
+            marker="o",
+            markersize=3.0,
+            linewidth=2.0,
+            label="Projected mean",
+        )
+    else:
+        ax.plot(
+            proj_years,
+            proj_shoreline_mean,
+            color="tab:green",
+            marker="o",
+            markersize=3.0,
+            linewidth=2.0,
+            label="Projected single run",
+        )
 
     first_label = True
-    for i in range(dy_segments.size):
+    for i in range(n_segments):
         x0 = seg_starts[i]
         x1 = seg_ends[i]
         y0 = seg_start_shoreline[i]
-        y1 = y0 + r_segments[i] * seg_durations[i]
+        y1 = y0 + r_mean[i] * seg_durations[i]
 
         ax.plot(
             [x0, x1],
@@ -90,7 +165,7 @@ def plot_observed_and_projected_single_run(
             color="tab:orange",
             linewidth=1.1,
             alpha=0.85,
-            label="Sampled 5-year trend" if first_label else None,
+            label="Mean 5-year trend" if first_label else None,
         )
         first_label = False
 
@@ -137,7 +212,7 @@ def plot_observed_and_projected_single_run(
     ax.axvline(projection_start_year, color="gray", linestyle=":", linewidth=1.0)
     ax.set_xlabel("Year (decimal)")
     ax.set_ylabel("Shoreline position [m]")
-    ax.set_title(f"Observed + projected path with 5-year trend segments: {site_id} {transect_id}")
+    ax.set_title(f"Observed + projected shoreline with uncertainty: {site_id} {transect_id}")
     ax.grid(alpha=0.25)
 
     handles, labels = ax.get_legend_handles_labels()

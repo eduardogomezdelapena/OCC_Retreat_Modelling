@@ -33,6 +33,7 @@ print(f"{len(nzd_sites)} NZD sites found")
 # Define random seed for reproducibility
 seed = 42 
 single_preview_random_state = seed
+n_mc_realizations_per_transect = 10
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
 def load_transect_data(site_id):
     url = (
@@ -220,7 +221,6 @@ def block_bootstrap_slopes(
 
     return slopes
 
-# %% Monte Carlo simulations. Function DEFINITION
 # %% Monte Carlo simulations. Function DEFINITION
 def mc_shoreline_change(
     c, tan_beta, delta_S,
@@ -803,7 +803,7 @@ for site_id in nzd_sites_trial:
             delta_S_q17=delta_s_q17,
             delta_S_q50=delta_s_q50,
             delta_S_q83=delta_s_q83,
-            n=1,
+            n=n_mc_realizations_per_transect,
             return_delta_s_samples=True,
             return_r_segment_samples=True,
             )
@@ -854,7 +854,7 @@ for site_id in nzd_sites_trial:
                 "transect_id": transect_id,
                 "n_obs": int(y_clean.size),
                 "n_boot": 1000,
-                "n_mc": 200_000,
+            "n_mc": n_mc_realizations_per_transect,
                 "dt_years": float(summ["dt_years"]),
                 "tan_beta": float(tan_beta),
                 "delta_S_q17_m": float(delta_s_q17),
@@ -880,25 +880,23 @@ for site_id in nzd_sites_trial:
                 # "trend_var_frac_pct": float(summ["trend_var_frac_pct"]),
                 # "cross_var_frac_pct": float(summ["cross_var_frac_pct"]),
             })
-    
-        preview_dy, preview_summary, _, preview_r_samples = mc_result
-        preview_dy = np.asarray(preview_dy, dtype=float).ravel()
-        preview_r_samples = np.asarray(preview_r_samples, dtype=float).ravel()
+
+        # Pass all sampled realizations so the plot can show mean + uncertainty envelope.
+        preview_dy = np.asarray(dy, dtype=float)
+        preview_r_samples = np.asarray(sampled_r_all, dtype=float)
 
         preview_segment_years = 5
-        preview_dt = int(preview_summary["dt_years"])
-        preview_durations = np.full(preview_dy.size, preview_segment_years, dtype=int)
-        preview_remainder = preview_dt % preview_segment_years
-        if preview_remainder > 0:
-            preview_durations[-1] = preview_remainder
+        preview_dt = int(summ["dt_years"])
 
-        if preview_r_samples.size != preview_dy.size:
-            raise ValueError("Preview r samples and dy segments have different lengths.")
+        if preview_r_samples.shape != preview_dy.shape:
+            raise ValueError("Preview r samples and dy segments must have matching shapes.")
 
         preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
         plot_observed_and_projected_single_run(
             t_obs=t_clean,
             y_obs=y_clean,
+            t_loess=t_smooth,
+            y_loess=y_smooth,
             projection_start_year=float(custom_ref_year),
             dy_segments=preview_dy,
             r_segments=preview_r_samples,
