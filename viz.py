@@ -20,6 +20,7 @@ def plot_observed_and_projected_single_run(
     out_fp,
     t_loess=None,
     y_loess=None,
+    trend_pool=None,
 ):
     """Plot observed shoreline and projected trajectories.
 
@@ -43,6 +44,9 @@ def plot_observed_and_projected_single_run(
     slr_q17_values = np.asarray(slr_q17_values, dtype=float).ravel()
     slr_q50_values = np.asarray(slr_q50_values, dtype=float).ravel()
     slr_q83_values = np.asarray(slr_q83_values, dtype=float).ravel()
+    if trend_pool is not None:
+        trend_pool = np.asarray(trend_pool, dtype=float).ravel()
+        trend_pool = trend_pool[np.isfinite(trend_pool)]
 
     if t_obs.size == 0 or y_obs.size == 0:
         raise ValueError("Observed time series is empty.")
@@ -111,7 +115,12 @@ def plot_observed_and_projected_single_run(
     seg_start_shoreline = baseline_y + np.concatenate(([0.0], np.cumsum(dy_mean)[:-1]))
     r_mean = np.mean(r_matrix, axis=0)
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, (ax, ax_trend) = plt.subplots(
+        1,
+        2,
+        figsize=(15, 5),
+        gridspec_kw={"width_ratios": [3.6, 1.4]},
+    )
     ax.plot(t_obs, y_obs, color="tab:blue", marker="o", markersize=2.5, linewidth=1.2, label="Observed")
     if t_loess is not None and t_loess.size > 0:
         ax.plot(
@@ -214,6 +223,59 @@ def plot_observed_and_projected_single_run(
     ax.set_ylabel("Shoreline position [m]")
     ax.set_title(f"Observed + projected shoreline with uncertainty: {site_id} {transect_id}")
     ax.grid(alpha=0.25)
+
+    # Right subplot: trend distribution from bootstrap, with sampled realization trends highlighted.
+    used_trends = r_matrix.ravel()
+    used_trends = used_trends[np.isfinite(used_trends)]
+    all_trends = used_trends if trend_pool is None else trend_pool
+
+    if all_trends.size > 0:
+        if all_trends.size == 1 or np.allclose(np.std(all_trends), 0.0):
+            ax_trend.axvline(
+                float(np.mean(all_trends)),
+                color="gray",
+                linewidth=2.0,
+                label="Extracted trends (degenerate)",
+            )
+        else:
+            # Gaussian KDE with Silverman's rule-of-thumb bandwidth.
+            n_all = all_trends.size
+            sigma_all = float(np.std(all_trends, ddof=1))
+            bw = 1.06 * sigma_all * (n_all ** (-1.0 / 5.0))
+            bw = max(bw, 1e-6)
+            x_lo = float(np.min(all_trends) - 3.0 * bw)
+            x_hi = float(np.max(all_trends) + 3.0 * bw)
+            x_grid = np.linspace(x_lo, x_hi, 300)
+            z = (x_grid[:, np.newaxis] - all_trends[np.newaxis, :]) / bw
+            kde = np.exp(-0.5 * z * z).sum(axis=1) / (n_all * bw * np.sqrt(2.0 * np.pi))
+            ax_trend.plot(
+                x_grid,
+                kde,
+                color="dimgray",
+                linewidth=2.0,
+                label="Extracted trends (KDE)",
+            )
+    if used_trends.size > 0:
+        # Rug ticks for sampled trends used in realizations.
+        y_min, y_max = ax_trend.get_ylim()
+        rug_bottom = y_min
+        rug_top = y_min + 0.08 * (y_max - y_min if y_max > y_min else 1.0)
+        ax_trend.vlines(
+            used_trends,
+            rug_bottom,
+            rug_top,
+            color="tab:green",
+            alpha=0.8,
+            linewidth=1.2,
+            label="Trends used in realizations (rug)",
+        )
+
+    ax_trend.set_xlabel("Trend [m/yr]")
+    ax_trend.set_ylabel("Probability density [1/(m/yr)]")
+    ax_trend.set_title("Trend distribution")
+    ax_trend.grid(alpha=0.25)
+    ax_trend.plot([], [], " ", label="Note: KDE area = 1")
+    ax_trend.legend(loc="best", fontsize=8)
 
     handles, labels = ax.get_legend_handles_labels()
     if ax_slr is not None:

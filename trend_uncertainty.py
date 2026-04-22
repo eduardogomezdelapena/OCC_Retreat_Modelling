@@ -909,6 +909,7 @@ for site_id in nzd_sites_trial:
             site_id=site_id,
             transect_id=transect_id,
             out_fp=preview_ts_plot_fp,
+            trend_pool=boot_slopes,
         )
 
         print(site_id, transect_id)
