@@ -284,5 +284,5 @@ def plot_observed_and_projected_single_run(
         labels.extend(labels_slr)
     ax.legend(handles, labels, loc="best", fontsize=8)
     fig.tight_layout()
-    fig.savefig(out_fp, dpi=180)
+    fig.savefig(out_fp, dpi=300)
     plt.close(fig)
