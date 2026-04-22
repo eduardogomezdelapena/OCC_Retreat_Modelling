@@ -22,8 +22,7 @@ def plot_observed_and_projected_single_run(
     t_loess=None,
     y_loess=None,
     trend_pool=None,
-    tan_beta=None,
-    c=1.0,
+    slr_only_dy_segments=None,
 ):
     """Plot observed shoreline and projected trajectories.
 
@@ -50,10 +49,8 @@ def plot_observed_and_projected_single_run(
     if trend_pool is not None:
         trend_pool = np.asarray(trend_pool, dtype=float).ravel()
         trend_pool = trend_pool[np.isfinite(trend_pool)]
-    if tan_beta is not None:
-        tan_beta = float(tan_beta)
-        if not np.isfinite(tan_beta) or tan_beta == 0.0:
-            tan_beta = None
+    if slr_only_dy_segments is not None:
+        slr_only_dy_segments = np.asarray(slr_only_dy_segments, dtype=float)
 
     if t_obs.size == 0 or y_obs.size == 0:
         raise ValueError("Observed time series is empty.")
@@ -81,6 +78,17 @@ def plot_observed_and_projected_single_run(
 
     if r_matrix.shape[1] != dy_matrix.shape[1]:
         raise ValueError("r_segments and dy_segments must have the same number of segments.")
+    if slr_only_dy_segments is not None:
+        if slr_only_dy_segments.ndim == 1:
+            slr_only_matrix = slr_only_dy_segments[np.newaxis, :]
+        elif slr_only_dy_segments.ndim == 2:
+            slr_only_matrix = slr_only_dy_segments
+        else:
+            raise ValueError("slr_only_dy_segments must be a 1D or 2D array.")
+        if slr_only_matrix.shape != dy_matrix.shape:
+            raise ValueError("slr_only_dy_segments must have the same shape as dy_segments.")
+    else:
+        slr_only_matrix = None
     if slr_years.size != slr_q17_values.size:
         raise ValueError("slr_years and slr_q17_values must have the same length.")
     if slr_years.size != slr_q50_values.size:
@@ -105,8 +113,23 @@ def plot_observed_and_projected_single_run(
     seg_starts = projection_start_year + np.concatenate(([0.0], np.cumsum(seg_durations)[:-1]))
     seg_ends = seg_starts + seg_durations
 
-    baseline_idx = int(np.argmin(np.abs(t_obs - projection_start_year)))
-    baseline_y = float(y_obs[baseline_idx])
+    # Anchor projections at the trailing 5-year mean of the LOESS curve.
+    # If LOESS is unavailable in that window, fall back to observed values.
+    baseline_window_years = 5.0
+    window_start = projection_start_year - baseline_window_years
+
+    baseline_source_t = t_loess if (t_loess is not None and t_loess.size > 0) else t_obs
+    baseline_source_y = y_loess if (y_loess is not None and y_loess.size > 0) else y_obs
+
+    baseline_mask = (
+        (baseline_source_t >= window_start)
+        & (baseline_source_t <= projection_start_year)
+    )
+    if np.any(baseline_mask):
+        baseline_y = float(np.mean(baseline_source_y[baseline_mask]))
+    else:
+        baseline_idx = int(np.argmin(np.abs(baseline_source_t - projection_start_year)))
+        baseline_y = float(baseline_source_y[baseline_idx])
 
     cum_dy = np.cumsum(dy_matrix, axis=1)
     proj_years = np.concatenate(([projection_start_year], seg_ends))
@@ -117,6 +140,14 @@ def plot_observed_and_projected_single_run(
     proj_shoreline_mean = np.mean(proj_shoreline_all, axis=0)
     proj_shoreline_q05 = np.quantile(proj_shoreline_all, 0.05, axis=0)
     proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
+
+    if slr_only_matrix is not None:
+        slr_only_cum = np.cumsum(slr_only_matrix, axis=1)
+        slr_only_shoreline_all = baseline_y + np.concatenate(
+            [np.zeros((slr_only_matrix.shape[0], 1)), slr_only_cum],
+            axis=1,
+        )
+        slr_only_shoreline_mean = np.mean(slr_only_shoreline_all, axis=0)
 
     dy_mean = np.mean(dy_matrix, axis=0)
     seg_start_shoreline = baseline_y + np.concatenate(([0.0], np.cumsum(dy_mean)[:-1]))
@@ -172,6 +203,16 @@ def plot_observed_and_projected_single_run(
             label="Projected single run",
         )
 
+    if slr_only_matrix is not None:
+        ax.plot(
+            proj_years,
+            slr_only_shoreline_mean,
+            color="deeppink",
+            linewidth=2.0,
+            alpha=0.7,
+            label="Projected SLR-only",
+        )
+
     first_label = True
     for i in range(n_segments):
         x0 = seg_starts[i]
@@ -196,18 +237,6 @@ def plot_observed_and_projected_single_run(
         slr_q17_values = slr_q17_values[slr_order]
         slr_q50_values = slr_q50_values[slr_order]
         slr_q83_values = slr_q83_values[slr_order]
-
-        if tan_beta is not None:
-            slr_q50_interp = np.interp(proj_years, slr_years, slr_q50_values)
-            slr_only_shoreline = baseline_y - (float(c) / tan_beta) * slr_q50_interp
-            ax.plot(
-                proj_years,
-                slr_only_shoreline,
-                color="deeppink",
-                linewidth=2.0,
-                alpha=0.7,
-                label="Projected SLR-only",
-            )
 
         ax_slr.plot(
             slr_years,

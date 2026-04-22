@@ -234,6 +234,7 @@ def mc_shoreline_change(
     n=200_000,
     return_delta_s_samples=True,
     return_r_segment_samples=True,
+    return_slr_segment_samples=False,
 ):
     """
     Monte Carlo propagation for shoreline change using an
@@ -242,7 +243,7 @@ def mc_shoreline_change(
     For each simulation, dt is split into 5-year segments and an independent
     trend rate is sampled per segment:
 
-    dy_total = sum_k [ (c/tanβ) * ΔS / K + (p * r_k * Δt_k) ]
+    dy_total = sum_k [ -(c/tanβ) * ΔS / K + (p * r_k * Δt_k) ]
 
     where K is the number of segments, Δt_k is usually 5 years, and the last
     segment can be shorter if dt is not divisible by 5.
@@ -258,6 +259,8 @@ def mc_shoreline_change(
     - dt: time horizon (years)
         - return_r_segment_samples: if True, also return sampled r values for each
             time segment (useful for single-run diagnostics)
+        - return_slr_segment_samples: if True, also return the SLR-only shoreline
+            change component per segment for each realization
 
     Uncertainty sources:
     - Trend rate r_sat (from bootstrap)
@@ -332,6 +335,12 @@ def mc_shoreline_change(
         dy_rem = (bases * remainder / dt) + sampled_p * sampled_r_rem * remainder
         dy = np.concatenate([dy, dy_rem[:, np.newaxis]], axis=1)
 
+    # SLR-only shoreline change per segment, shape-matched with dy.
+    slr_dy = np.repeat(bases_per_seg[:, np.newaxis], n_segments, axis=1)
+    if remainder > 0:
+        slr_rem = bases * remainder / dt
+        slr_dy = np.concatenate([slr_dy, slr_rem[:, np.newaxis]], axis=1)
+
     # Total 75-year change used for summary statistics
     dy_total = dy.sum(axis=1)                                  # (n,)
 
@@ -359,16 +368,15 @@ def mc_shoreline_change(
         "dy_p95_m": float(np.quantile(dy_total, 0.95)),
     }
 
-    if return_delta_s_samples and return_r_segment_samples:
-        return dy, summary, sampled_delta_s, sampled_r_all
-
+    outputs = [dy, summary]
     if return_delta_s_samples:
-        return dy, summary, sampled_delta_s
-
+        outputs.append(sampled_delta_s)
     if return_r_segment_samples:
-        return dy, summary, sampled_r_all
+        outputs.append(sampled_r_all)
+    if return_slr_segment_samples:
+        outputs.append(slr_dy)
 
-    return dy, summary
+    return tuple(outputs)
 
 
 # def plot_delta_s_debug_histogram(
@@ -806,9 +814,10 @@ for site_id in nzd_sites_trial:
             n=n_mc_realizations_per_transect,
             return_delta_s_samples=True,
             return_r_segment_samples=True,
+            return_slr_segment_samples=True,
             )
         
-        dy, summ, sampled_delta_s, sampled_r_all = mc_result
+        dy, summ, sampled_delta_s, sampled_r_all, sampled_slr_dy = mc_result
 
         # if debug_slr_histograms:
         #     dy, summ, sampled_delta_s, sampled_r_all = mc_result
@@ -884,12 +893,15 @@ for site_id in nzd_sites_trial:
         # Pass all sampled realizations so the plot can show mean + uncertainty envelope.
         preview_dy = np.asarray(dy, dtype=float)
         preview_r_samples = np.asarray(sampled_r_all, dtype=float)
+        preview_slr_only_dy = np.asarray(sampled_slr_dy, dtype=float)
 
         preview_segment_years = 5
         preview_dt = int(summ["dt_years"])
 
         if preview_r_samples.shape != preview_dy.shape:
             raise ValueError("Preview r samples and dy segments must have matching shapes.")
+        if preview_slr_only_dy.shape != preview_dy.shape:
+            raise ValueError("Preview SLR-only segments and dy segments must have matching shapes.")
 
         preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
         plot_observed_and_projected_single_run(
@@ -910,8 +922,7 @@ for site_id in nzd_sites_trial:
             transect_id=transect_id,
             out_fp=preview_ts_plot_fp,
             trend_pool=boot_slopes,
-            tan_beta=tan_beta,
-            c=1.0,
+            slr_only_dy_segments=preview_slr_only_dy,
         )
 
         print(site_id, transect_id)
@@ -1014,7 +1025,7 @@ for i, vals in enumerate(groups_median, start=1):
 plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
 plt.ylabel("Median shoreline change (m)")
 plt.title("Median shoreline change per site")
-plt.ylim(-0, 20)
+# plt.ylim(-0, 20)
 plt.tight_layout()
 plt.show()
 
