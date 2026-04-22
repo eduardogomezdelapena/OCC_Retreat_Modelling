@@ -630,7 +630,7 @@ for site_id in nzd_sites_trial:
 
         t_loess, t_loess_grid, t_loess_origin = build_loess_time_grid(
             t_clean,
-            n_grid=max(200, t_clean.size),
+            n_grid=None,
         )
 #%
 
@@ -638,14 +638,14 @@ for site_id in nzd_sites_trial:
         target_window_years = 5.0
         total_timespan_years = t_clean.max() - t_clean.min()
         frac = target_window_years / total_timespan_years
-        frac = np.clip(frac, 0.1, 0.9)  # Keep within reasonable bounds
+        frac = np.clip(frac, 0.15, 0.9)  # Keep within reasonable bounds
 
         x_smooth, y_smooth, _ = loess_1d(
             t_loess,
             y_clean,
             xnew=t_loess_grid,
             frac=frac,  # Dynamically set for ~5 year window
-            degree=2,
+            degree=1,  # Linear local fit is more stable at series boundaries.
         )
 
         t_smooth = x_smooth + t_loess_origin

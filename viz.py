@@ -2,6 +2,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.gridspec import GridSpec
 
 def plot_observed_and_projected_single_run(
     t_obs,
@@ -115,12 +116,17 @@ def plot_observed_and_projected_single_run(
     seg_start_shoreline = baseline_y + np.concatenate(([0.0], np.cumsum(dy_mean)[:-1]))
     r_mean = np.mean(r_matrix, axis=0)
 
-    fig, (ax, ax_trend) = plt.subplots(
-        1,
+    fig = plt.figure(figsize=(15, 6.5))
+    gs = GridSpec(
         2,
-        figsize=(15, 5),
-        gridspec_kw={"width_ratios": [3.6, 1.4]},
+        2,
+        figure=fig,
+        width_ratios=[3.6, 1.4],
+        height_ratios=[1.0, 1.0],
     )
+    ax = fig.add_subplot(gs[:, 0])
+    ax_trend = fig.add_subplot(gs[0, 1])
+    ax_slr = fig.add_subplot(gs[1, 1])
     ax.plot(t_obs, y_obs, color="tab:blue", marker="o", markersize=2.5, linewidth=1.2, label="Observed")
     if t_loess is not None and t_loess.size > 0:
         ax.plot(
@@ -178,7 +184,6 @@ def plot_observed_and_projected_single_run(
         )
         first_label = False
 
-    ax_slr = None
     if slr_years.size > 0:
         slr_order = np.argsort(slr_years)
         slr_years = slr_years[slr_order]
@@ -186,7 +191,6 @@ def plot_observed_and_projected_single_run(
         slr_q50_values = slr_q50_values[slr_order]
         slr_q83_values = slr_q83_values[slr_order]
 
-        ax_slr = ax.twinx()
         ax_slr.plot(
             slr_years,
             slr_q50_values,
@@ -195,7 +199,7 @@ def plot_observed_and_projected_single_run(
             marker="o",
             markersize=3.0,
             alpha=0.9,
-            label="SLR projection",
+            label="SLR q50",
         )
         ax_slr.plot(
             slr_years,
@@ -204,7 +208,7 @@ def plot_observed_and_projected_single_run(
             linewidth=1.2,
             linestyle="--",
             alpha=0.95,
-            label="SLR bounds (q17/q83)",
+            label="SLR q17/q83",
         )
         ax_slr.plot(
             slr_years,
@@ -214,9 +218,19 @@ def plot_observed_and_projected_single_run(
             linestyle="--",
             alpha=0.95,
         )
-        ax_slr.set_ylabel("SLR change from 2025 [m]", color="deeppink")
-        ax_slr.tick_params(axis="y", colors="deeppink")
-        ax_slr.spines["right"].set_color("deeppink")
+        ax_slr.set_xlim(float(np.min(slr_years)), float(np.max(slr_years)))
+        ax_slr.grid(alpha=0.25)
+    else:
+        ax_slr.text(
+            0.5,
+            0.5,
+            "No SLR series available",
+            ha="center",
+            va="center",
+            transform=ax_slr.transAxes,
+            color="gray",
+        )
+        ax_slr.grid(alpha=0.25)
 
     ax.axvline(projection_start_year, color="gray", linestyle=":", linewidth=1.0)
     ax.set_xlabel("Year (decimal)")
@@ -277,11 +291,13 @@ def plot_observed_and_projected_single_run(
     ax_trend.plot([], [], " ", label="Note: KDE area = 1")
     ax_trend.legend(loc="best", fontsize=8)
 
+    ax_slr.set_xlabel("Year")
+    ax_slr.set_ylabel("SLR change from 2025 [m]")
+    ax_slr.set_title("Sea-level projection")
+    if slr_years.size > 0:
+        ax_slr.legend(loc="best", fontsize=8)
+
     handles, labels = ax.get_legend_handles_labels()
-    if ax_slr is not None:
-        handles_slr, labels_slr = ax_slr.get_legend_handles_labels()
-        handles.extend(handles_slr)
-        labels.extend(labels_slr)
     ax.legend(handles, labels, loc="best", fontsize=8)
     fig.tight_layout()
     fig.savefig(out_fp, dpi=300)
