@@ -306,7 +306,7 @@ def mc_shoreline_change(
     # Vectorized Monte Carlo sampling for speed and reproducibility.
     sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2, size=n)
 
-    bases = (c / sampled_tan_beta) * sampled_delta_s          # total SLR term (n,)
+    bases = -(c / sampled_tan_beta) * sampled_delta_s         # total SLR term (n,): SLR drives retreat (negative y)
     sampled_p = rng.uniform(low=p_low, high=p_high, size=n)
 
     # Split dt into 5-year segments; each gets its own independently sampled r.
@@ -910,6 +910,8 @@ for site_id in nzd_sites_trial:
             transect_id=transect_id,
             out_fp=preview_ts_plot_fp,
             trend_pool=boot_slopes,
+            tan_beta=tan_beta,
+            c=1.0,
         )
 
         print(site_id, transect_id)

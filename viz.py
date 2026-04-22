@@ -22,6 +22,8 @@ def plot_observed_and_projected_single_run(
     t_loess=None,
     y_loess=None,
     trend_pool=None,
+    tan_beta=None,
+    c=1.0,
 ):
     """Plot observed shoreline and projected trajectories.
 
@@ -48,6 +50,10 @@ def plot_observed_and_projected_single_run(
     if trend_pool is not None:
         trend_pool = np.asarray(trend_pool, dtype=float).ravel()
         trend_pool = trend_pool[np.isfinite(trend_pool)]
+    if tan_beta is not None:
+        tan_beta = float(tan_beta)
+        if not np.isfinite(tan_beta) or tan_beta == 0.0:
+            tan_beta = None
 
     if t_obs.size == 0 or y_obs.size == 0:
         raise ValueError("Observed time series is empty.")
@@ -190,6 +196,18 @@ def plot_observed_and_projected_single_run(
         slr_q17_values = slr_q17_values[slr_order]
         slr_q50_values = slr_q50_values[slr_order]
         slr_q83_values = slr_q83_values[slr_order]
+
+        if tan_beta is not None:
+            slr_q50_interp = np.interp(proj_years, slr_years, slr_q50_values)
+            slr_only_shoreline = baseline_y - (float(c) / tan_beta) * slr_q50_interp
+            ax.plot(
+                proj_years,
+                slr_only_shoreline,
+                color="deeppink",
+                linewidth=2.0,
+                alpha=0.7,
+                label="Projected SLR-only",
+            )
 
         ax_slr.plot(
             slr_years,
