@@ -6,6 +6,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from statistics import NormalDist
+from viz import (
+    plot_observed_and_projected_single_run
+)
 #%% Read data, declare sites ID
 
 #Which directories exist under data/
@@ -29,7 +32,7 @@ print(f"{len(nzd_sites)} NZD sites found")
 
 # Define random seed for reproducibility
 seed = 42 
-
+single_preview_random_state = seed
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
 def load_transect_data(site_id):
     url = (
@@ -218,6 +221,7 @@ def block_bootstrap_slopes(
     return slopes
 
 # %% Monte Carlo simulations. Function DEFINITION
+# %% Monte Carlo simulations. Function DEFINITION
 def mc_shoreline_change(
     c, tan_beta, delta_S,
     r_samples,
@@ -228,13 +232,20 @@ def mc_shoreline_change(
     delta_S_q83,
     dt=75,                      # 2025 as baseline year, projections to 2100
     n=200_000,
-    return_delta_s_samples=False,
+    return_delta_s_samples=True,
+    return_r_segment_samples=True,
 ):
     """
     Monte Carlo propagation for shoreline change using an
     empirical (bootstrap) distribution of shoreline trend rates.
 
-    Δy = (c/tanβ) * ΔS + (p * r_sat * dt)
+    For each simulation, dt is split into 5-year segments and an independent
+    trend rate is sampled per segment:
+
+    dy_total = sum_k [ (c/tanβ) * ΔS / K + (p * r_k * Δt_k) ]
+
+    where K is the number of segments, Δt_k is usually 5 years, and the last
+    segment can be shorter if dt is not divisible by 5.
 
     Parameters:
     - c: adjustment factor (fixed)
@@ -245,6 +256,8 @@ def mc_shoreline_change(
     - p: persistence factor (sampled uniformly between p_low and p_high)
     - r_sat: empirical trend rates (sampled from r_samples)
     - dt: time horizon (years)
+        - return_r_segment_samples: if True, also return sampled r values for each
+            time segment (useful for single-run diagnostics)
 
     Uncertainty sources:
     - Trend rate r_sat (from bootstrap)
@@ -293,27 +306,34 @@ def mc_shoreline_change(
     # Vectorized Monte Carlo sampling for speed and reproducibility.
     sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2, size=n)
 
-    bases = (c / sampled_tan_beta) * sampled_delta_s
-    sampled_r = rng.choice(r_samples, size=n)
+    bases = (c / sampled_tan_beta) * sampled_delta_s          # total SLR term (n,)
     sampled_p = rng.uniform(low=p_low, high=p_high, size=n)
-    trend_terms = sampled_p * sampled_r * dt
-    dy = bases + trend_terms
 
-    # Empirical variance decomposition: Var(A+B)=Var(A)+Var(B)+2Cov(A,B).
-    base_var = float(np.var(bases, ddof=1))
-    trend_var = float(np.var(trend_terms, ddof=1))
-    cov_bt = float(np.cov(bases, trend_terms, ddof=1)[0, 1])
-    cross_var = float(2.0 * cov_bt)
-    dy_var = float(np.var(dy, ddof=1))
+    # Split dt into 5-year segments; each gets its own independently sampled r.
+    # e.g. dt=75 => 15 segments of 5 years each.
+    segment_years = 5
+    n_segments = dt // segment_years
+    remainder = dt % segment_years
 
-    if dy_var > 0:
-        base_var_frac_pct = float(100.0 * base_var / dy_var)
-        trend_var_frac_pct = float(100.0 * trend_var / dy_var)
-        cross_var_frac_pct = float(100.0 * cross_var / dy_var)
-    else:
-        base_var_frac_pct = np.nan
-        trend_var_frac_pct = np.nan
-        cross_var_frac_pct = np.nan
+    # Pro-rate the SLR base term evenly across segments
+    bases_per_seg = bases / n_segments                         # (n,)
+
+    # Sample an independent r per simulation per segment: shape (n, n_segments)
+    sampled_r_segs = rng.choice(r_samples, size=(n, n_segments))
+    sampled_r_all = sampled_r_segs.copy()
+
+    # dy has shape (n, n_segments): change during each 5-year simulation
+    dy = (bases_per_seg[:, np.newaxis]
+          + sampled_p[:, np.newaxis] * sampled_r_segs * segment_years)
+
+    if remainder > 0:
+        sampled_r_rem = rng.choice(r_samples, size=n)
+        sampled_r_all = np.concatenate([sampled_r_all, sampled_r_rem[:, np.newaxis]], axis=1)
+        dy_rem = (bases * remainder / dt) + sampled_p * sampled_r_rem * remainder
+        dy = np.concatenate([dy, dy_rem[:, np.newaxis]], axis=1)
+
+    # Total 75-year change used for summary statistics
+    dy_total = dy.sum(axis=1)                                  # (n,)
 
     summary = {
         "dt_years": dt,
@@ -334,132 +354,127 @@ def mc_shoreline_change(
         "trend_rate_p05": float(np.quantile(r_samples, 0.05)),
         "trend_rate_p95": float(np.quantile(r_samples, 0.95)),
 
-        "dy_median_m": float(np.median(dy)),
-        "dy_p05_m": float(np.quantile(dy, 0.05)),
-        "dy_p95_m": float(np.quantile(dy, 0.95)),
-
-        "base_var_m2": base_var,
-        "trend_var_m2": trend_var,
-        "cross_var_m2": cross_var,
-        "dy_var_m2": dy_var,
-        "base_sd_m": float(np.sqrt(max(base_var, 0.0))),
-        "trend_sd_m": float(np.sqrt(max(trend_var, 0.0))),
-        "dy_sd_m": float(np.sqrt(max(dy_var, 0.0))),
-        "base_var_frac_pct": base_var_frac_pct,
-        "trend_var_frac_pct": trend_var_frac_pct,
-        "cross_var_frac_pct": cross_var_frac_pct,
+        "dy_median_m": float(np.median(dy_total)),
+        "dy_p05_m": float(np.quantile(dy_total, 0.05)),
+        "dy_p95_m": float(np.quantile(dy_total, 0.95)),
     }
+
+    if return_delta_s_samples and return_r_segment_samples:
+        return dy, summary, sampled_delta_s, sampled_r_all
 
     if return_delta_s_samples:
         return dy, summary, sampled_delta_s
 
+    if return_r_segment_samples:
+        return dy, summary, sampled_r_all
+
     return dy, summary
 
 
-def plot_delta_s_debug_histogram(
-    sampled_delta_s,
-    summary,
-    q17,
-    q50,
-    q83,
-    site_id,
-    transect_id,
-    ssp,
-    scenario,
-    year,
-    out_fp,
-):
-    """Save a debug histogram of sampled SLR for one transect."""
-    sampled_delta_s = np.asarray(sampled_delta_s, dtype=float)
+# def plot_delta_s_debug_histogram(
+#     sampled_delta_s,
+#     summary,
+#     q17,
+#     q50,
+#     q83,
+#     site_id,
+#     transect_id,
+#     ssp,
+#     scenario,
+#     year,
+#     out_fp,
+# ):
+#     """Save a debug histogram of sampled SLR for one transect."""
+#     sampled_delta_s = np.asarray(sampled_delta_s, dtype=float)
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.hist(sampled_delta_s, bins=50, density=True, alpha=0.55, color="steelblue")
+#     fig, ax = plt.subplots(figsize=(8, 4))
+#     ax.hist(sampled_delta_s, bins=50, density=True, alpha=0.55, color="steelblue")
 
-    mu = float(summary.get("delta_S_mu_m", np.nan))
-    sigma = float(summary.get("delta_S_sigma_m", np.nan))
+#     mu = float(summary.get("delta_S_mu_m", np.nan))
+#     sigma = float(summary.get("delta_S_sigma_m", np.nan))
 
-    if np.isfinite(mu) and np.isfinite(sigma) and sigma > 0:
-        x_low = float(np.quantile(sampled_delta_s, 0.001))
-        x_high = float(np.quantile(sampled_delta_s, 0.999))
-        x = np.linspace(x_low, x_high, 400)
-        pdf = (1.0 / (sigma * np.sqrt(2.0 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
-        ax.plot(x, pdf, color="black", linewidth=2.0, label="Gaussian fit")
+#     if np.isfinite(mu) and np.isfinite(sigma) and sigma > 0:
+#         x_low = float(np.quantile(sampled_delta_s, 0.001))
+#         x_high = float(np.quantile(sampled_delta_s, 0.999))
+#         x = np.linspace(x_low, x_high, 400)
+#         pdf = (1.0 / (sigma * np.sqrt(2.0 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+#         ax.plot(x, pdf, color="black", linewidth=2.0, label="Gaussian fit")
 
-    ax.axvline(q17, color="tab:orange", linestyle="--", linewidth=1.5, label="q17 target")
-    ax.axvline(q50, color="tab:green", linestyle="--", linewidth=1.5, label="q50 target")
-    ax.axvline(q83, color="tab:red", linestyle="--", linewidth=1.5, label="q83 target")
+#     ax.axvline(q17, color="tab:orange", linestyle="--", linewidth=1.5, label="q17 target")
+#     ax.axvline(q50, color="tab:green", linestyle="--", linewidth=1.5, label="q50 target")
+#     ax.axvline(q83, color="tab:red", linestyle="--", linewidth=1.5, label="q83 target")
 
-    ax.set_xlabel("Sampled delta_S [m]")
-    ax.set_ylabel("Density")
-    ax.set_title(
-        f"{site_id} {transect_id} delta_S samples ({ssp}-{scenario}, year={year})"
-    )
-    ax.legend(loc="best", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(out_fp, dpi=180)
-    plt.close(fig)
+#     ax.set_xlabel("Sampled delta_S [m]")
+#     ax.set_ylabel("Density")
+#     ax.set_title(
+#         f"{site_id} {transect_id} delta_S samples ({ssp}-{scenario}, year={year})"
+#     )
+#     ax.legend(loc="best", fontsize=8)
+#     fig.tight_layout()
+#     fig.savefig(out_fp, dpi=180)
+#     plt.close(fig)
 
 
-def plot_variance_decomposition(
-    summary,
-    site_id,
-    transect_id,
-    ssp,
-    scenario,
-    year,
-    out_fp,
-):
-    """Save per-transect variance decomposition bars for dy components."""
-    base_var = float(summary.get("base_var_m2", np.nan))
-    trend_var = float(summary.get("trend_var_m2", np.nan))
-    cross_var = float(summary.get("cross_var_m2", np.nan))
-    total_var = float(summary.get("dy_var_m2", np.nan))
+# def plot_variance_decomposition(
+#     summary,
+#     site_id,
+#     transect_id,
+#     ssp,
+#     scenario,
+#     year,
+#     out_fp,
+# ):
+#     """Save per-transect variance decomposition bars for dy components."""
+#     base_var = float(summary.get("base_var_m2", np.nan))
+#     trend_var = float(summary.get("trend_var_m2", np.nan))
+#     cross_var = float(summary.get("cross_var_m2", np.nan))
+#     total_var = float(summary.get("dy_var_m2", np.nan))
 
-    labels = ["Base", "Trend", "2*Cov"]
-    values = np.array([base_var, trend_var, cross_var], dtype=float)
-    colors = ["#4c78a8", "#f58518", "#54a24b"]
+#     labels = ["Base", "Trend", "2*Cov"]
+#     values = np.array([base_var, trend_var, cross_var], dtype=float)
+#     colors = ["#4c78a8", "#f58518", "#54a24b"]
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.bar(labels, values, color=colors, alpha=0.85)
-    ax.axhline(0.0, color="black", linewidth=1.0)
+#     fig, ax = plt.subplots(figsize=(8, 4))
+#     ax.bar(labels, values, color=colors, alpha=0.85)
+#     ax.axhline(0.0, color="black", linewidth=1.0)
 
-    if np.isfinite(total_var):
-        ax.axhline(
-            total_var,
-            color="crimson",
-            linestyle="--",
-            linewidth=1.6,
-            label=f"Total var = {total_var:.2f} m^2",
-        )
+#     if np.isfinite(total_var):
+#         ax.axhline(
+#             total_var,
+#             color="crimson",
+#             linestyle="--",
+#             linewidth=1.6,
+#             label=f"Total var = {total_var:.2f} m^2",
+#         )
 
-    pct_vals = [
-        float(summary.get("base_var_frac_pct", np.nan)),
-        float(summary.get("trend_var_frac_pct", np.nan)),
-        float(summary.get("cross_var_frac_pct", np.nan)),
-    ]
+#     pct_vals = [
+#         float(summary.get("base_var_frac_pct", np.nan)),
+#         float(summary.get("trend_var_frac_pct", np.nan)),
+#         float(summary.get("cross_var_frac_pct", np.nan)),
+#     ]
 
-    finite_abs = np.abs(values[np.isfinite(values)])
-    scale = float(np.max(finite_abs)) if finite_abs.size else 1.0
-    if scale == 0.0:
-        scale = 1.0
-    y_off = 0.04 * scale
+#     finite_abs = np.abs(values[np.isfinite(values)])
+#     scale = float(np.max(finite_abs)) if finite_abs.size else 1.0
+#     if scale == 0.0:
+#         scale = 1.0
+#     y_off = 0.04 * scale
 
-    for i, (val, pct) in enumerate(zip(values, pct_vals)):
-        if not np.isfinite(val):
-            continue
-        y_text = val + y_off if val >= 0 else val - y_off
-        va = "bottom" if val >= 0 else "top"
-        pct_txt = f"{pct:.1f}%" if np.isfinite(pct) else "nan"
-        ax.text(i, y_text, pct_txt, ha="center", va=va, fontsize=9)
+#     for i, (val, pct) in enumerate(zip(values, pct_vals)):
+#         if not np.isfinite(val):
+#             continue
+#         y_text = val + y_off if val >= 0 else val - y_off
+#         va = "bottom" if val >= 0 else "top"
+#         pct_txt = f"{pct:.1f}%" if np.isfinite(pct) else "nan"
+#         ax.text(i, y_text, pct_txt, ha="center", va=va, fontsize=9)
 
-    ax.set_ylabel("Variance contribution [m^2]")
-    ax.set_title(
-        f"{site_id} {transect_id} variance decomposition ({ssp}-{scenario}, year={year})"
-    )
-    ax.legend(loc="best", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(out_fp, dpi=180)
-    plt.close(fig)
+#     ax.set_ylabel("Variance contribution [m^2]")
+#     ax.set_title(
+#         f"{site_id} {transect_id} variance decomposition ({ssp}-{scenario}, year={year})"
+#     )
+#     ax.legend(loc="best", fontsize=8)
+#     fig.tight_layout()
+#     fig.savefig(out_fp, dpi=180)
+#     plt.close(fig)
 
 
 #%%
@@ -540,7 +555,7 @@ out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
 debug_variance_plots = True
 
-nzd_sites_trial = nzd_sites[0:3]
+nzd_sites_trial = nzd_sites[0:1]
 # nzd_sites_trial = ["nzd0003"]
 # nzd_sites_trial = ["nzd0161"]
 
@@ -560,10 +575,8 @@ for site_id in nzd_sites_trial:
         c for c in df.columns
         if c.startswith(site_id + "-")
     ]
-    # transect_cols=['nzd0161-0187']
-
-    #Transect loop 
-    for transect_id in transect_cols:
+    transect_trials=transect_cols[16:19] #Try only 3 transects first
+    for transect_id in transect_trials:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -715,6 +728,62 @@ for site_id in nzd_sites_trial:
         delta_s_q17 = float(slr_q17_vals.mean())
         delta_s_q50 = float(slr_q50_vals.mean())
         delta_s_q83 = float(slr_q83_vals.mean())
+##########################
+        slr_series = (
+            all_merged.loc[
+                (all_merged["site_id"] == site_id)
+                & (all_merged["transect_id"] == transect_id),
+                ["year", "17_shifted", "50_shifted", "83_shifted"],
+            ]
+            .dropna()
+            .groupby("year", as_index=False)[["17_shifted", "50_shifted", "83_shifted"]]
+            .mean()
+            .sort_values("year")
+        )
+
+        slr_projection_years = np.array([], dtype=float)
+        slr_projection_q17 = np.array([], dtype=float)
+        slr_projection_q50 = np.array([], dtype=float)
+        slr_projection_q83 = np.array([], dtype=float)
+
+        slr_series_plot = slr_series.loc[slr_series["year"] <= target_year].copy()
+        if not slr_series_plot.empty:
+            year_values = slr_series_plot["year"].to_numpy(dtype=float)
+            if year_values.min() <= custom_ref_year <= year_values.max():
+                has_baseline_year = bool(np.isclose(year_values, custom_ref_year).any())
+
+                for col in ["17_shifted", "50_shifted", "83_shifted"]:
+                    col_values = slr_series_plot[col].to_numpy(dtype=float)
+                    baseline_value = float(np.interp(custom_ref_year, year_values, col_values))
+                    slr_series_plot[col] = col_values - baseline_value
+
+                if not has_baseline_year:
+                    slr_series_plot = pd.concat(
+                        [
+                            pd.DataFrame(
+                                [{
+                                    "year": float(custom_ref_year),
+                                    "17_shifted": 0.0,
+                                    "50_shifted": 0.0,
+                                    "83_shifted": 0.0,
+                                }]
+                            ),
+                            slr_series_plot,
+                        ],
+                        ignore_index=True,
+                    )
+
+                slr_series_plot = (
+                    slr_series_plot.loc[slr_series_plot["year"] >= custom_ref_year]
+                    .sort_values("year")
+                    .reset_index(drop=True)
+                )
+
+                slr_projection_years = slr_series_plot["year"].to_numpy(dtype=float)
+                slr_projection_q17 = slr_series_plot["17_shifted"].to_numpy(dtype=float)
+                slr_projection_q50 = slr_series_plot["50_shifted"].to_numpy(dtype=float)
+                slr_projection_q83 = slr_series_plot["83_shifted"].to_numpy(dtype=float)
+########################
 
         print(
             f"{site_id} {transect_id}: tan_beta = {tan_beta}, "
@@ -722,57 +791,62 @@ for site_id in nzd_sites_trial:
             f"for {ssp_target}-{scenario_target}, year={target_year}"
         )
 
+ 
         mc_result = mc_shoreline_change(
             c=1.0,
             tan_beta=tan_beta ,
             delta_S=delta_s_q50,
             r_samples = boot_slopes,
-            p_low=0.5,  # persistance factor range
-            p_high=1.5,
-            random_state= seed,
+            p_low=0.9,
+            p_high=1,
+            random_state=single_preview_random_state,
             delta_S_q17=delta_s_q17,
             delta_S_q50=delta_s_q50,
             delta_S_q83=delta_s_q83,
-            return_delta_s_samples=debug_slr_histograms,
-        )
-
-        if debug_slr_histograms:
-            dy, summ, sampled_delta_s = mc_result
-            debug_hist_fp = site_dir / f"{site_id}_{transect_id}_deltaS_hist.png"
-            plot_delta_s_debug_histogram(
-                sampled_delta_s=sampled_delta_s,
-                summary=summ,
-                q17=delta_s_q17,
-                q50=delta_s_q50,
-                q83=delta_s_q83,
-                site_id=site_id,
-                transect_id=transect_id,
-                ssp=ssp_target,
-                scenario=scenario_target,
-                year=target_year,
-                out_fp=debug_hist_fp,
+            n=1,
+            return_delta_s_samples=True,
+            return_r_segment_samples=True,
             )
-        else:
-            dy, summ = mc_result
+        
+        dy, summ, sampled_delta_s, sampled_r_all = mc_result
 
-        if debug_variance_plots:
-            var_plot_fp = site_dir / f"{site_id}_{transect_id}_variance_decomp.png"
-            plot_variance_decomposition(
-                summary=summ,
-                site_id=site_id,
-                transect_id=transect_id,
-                ssp=ssp_target,
-                scenario=scenario_target,
-                year=target_year,
-                out_fp=var_plot_fp,
-            )
+        # if debug_slr_histograms:
+        #     dy, summ, sampled_delta_s, sampled_r_all = mc_result
+        #     debug_hist_fp = site_dir / f"{site_id}_{transect_id}_deltaS_hist.png"
+        #     plot_delta_s_debug_histogram(
+        #         sampled_delta_s=sampled_delta_s,
+        #         summary=summ,
+        #         q17=delta_s_q17,
+        #         q50=delta_s_q50,
+        #         q83=delta_s_q83,
+        #         site_id=site_id,
+        #         transect_id=transect_id,
+        #         ssp=ssp_target,
+        #         scenario=scenario_target,
+        #         year=target_year,
+        #         out_fp=debug_hist_fp,
+        #     )
+        # else:
+        #     dy, summ = mc_result
 
-        print(
-            f"{site_id} {transect_id} var_decomp [%] -> "
-            f"base={summ['base_var_frac_pct']:.1f}, "
-            f"trend={summ['trend_var_frac_pct']:.1f}, "
-            f"2cov={summ['cross_var_frac_pct']:.1f}"
-        )
+        # if debug_variance_plots:
+        #     var_plot_fp = site_dir / f"{site_id}_{transect_id}_variance_decomp.png"
+        #     plot_variance_decomposition(
+        #         summary=summ,
+        #         site_id=site_id,
+        #         transect_id=transect_id,
+        #         ssp=ssp_target,
+        #         scenario=scenario_target,
+        #         year=target_year,
+        #         out_fp=var_plot_fp,
+        #     )
+
+        # print(
+        #     f"{site_id} {transect_id} var_decomp [%] -> "
+        #     f"base={summ['base_var_frac_pct']:.1f}, "
+        #     f"trend={summ['trend_var_frac_pct']:.1f}, "
+        #     f"2cov={summ['cross_var_frac_pct']:.1f}"
+        # )
 
         # Store results
         dy_rows.append({
@@ -791,22 +865,56 @@ for site_id in nzd_sites_trial:
                 "scenario": scenario_target,
                 "SSP": ssp_target,
                 "base_term_m": float(summ["base_term_m"]),
-                "base_var_m2": float(summ["base_var_m2"]),
-                "trend_var_m2": float(summ["trend_var_m2"]),
-                "cross_var_m2": float(summ["cross_var_m2"]),
-                "dy_var_m2": float(summ["dy_var_m2"]),
-                "base_sd_m": float(summ["base_sd_m"]),
-                "trend_sd_m": float(summ["trend_sd_m"]),
-                "dy_sd_m": float(summ["dy_sd_m"]),
-                "base_var_frac_pct": float(summ["base_var_frac_pct"]),
-                "trend_var_frac_pct": float(summ["trend_var_frac_pct"]),
-                "cross_var_frac_pct": float(summ["cross_var_frac_pct"]),
                 "dy_p05_m": float(summ["dy_p05_m"]),
                 "dy_median_m": float(summ["dy_median_m"]),
-                "dy_p95_m": float(summ["dy_p95_m"]),
+                "dy_p95_m": float(summ["dy_p95_m"])
+
+                # "base_var_m2": float(summ["base_var_m2"]),
+                # "trend_var_m2": float(summ["trend_var_m2"]),
+                # "cross_var_m2": float(summ["cross_var_m2"]),
+                # "dy_var_m2": float(summ["dy_var_m2"]),
+                # "base_sd_m": float(summ["base_sd_m"]),
+                # "trend_sd_m": float(summ["trend_sd_m"]),
+                # "dy_sd_m": float(summ["dy_sd_m"]),
+                # "base_var_frac_pct": float(summ["base_var_frac_pct"]),
+                # "trend_var_frac_pct": float(summ["trend_var_frac_pct"]),
+                # "cross_var_frac_pct": float(summ["cross_var_frac_pct"]),
             })
-        
+    
+        preview_dy, preview_summary, _, preview_r_samples = mc_result
+        preview_dy = np.asarray(preview_dy, dtype=float).ravel()
+        preview_r_samples = np.asarray(preview_r_samples, dtype=float).ravel()
+
+        preview_segment_years = 5
+        preview_dt = int(preview_summary["dt_years"])
+        preview_durations = np.full(preview_dy.size, preview_segment_years, dtype=int)
+        preview_remainder = preview_dt % preview_segment_years
+        if preview_remainder > 0:
+            preview_durations[-1] = preview_remainder
+
+        if preview_r_samples.size != preview_dy.size:
+            raise ValueError("Preview r samples and dy segments have different lengths.")
+
+        preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
+        plot_observed_and_projected_single_run(
+            t_obs=t_clean,
+            y_obs=y_clean,
+            projection_start_year=float(custom_ref_year),
+            dy_segments=preview_dy,
+            r_segments=preview_r_samples,
+            slr_years=slr_projection_years,
+            slr_q17_values=slr_projection_q17,
+            slr_q50_values=slr_projection_q50,
+            slr_q83_values=slr_projection_q83,
+            dt=preview_dt,
+            segment_years=preview_segment_years,
+            site_id=site_id,
+            transect_id=transect_id,
+            out_fp=preview_ts_plot_fp,
+        )
+
         print(site_id, transect_id)
+
 
 #Loop ends
 dy_df = (
