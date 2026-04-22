@@ -967,6 +967,10 @@ labels = dy_df["site_id"].unique()
 
 plt.figure(figsize=(12, 5))
 plt.boxplot(groups, showfliers=True)
+for i, vals in enumerate(groups, start=1):
+    jitter = np.random.uniform(-0.08, 0.08, size=len(vals))
+    x = np.full(len(vals), i, dtype=float) + jitter
+    plt.plot(x, vals, "o", alpha=0.6, color="tab:blue", markersize=4)
 plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
 plt.ylim(0, 1000)
 plt.ylabel("dy 5–95% CI length [m]")
@@ -1002,10 +1006,14 @@ groups_median = [
 labels = dy_df["site_id"].unique()
 
 plt.boxplot(groups_median, showfliers=True)
+for i, vals in enumerate(groups_median, start=1):
+    jitter = np.random.uniform(-0.08, 0.08, size=len(vals))
+    x = np.full(len(vals), i, dtype=float) + jitter
+    plt.plot(x, vals, "o", alpha=0.6, color="tab:blue", markersize=4)
 plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
 plt.ylabel("Median shoreline change (m)")
 plt.title("Median shoreline change per site")
-plt.ylim(-50, 100)
+plt.ylim(-0, 20)
 plt.tight_layout()
 plt.show()
 
