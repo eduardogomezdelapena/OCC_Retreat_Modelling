@@ -563,7 +563,7 @@ out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
 debug_variance_plots = True
 
-nzd_sites_trial = nzd_sites[0:1]
+nzd_sites_trial = nzd_sites[0:5]
 # nzd_sites_trial = ["nzd0003"]
 # nzd_sites_trial = ["nzd0161"]
 
@@ -583,8 +583,8 @@ for site_id in nzd_sites_trial:
         c for c in df.columns
         if c.startswith(site_id + "-")
     ]
-    transect_trials=transect_cols[16:19] #Try only 3 transects first
-    for transect_id in transect_trials:
+    #transect_trials=transect_cols[16:19] #Try only 3 transects first
+    for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
