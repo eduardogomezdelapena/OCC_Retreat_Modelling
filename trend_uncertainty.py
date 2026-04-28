@@ -170,8 +170,8 @@ def block_bootstrap_slopes(
         Time in decimal years
     y : array
         Shoreline position
-    block_size : int
-        Number of consecutive samples per block
+    block_years : float
+        Window length in years. This function enforces 5-year windows.
     n_boot : int
         Number of bootstrap realizations
 
@@ -183,6 +183,14 @@ def block_bootstrap_slopes(
         Returned only when return_table=True. Contains four columns:
         realization, slope_m_per_yr, date_range, window_length_years.
     """
+    # Enforce fixed 5-year windows for every trend estimate.
+    fixed_window_years = 10.0
+    if not np.isclose(float(block_years), fixed_window_years):
+        raise ValueError(
+            "block_bootstrap_slopes only supports 5-year windows; "
+            f"got block_years={block_years}."
+        )
+
     # Set up random generator
     rng = np.random.default_rng(random_state)
 
@@ -200,15 +208,16 @@ def block_bootstrap_slopes(
     if n < 2:
         raise ValueError("Need at least 2 observations total.")
 
-    # Find block start indices and corresponding end indices
-    ends = np.searchsorted(t, t + block_years, side="left")
+    # Valid start indices are those whose 5-year window stays inside the record.
+    window_ends = t + fixed_window_years
+    ends = np.searchsorted(t, window_ends, side="right")
 
-    # Valid starts must yield at least 2 points in the window to fit a slope
-    valid_starts = np.where((ends - np.arange(n)) >= 2)[0]
+    # Require at least two observed points before interpolation at the window end.
+    valid_starts = np.where((window_ends <= t[-1]) & ((ends - np.arange(n)) >= 2))[0]
     if valid_starts.size == 0:
         raise ValueError(
             f"No 5-year windows contain >=2 observations. "
-            f"Try shorter block_years or check data density."
+            "Check data density."
         )
     
     slopes = np.empty(n_boot, dtype=float)
@@ -216,18 +225,24 @@ def block_bootstrap_slopes(
     window_lengths_years = []
 
     for i in range(n_boot):
-        idx = []
-        while len(idx) < n:
-            start = rng.choice(valid_starts)
-            end = ends[start]          # exclusive
-            idx.extend(range(start, end))  # ALL obs in [t[start], t[start]+5)
+        # Sample one 5-year window per realization and fit its local slope.
+        start = int(rng.choice(valid_starts))
+        window_start = float(t[start])
+        window_end = window_start + fixed_window_years
+        end = int(np.searchsorted(t, window_end, side="right"))  # exclusive
+        idx = np.arange(start, end)
 
-        idx = np.asarray(idx[:n])
-        slopes[i] = np.polyfit(t[idx], y[idx], 1)[0]
-        t_min = float(np.min(t[idx]))
-        t_max = float(np.max(t[idx]))
-        date_ranges.append(f"{t_min:.2f} to {t_max:.2f}")
-        window_lengths_years.append(t_max - t_min)
+        t_fit = t[idx]
+        y_fit = y[idx]
+        if t_fit[-1] < window_end:
+            # Interpolate shoreline at exactly +5 years to enforce a true 5-year fit span.
+            y_end = float(np.interp(window_end, t, y))
+            t_fit = np.append(t_fit, window_end)
+            y_fit = np.append(y_fit, y_end)
+
+        slopes[i] = np.polyfit(t_fit, y_fit, 1)[0]  # linear fit
+        date_ranges.append(f"{window_start:.2f} to {window_end:.2f}")
+        window_lengths_years.append(fixed_window_years)
 
     if return_table:
         table = pd.DataFrame(
@@ -602,8 +617,8 @@ for site_id in nzd_sites_trial:
 
         boot_slopes, boot_slopes_table = block_bootstrap_slopes(
             t_smooth, y_smooth,
-            block_years= 5.0,
-            n_boot=100,  #1000
+            block_years= 10.0,
+            n_boot=1000,  #1000
             random_state=seed,
             return_table=True,
         )
