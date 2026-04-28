@@ -19,9 +19,9 @@ def plot_observed_and_projected_single_run(
     site_id,
     transect_id,
     out_fp,
-    t_loess=None,
-    y_loess=None,
-    trend_pool=None,
+    t_loess,
+    y_loess,
+    trend_pool,
     slr_only_dy_segments=None,
 ):
     """Plot observed shoreline and projected trajectories.
@@ -203,15 +203,15 @@ def plot_observed_and_projected_single_run(
             label="Projected single run",
         )
 
-    if slr_only_matrix is not None:
-        ax.plot(
-            proj_years,
-            slr_only_shoreline_mean,
-            color="deeppink",
-            linewidth=2.0,
-            alpha=0.7,
-            label="Projected SLR-only",
-        )
+    # if slr_only_matrix is not None:
+    #     ax.plot(
+    #         proj_years,
+    #         slr_only_shoreline_mean,
+    #         color="deeppink",
+    #         linewidth=2.0,
+    #         alpha=0.7,
+    #         label="Projected SLR-only",
+    #     )
 
     first_label = True
     for i in range(n_segments):

@@ -159,6 +159,7 @@ def block_bootstrap_slopes(
     block_years,
     n_boot,
     random_state,
+    return_table=False,
 ):
     """
     Block bootstrap for linear trend slopes.
@@ -177,7 +178,10 @@ def block_bootstrap_slopes(
     Returns
     -------
     slopes : array
-        Bootstrapped slope estimates
+        Bootstrapped slope estimates.
+    table : pandas.DataFrame, optional
+        Returned only when return_table=True. Contains four columns:
+        realization, slope_m_per_yr, date_range, window_length_years.
     """
     # Set up random generator
     rng = np.random.default_rng(random_state)
@@ -208,6 +212,8 @@ def block_bootstrap_slopes(
         )
     
     slopes = np.empty(n_boot, dtype=float)
+    date_ranges = []
+    window_lengths_years = []
 
     for i in range(n_boot):
         idx = []
@@ -218,6 +224,21 @@ def block_bootstrap_slopes(
 
         idx = np.asarray(idx[:n])
         slopes[i] = np.polyfit(t[idx], y[idx], 1)[0]
+        t_min = float(np.min(t[idx]))
+        t_max = float(np.max(t[idx]))
+        date_ranges.append(f"{t_min:.2f} to {t_max:.2f}")
+        window_lengths_years.append(t_max - t_min)
+
+    if return_table:
+        table = pd.DataFrame(
+            {
+                "realization": np.arange(1, n_boot + 1, dtype=int),
+                "slope_m_per_yr": slopes,
+                "date_range": date_ranges,
+                "window_length_years": window_lengths_years,
+            }
+        )
+        return slopes, table
 
     return slopes
 
@@ -379,112 +400,6 @@ def mc_shoreline_change(
     return tuple(outputs)
 
 
-# def plot_delta_s_debug_histogram(
-#     sampled_delta_s,
-#     summary,
-#     q17,
-#     q50,
-#     q83,
-#     site_id,
-#     transect_id,
-#     ssp,
-#     scenario,
-#     year,
-#     out_fp,
-# ):
-#     """Save a debug histogram of sampled SLR for one transect."""
-#     sampled_delta_s = np.asarray(sampled_delta_s, dtype=float)
-
-#     fig, ax = plt.subplots(figsize=(8, 4))
-#     ax.hist(sampled_delta_s, bins=50, density=True, alpha=0.55, color="steelblue")
-
-#     mu = float(summary.get("delta_S_mu_m", np.nan))
-#     sigma = float(summary.get("delta_S_sigma_m", np.nan))
-
-#     if np.isfinite(mu) and np.isfinite(sigma) and sigma > 0:
-#         x_low = float(np.quantile(sampled_delta_s, 0.001))
-#         x_high = float(np.quantile(sampled_delta_s, 0.999))
-#         x = np.linspace(x_low, x_high, 400)
-#         pdf = (1.0 / (sigma * np.sqrt(2.0 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
-#         ax.plot(x, pdf, color="black", linewidth=2.0, label="Gaussian fit")
-
-#     ax.axvline(q17, color="tab:orange", linestyle="--", linewidth=1.5, label="q17 target")
-#     ax.axvline(q50, color="tab:green", linestyle="--", linewidth=1.5, label="q50 target")
-#     ax.axvline(q83, color="tab:red", linestyle="--", linewidth=1.5, label="q83 target")
-
-#     ax.set_xlabel("Sampled delta_S [m]")
-#     ax.set_ylabel("Density")
-#     ax.set_title(
-#         f"{site_id} {transect_id} delta_S samples ({ssp}-{scenario}, year={year})"
-#     )
-#     ax.legend(loc="best", fontsize=8)
-#     fig.tight_layout()
-#     fig.savefig(out_fp, dpi=180)
-#     plt.close(fig)
-
-
-# def plot_variance_decomposition(
-#     summary,
-#     site_id,
-#     transect_id,
-#     ssp,
-#     scenario,
-#     year,
-#     out_fp,
-# ):
-#     """Save per-transect variance decomposition bars for dy components."""
-#     base_var = float(summary.get("base_var_m2", np.nan))
-#     trend_var = float(summary.get("trend_var_m2", np.nan))
-#     cross_var = float(summary.get("cross_var_m2", np.nan))
-#     total_var = float(summary.get("dy_var_m2", np.nan))
-
-#     labels = ["Base", "Trend", "2*Cov"]
-#     values = np.array([base_var, trend_var, cross_var], dtype=float)
-#     colors = ["#4c78a8", "#f58518", "#54a24b"]
-
-#     fig, ax = plt.subplots(figsize=(8, 4))
-#     ax.bar(labels, values, color=colors, alpha=0.85)
-#     ax.axhline(0.0, color="black", linewidth=1.0)
-
-#     if np.isfinite(total_var):
-#         ax.axhline(
-#             total_var,
-#             color="crimson",
-#             linestyle="--",
-#             linewidth=1.6,
-#             label=f"Total var = {total_var:.2f} m^2",
-#         )
-
-#     pct_vals = [
-#         float(summary.get("base_var_frac_pct", np.nan)),
-#         float(summary.get("trend_var_frac_pct", np.nan)),
-#         float(summary.get("cross_var_frac_pct", np.nan)),
-#     ]
-
-#     finite_abs = np.abs(values[np.isfinite(values)])
-#     scale = float(np.max(finite_abs)) if finite_abs.size else 1.0
-#     if scale == 0.0:
-#         scale = 1.0
-#     y_off = 0.04 * scale
-
-#     for i, (val, pct) in enumerate(zip(values, pct_vals)):
-#         if not np.isfinite(val):
-#             continue
-#         y_text = val + y_off if val >= 0 else val - y_off
-#         va = "bottom" if val >= 0 else "top"
-#         pct_txt = f"{pct:.1f}%" if np.isfinite(pct) else "nan"
-#         ax.text(i, y_text, pct_txt, ha="center", va=va, fontsize=9)
-
-#     ax.set_ylabel("Variance contribution [m^2]")
-#     ax.set_title(
-#         f"{site_id} {transect_id} variance decomposition ({ssp}-{scenario}, year={year})"
-#     )
-#     ax.legend(loc="best", fontsize=8)
-#     fig.tight_layout()
-#     fig.savefig(out_fp, dpi=180)
-#     plt.close(fig)
-
-
 #%%
 
 import pandas as pd
@@ -563,8 +478,8 @@ out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
 debug_variance_plots = True
 
-nzd_sites_trial = nzd_sites[0:5]
-# nzd_sites_trial = ["nzd0003"]
+# nzd_sites_trial = nzd_sites[0:5]
+nzd_sites_trial = ["nzd0001"]
 # nzd_sites_trial = ["nzd0161"]
 
 #Try only 2 sites first
@@ -583,8 +498,11 @@ for site_id in nzd_sites_trial:
         c for c in df.columns
         if c.startswith(site_id + "-")
     ]
-    #transect_trials=transect_cols[16:19] #Try only 3 transects first
-    for transect_id in transect_cols:
+    
+    transect_trials=transect_cols[18:19] #Try only 3 transects first
+
+    for transect_id in transect_trials:
+    # for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -680,14 +598,14 @@ for site_id in nzd_sites_trial:
         #     t_clean, y_clean,
         #     block_years= 3.0,
         #     n_boot=1000,
-        #     random_state=seed
         # )
 
-        boot_slopes = block_bootstrap_slopes(
+        boot_slopes, boot_slopes_table = block_bootstrap_slopes(
             t_smooth, y_smooth,
             block_years= 5.0,
-            n_boot=1000,
-            random_state=seed
+            n_boot=100,  #1000
+            random_state=seed,
+            return_table=True,
         )
 
 
@@ -819,44 +737,6 @@ for site_id in nzd_sites_trial:
         
         dy, summ, sampled_delta_s, sampled_r_all, sampled_slr_dy = mc_result
 
-        # if debug_slr_histograms:
-        #     dy, summ, sampled_delta_s, sampled_r_all = mc_result
-        #     debug_hist_fp = site_dir / f"{site_id}_{transect_id}_deltaS_hist.png"
-        #     plot_delta_s_debug_histogram(
-        #         sampled_delta_s=sampled_delta_s,
-        #         summary=summ,
-        #         q17=delta_s_q17,
-        #         q50=delta_s_q50,
-        #         q83=delta_s_q83,
-        #         site_id=site_id,
-        #         transect_id=transect_id,
-        #         ssp=ssp_target,
-        #         scenario=scenario_target,
-        #         year=target_year,
-        #         out_fp=debug_hist_fp,
-        #     )
-        # else:
-        #     dy, summ = mc_result
-
-        # if debug_variance_plots:
-        #     var_plot_fp = site_dir / f"{site_id}_{transect_id}_variance_decomp.png"
-        #     plot_variance_decomposition(
-        #         summary=summ,
-        #         site_id=site_id,
-        #         transect_id=transect_id,
-        #         ssp=ssp_target,
-        #         scenario=scenario_target,
-        #         year=target_year,
-        #         out_fp=var_plot_fp,
-        #     )
-
-        # print(
-        #     f"{site_id} {transect_id} var_decomp [%] -> "
-        #     f"base={summ['base_var_frac_pct']:.1f}, "
-        #     f"trend={summ['trend_var_frac_pct']:.1f}, "
-        #     f"2cov={summ['cross_var_frac_pct']:.1f}"
-        # )
-
         # Store results
         dy_rows.append({
                 "site_id": site_id,
@@ -878,16 +758,6 @@ for site_id in nzd_sites_trial:
                 "dy_median_m": float(summ["dy_median_m"]),
                 "dy_p95_m": float(summ["dy_p95_m"])
 
-                # "base_var_m2": float(summ["base_var_m2"]),
-                # "trend_var_m2": float(summ["trend_var_m2"]),
-                # "cross_var_m2": float(summ["cross_var_m2"]),
-                # "dy_var_m2": float(summ["dy_var_m2"]),
-                # "base_sd_m": float(summ["base_sd_m"]),
-                # "trend_sd_m": float(summ["trend_sd_m"]),
-                # "dy_sd_m": float(summ["dy_sd_m"]),
-                # "base_var_frac_pct": float(summ["base_var_frac_pct"]),
-                # "trend_var_frac_pct": float(summ["trend_var_frac_pct"]),
-                # "cross_var_frac_pct": float(summ["cross_var_frac_pct"]),
             })
 
         # Pass all sampled realizations so the plot can show mean + uncertainty envelope.
