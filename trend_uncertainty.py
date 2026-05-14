@@ -69,7 +69,6 @@ def build_loess_time_grid(t, n_grid=None):
 
     return t_numeric, t_grid, t0
 
-
 #%% Filter to most recent continuous segment separated by long gaps. Function DEFINITION
 def filter_to_longest_consecutive_year_run(
     t, y, dates,
@@ -402,6 +401,8 @@ def mc_shoreline_change(
         "dy_median_m": float(np.median(dy_total)),
         "dy_p05_m": float(np.quantile(dy_total, 0.05)),
         "dy_p95_m": float(np.quantile(dy_total, 0.95)),
+
+
     }
 
     outputs = [dy, summary]
@@ -479,8 +480,6 @@ all_merged = all_merged[
     & (all_merged["SSP"].astype(str).str.lower() == ssp_target)
 ].copy()
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
-
-
 
 
 # %% Main loop: load data, apply filters, bootstrap, Monte Carlo
@@ -562,8 +561,6 @@ for site_id in nzd_sites_trial:
             print(f"SKIP {site_id} {transect_id}: {meta['status']} (best_run_len={meta.get('best_run_len')})")
             continue
 
-        import matplotlib.pyplot as plt
-
 #%
         # Apply LOESS smoothing to the cleaned time series.
         
@@ -602,9 +599,6 @@ for site_id in nzd_sites_trial:
         loess_plot_fp = site_dir / f"{site_id}_{transect_id}_loess_smoothed.png"
         fig.savefig(loess_plot_fp, dpi=200, bbox_inches="tight")
         plt.close(fig)
-
-
-
 
         ###############################
         # Apply bootstrap and Monte Carlo functions
@@ -789,6 +783,8 @@ for site_id in nzd_sites_trial:
             raise ValueError("Preview SLR-only segments and dy segments must have matching shapes.")
 
         preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
+        
+        
         plot_observed_and_projected_single_run(
             t_obs=t_clean,
             y_obs=y_clean,
@@ -812,7 +808,106 @@ for site_id in nzd_sites_trial:
 
         print(site_id, transect_id)
 
+#%% Plot projections
 
+#What is in preview_dy? 
+# #It should be the full array of shape (n_mc_realizations_per_transect, n_segments)
+# containing the projected shoreline change 
+# for each Monte Carlo realization and each time segment. 
+# Each row corresponds to one realization's trajectory of shoreline change
+#  over the projection period, segmented into 5-year intervals 
+# (or however the segments were defined). 
+# The values in preview_dy represent the change in shoreline
+#  position (in meters) for each segment of each realization,
+#  which can be summed across segments to get the total projected 
+# change at the end of the time horizon.
+
+
+plt_dy = np.asarray(preview_dy, dtype=float)
+
+
+plt.plot(np.cumsum(np.average(plt_dy, axis=0)), "o-")
+
+plt.plot(year_average_end_obs + np.cumsum(np.average(plt_dy, axis=0)), "o-")
+
+
+
+
+# Use the same baseline and trajectory construction as
+#  plot_observed_and_projected_single_run.
+baseline_mask = (
+    (t_smooth >= (custom_ref_year - 5.0))
+    & (t_smooth <= custom_ref_year)
+)
+# If there are points in the 5-year window before the reference year,
+#  average them for the baseline.
+if np.any(baseline_mask): 
+    year_average_end_obs = float(np.mean(y_smooth[baseline_mask]))
+
+# If no points in the 5-year window, use the closest point to the reference year.
+else:
+    baseline_idx = int(np.argmin(np.abs(t_smooth - custom_ref_year)))
+    year_average_end_obs = float(y_smooth[baseline_idx])
+
+
+# Construct projection years based on segment lengths.
+#  This allows for non-uniform segments if the last one is shorter.
+n_segments = plt_dy.shape[1]
+# By default, segments are 5 years, but the last segment can be shorter 
+# if dt is not divisible by 5.
+seg_durations = np.full(n_segments, float(preview_segment_years), dtype=float)
+remainder = preview_dt % preview_segment_years
+if remainder > 0:
+    seg_durations[-1] = float(remainder)
+
+# The projection years are the cumulative sum of segment durations
+#  added to the reference year.
+projection_years = np.concatenate(
+    ([float(custom_ref_year)], float(custom_ref_year) + np.cumsum(seg_durations))
+)
+
+# Construct cumulative change for each realization at each projection year.
+cum_dy = np.cumsum(plt_dy, axis=1)
+proj_shoreline_all = year_average_end_obs + np.concatenate(
+    [np.zeros((plt_dy.shape[0], 1)), cum_dy],
+    axis=1,
+)
+proj_shoreline_mean = np.mean(proj_shoreline_all, axis=0)
+proj_shoreline_q05 = np.quantile(proj_shoreline_all, 0.05, axis=0)
+proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
+
+# Plot projections from Monte Carlo simulations
+plt.figure(figsize=(10, 5))
+plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed observed")
+plt.plot(projection_years, proj_shoreline_mean, "b-", label="Mean projected change")
+plt.fill_between(
+    projection_years,
+    proj_shoreline_q05,
+    proj_shoreline_q95,
+    color="blue",
+    alpha=0.3,
+    label="90% CI"
+)
+plt.xlabel("Year")
+plt.ylabel("Shoreline position (m)")
+plt.title(f"{site_id} {transect_id} – Projected shoreline change with uncertainty")
+plt.legend()
+plt.tight_layout()
+plt.show()  
+
+
+
+#%%
+#What about preview_slr_only_dy?
+# preview_slr_only_dy should be the array of shape (n_mc_realizations_per_transect, 
+# n_segments) containing the sampled SLR-only shoreline change (dy_slr_k) for each Monte Carlo
+#  realization and each time segment.
+
+plt_slr_only_dy = np.asarray(preview_slr_only_dy, dtype=float)
+
+
+
+#%%
 #Loop ends
 dy_df = (
         pd.DataFrame(dy_rows)
