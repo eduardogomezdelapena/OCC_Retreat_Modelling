@@ -825,14 +825,39 @@ for site_id in nzd_sites_trial:
 
 plt_dy = np.asarray(preview_dy, dtype=float)
 
+plt.plot(plt_dy.T)
 
 plt.plot(np.cumsum(np.average(plt_dy, axis=0)), "o-")
+plt.plot(np.average(plt_dy, axis=0), "o-", label ='average_true')
 
 plt.plot(year_average_end_obs + np.cumsum(np.average(plt_dy, axis=0)), "o-")
+#%%
+projection_years = np.arange(float(custom_ref_year) + preview_segment_years,
+                             float(custom_ref_year) + preview_dt + 1,
+                             preview_segment_years)
 
+proj_mean= year_average_end_obs +np.cumsum(np.average(plt_dy, axis=0))
+proj_min = proj_mean - np.cumsum(np.min(plt_dy, axis=0))
+proj_max = proj_mean + np.cumsum(np.max(plt_dy, axis=0))    
 
-
-
+fig = plt.figure(figsize=(10, 5))
+plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed observed")
+plt.plot(projection_years, proj_mean, "o-", label="Mean projected change")
+plt.fill_between(
+    projection_years,
+    proj_min,
+    proj_max,
+    color="blue",
+    alpha=0.3,
+    label="Min-Max range",
+)
+plt.xlabel("Segment index")
+plt.ylabel("Cumulative shoreline change (m)")
+plt.title(f"{site_id} {transect_id} – Projected shoreline change (min-max range)")
+plt.legend()
+plt.tight_layout()
+plt.show()
+#%%
 # Use the same baseline and trajectory construction as
 #  plot_observed_and_projected_single_run.
 baseline_mask = (
@@ -872,6 +897,8 @@ proj_shoreline_all = year_average_end_obs + np.concatenate(
     [np.zeros((plt_dy.shape[0], 1)), cum_dy],
     axis=1,
 )
+
+plt.plot(proj_shoreline_all)
 proj_shoreline_mean = np.mean(proj_shoreline_all, axis=0)
 proj_shoreline_q05 = np.quantile(proj_shoreline_all, 0.05, axis=0)
 proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
