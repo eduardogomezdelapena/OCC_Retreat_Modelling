@@ -361,8 +361,9 @@ def mc_shoreline_change(
     sampled_r_all = sampled_r_segs.copy()
 
     # dy has shape (n, n_segments): change during each 5-year simulation
-    dy = (bases_per_seg[:, np.newaxis]
+    dy = (bases_per_seg[:, np.newaxis] 
           + sampled_p[:, np.newaxis] * sampled_r_segs * segment_years)
+
 
     if remainder > 0:
         sampled_r_rem = rng.choice(r_samples, size=n)
@@ -822,13 +823,69 @@ for site_id in nzd_sites_trial:
 #  which can be summed across segments to get the total projected 
 # change at the end of the time horizon.
 
-
+#Plotting average
 plt_dy = np.asarray(preview_dy, dtype=float)
 
-plt.plot(plt_dy.T)
+plt.plot(plt_dy.T, alpha=0.2)  # Plot all individual trajectories with low opacity
+plt.plot(np.cumsum(np.average(plt_dy, axis=0)), "o-", label ='average cumulative change')  # Plot average cumulative change
+plt.plot(np.mean(plt_dy, axis=0), "o-", label ='average change per segment')
+plt.legend(loc="lower right")
 
-plt.plot(np.cumsum(np.average(plt_dy, axis=0)), "o-")
-plt.plot(np.average(plt_dy, axis=0), "o-", label ='average_true')
+#How to visualize uncertainty in the projected trajectories?
+# One common approach is to plot the mean trajectory along with 
+# a shaded area representing the range of trajectories
+#  (e.g., min-max or confidence intervals).
+
+
+cum_dy = np.cumsum(plt_dy, axis=1)                         # cumulative per realization
+cum_mean = np.mean(cum_dy, axis=0)
+cum_q05, cum_q25, cum_q75, cum_q95 = np.quantile(cum_dy, [0.05, 0.25, 0.75, 0.95], axis=0)
+
+
+plt.plot(cum_mean, "o-", label="Mean cumulative change")
+plt.fill_between(
+    np.arange(cum_dy.shape[1]),
+    cum_q05,
+    cum_q95,
+    color="blue",
+    alpha=0.3,
+    label="90% CI",
+)
+plt.xlabel("Segment index")
+plt.ylabel("Cumulative shoreline change (m)")
+
+#%%
+#What about preview_slr_only_dy?
+# preview_slr_only_dy should be the array of shape (n_mc_realizations_per_transect, 
+# n_segments) containing the sampled SLR-only shoreline change (dy_slr_k) for each Monte Carlo
+#  realization and each time segment.
+
+plt_slr_only_dy = np.asarray(preview_slr_only_dy, dtype=float)
+
+plt.plot(plt_slr_only_dy.T, alpha=0.2)  # Plot all individual trajectories with low opacity
+plt.plot(np.cumsum(np.average(plt_slr_only_dy, axis=0)), "o-", label ='average cumulative change')  # Plot average cumulative change
+plt.plot(np.mean(plt_slr_only_dy, axis=0), "o-", label ='average change per segment')
+plt.legend(loc="lower right")
+
+
+cum_dy_slr = np.cumsum(plt_slr_only_dy, axis=1)                         # cumulative per realization
+cum_mean = np.mean(cum_dy_slr, axis=0)
+cum_q05, cum_q25, cum_q75, cum_q95 = np.quantile(cum_dy_slr, [0.05, 0.25, 0.75, 0.95], axis=0)
+
+
+plt.plot(cum_mean, "o-", label="Mean cumulative change")
+plt.fill_between(
+    np.arange(cum_dy_slr.shape[1]),
+    cum_q05,
+    cum_q95,
+    color="blue",
+    alpha=0.3,
+    label="90% CI",
+)
+plt.xlabel("Segment index")
+plt.ylabel("Cumulative shoreline change (m)")
+
+#%%
 
 plt.plot(year_average_end_obs + np.cumsum(np.average(plt_dy, axis=0)), "o-")
 #%%
@@ -924,13 +981,7 @@ plt.show()
 
 
 
-#%%
-#What about preview_slr_only_dy?
-# preview_slr_only_dy should be the array of shape (n_mc_realizations_per_transect, 
-# n_segments) containing the sampled SLR-only shoreline change (dy_slr_k) for each Monte Carlo
-#  realization and each time segment.
 
-plt_slr_only_dy = np.asarray(preview_slr_only_dy, dtype=float)
 
 
 
