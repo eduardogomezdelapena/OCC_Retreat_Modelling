@@ -34,6 +34,9 @@ print(f"{len(nzd_sites)} NZD sites found")
 seed = 42 
 single_preview_random_state = seed
 n_mc_realizations_per_transect = 10
+loess_window = 10 
+
+
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
 def load_transect_data(site_id):
     url = (
@@ -568,9 +571,8 @@ for site_id in nzd_sites_trial:
 #%
 
         # Dynamic frac based on 5-year window
-        target_window_years = 5.0
         total_timespan_years = t_clean.max() - t_clean.min()
-        frac = target_window_years / total_timespan_years
+        frac = loess_window / total_timespan_years
         frac = np.clip(frac, 0.15, 0.9)  # Keep within reasonable bounds
 
         x_smooth, y_smooth, _ = loess_1d(
