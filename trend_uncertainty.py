@@ -277,7 +277,7 @@ def mc_shoreline_change(
     For each simulation, dt is split into block-year segments and an independent
     trend rate is sampled per segment:
 
-    dy_total = sum_k [ -(c/tanβ) * ΔS / K + (p * r_k * Δt_k) ]
+    dy_total = sum_k [ -(c/tanβ) * ΔS / K + (r_k * Δt_k) ]
 
     where K is the number of segments, Δt_k is usually block_years, and the last
     segment can be shorter if dt is not divisible by block_years.
@@ -288,8 +288,7 @@ def mc_shoreline_change(
         - delta_S: sea level rise (m), used directly if quantiles are not supplied
         - delta_S_q17, delta_S_q50, delta_S_q83: optional shifted SLR quantiles
             used to fit a Gaussian SLR distribution for sampling
-    - p: persistence factor (sampled uniformly between p_low and p_high)
-    - r_sat: empirical trend rates (sampled from r_samples)
+    - r_samples: empirical trend rates (sampled from r_samples)
     - dt: time horizon (years)
         - return_r_segment_samples: if True, also return sampled r values for each
             time segment (useful for single-run diagnostics)
@@ -297,8 +296,7 @@ def mc_shoreline_change(
             change component per segment for each realization
 
     Uncertainty sources:
-    - Trend rate r_sat (from bootstrap)
-    - Persistence factor p (uniform)
+    - Trend rate r_samples (from bootstrap)
     - Beach slope tan_beta (±20% uniform around nominal)
     - SLR delta_S (deterministic or Gaussian from 17/50/83 quantiles)
 
@@ -343,37 +341,29 @@ def mc_shoreline_change(
     # Vectorized Monte Carlo sampling for speed and reproducibility.
     sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2, size=n)
 
-    bases = -(c / sampled_tan_beta) * sampled_delta_s         # total SLR term (n,): SLR drives retreat (negative y)
+    # The base SLR-driven term is negative (shoreline retreat)
+    #  and is scaled by the sampled tan_beta per realization.
+    bases = -(c / sampled_tan_beta) * sampled_delta_s         
 
-
-    # Split dt into block-year segments; each gets its own independently sampled r.
-    # e.g. dt=75 => 15 segments of block_years each.
-    n_segments = dt // segment_years
+    # Split dt into segments; if there is a remainder, place it first so the
+    # following segment boundaries align to round years (e.g., 2030, 2040, ...).
+    n_full_segments = dt // segment_years
     remainder = dt % segment_years
-
-    # Pro-rate the SLR base term evenly across segments
-    bases_per_seg = bases / n_segments                         # (n,)
-
-    # Sample an independent r per simulation per segment: shape (n, n_segments)
-    sampled_r_segs = rng.choice(r_samples, size=(n, n_segments))
-    sampled_r_all = sampled_r_segs.copy()
-
-    # dy has shape (n, n_segments): change during each block-year simulation
-    dy = (bases_per_seg[:, np.newaxis] 
-          + sampled_r_segs * segment_years)
-
-
+    seg_durations = []
     if remainder > 0:
-        sampled_r_rem = rng.choice(r_samples, size=n)
-        sampled_r_all = np.concatenate([sampled_r_all, sampled_r_rem[:, np.newaxis]], axis=1)
-        dy_rem = (bases * remainder / dt) + sampled_r_rem * remainder
-        dy = np.concatenate([dy, dy_rem[:, np.newaxis]], axis=1)
+        seg_durations.append(float(remainder))
+    seg_durations.extend([float(segment_years)] * int(n_full_segments))
+    seg_durations = np.asarray(seg_durations, dtype=float)
 
-    # SLR-only shoreline change per segment, shape-matched with dy.
-    slr_dy = np.repeat(bases_per_seg[:, np.newaxis], n_segments, axis=1)
-    if remainder > 0:
-        slr_rem = bases * remainder / dt
-        slr_dy = np.concatenate([slr_dy, slr_rem[:, np.newaxis]], axis=1)
+    # One independent trend sample per realization per segment.
+    sampled_r_all = rng.choice(r_samples, size=(n, seg_durations.size))
+
+    # SLR-only contribution is apportioned by segment duration so the per-segment
+    # terms sum exactly to the total sampled SLR base term for each realization.
+    slr_dy = bases[:, np.newaxis] * (seg_durations[np.newaxis, :] / float(dt))
+
+    # Segment-wise shoreline change combines SLR-only and trend components.
+    dy = slr_dy + sampled_r_all * seg_durations[np.newaxis, :]
 
     # Total 75-year change used for summary statistics
     dy_total = dy.sum(axis=1)                                  # (n,)
@@ -381,10 +371,6 @@ def mc_shoreline_change(
     summary = {
         "dt_years": dt,
         "base_term_m": float(np.mean(bases)),  # mean of sampled bases
-
-        # "p_mean": float(np.mean(sampled_p)),
-        # "p_p05": p_low,  # since uniform
-        # "p_p95": p_high,
 
         "slr_sampling": "gaussian_q17_q50_q83" if use_slr_gaussian else "deterministic",
         "delta_S_mean_m": float(np.mean(sampled_delta_s)),
@@ -767,6 +753,10 @@ for site_id in nzd_sites_trial:
 
         preview_segment_years = loess_window  # Match the Monte Carlo 
         # segment length to the LOESS window for interpretability
+
+        # The overall projection time horizon is the same as
+        #  used in the Monte Carlo function, which is determined by 
+        # the "dt" parameter.
         preview_dt = int(summ["dt_years"])
 
         if preview_r_samples.shape != preview_dy.shape:

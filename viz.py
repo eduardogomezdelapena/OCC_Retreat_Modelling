@@ -105,10 +105,21 @@ def plot_observed_and_projected_single_run(
         y_loess = y_loess[loess_order]
 
     n_segments = dy_matrix.shape[1]
-    seg_durations = np.full(n_segments, float(segment_years), dtype=float)
+    n_full_segments = dt // segment_years
     remainder = dt % segment_years
+    seg_durations = np.full(n_segments, float(segment_years), dtype=float)
     if remainder > 0:
-        seg_durations[-1] = float(remainder)
+        # Keep the short segment first so projection years land on round decades.
+        seg_durations[0] = float(remainder)
+        if n_segments != (int(n_full_segments) + 1):
+            raise ValueError(
+                "dy_segments shape is inconsistent with dt and segment_years when remainder is non-zero."
+            )
+    else:
+        if n_segments != int(n_full_segments):
+            raise ValueError(
+                "dy_segments shape is inconsistent with dt and segment_years when remainder is zero."
+            )
 
     seg_starts = projection_start_year + np.concatenate(([0.0], np.cumsum(seg_durations)[:-1]))
     seg_ends = seg_starts + seg_durations
