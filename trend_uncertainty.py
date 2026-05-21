@@ -258,6 +258,7 @@ def mc_shoreline_change(
     c, tan_beta, delta_S,
     r_samples,
     p_low, p_high,
+    segment_years,
     random_state,   
     delta_S_q17,
     delta_S_q50,
@@ -272,13 +273,13 @@ def mc_shoreline_change(
     Monte Carlo propagation for shoreline change using an
     empirical (bootstrap) distribution of shoreline trend rates.
 
-    For each simulation, dt is split into 5-year segments and an independent
+    For each simulation, dt is split into block-year segments and an independent
     trend rate is sampled per segment:
 
     dy_total = sum_k [ -(c/tanβ) * ΔS / K + (p * r_k * Δt_k) ]
 
-    where K is the number of segments, Δt_k is usually 5 years, and the last
-    segment can be shorter if dt is not divisible by 5.
+    where K is the number of segments, Δt_k is usually block_years, and the last
+    segment can be shorter if dt is not divisible by block_years.
 
     Parameters:
     - c: adjustment factor (fixed)
@@ -344,9 +345,8 @@ def mc_shoreline_change(
     bases = -(c / sampled_tan_beta) * sampled_delta_s         # total SLR term (n,): SLR drives retreat (negative y)
     sampled_p = rng.uniform(low=p_low, high=p_high, size=n)
 
-    # Split dt into 5-year segments; each gets its own independently sampled r.
-    # e.g. dt=75 => 15 segments of 5 years each.
-    segment_years = 5
+    # Split dt into block-year segments; each gets its own independently sampled r.
+    # e.g. dt=75 => 15 segments of block_years each.
     n_segments = dt // segment_years
     remainder = dt % segment_years
 
@@ -357,7 +357,7 @@ def mc_shoreline_change(
     sampled_r_segs = rng.choice(r_samples, size=(n, n_segments))
     sampled_r_all = sampled_r_segs.copy()
 
-    # dy has shape (n, n_segments): change during each 5-year simulation
+    # dy has shape (n, n_segments): change during each block-year simulation
     dy = (bases_per_seg[:, np.newaxis] 
           + sampled_p[:, np.newaxis] * sampled_r_segs * segment_years)
 
@@ -600,15 +600,9 @@ for site_id in nzd_sites_trial:
         ###############################
         # Apply bootstrap and Monte Carlo functions
 
-        # boot_slopes = block_bootstrap_slopes(
-        #     t_clean, y_clean,
-        #     block_years= 3.0,
-        #     n_boot=1000,
-        # )
-
         boot_slopes, boot_slopes_table = block_bootstrap_slopes(
             t_smooth, y_smooth,
-            block_years= 10.0,
+            block_years= loess_window,  # Match the LOESS window for consistency
             n_boot=1000,  #1000
             random_state=seed,
             return_table=True,
@@ -731,6 +725,7 @@ for site_id in nzd_sites_trial:
             r_samples = boot_slopes,
             p_low=0.9,
             p_high=1,
+            segment_years= loess_window,  # Match the LOESS window for consistency
             random_state=single_preview_random_state,
             delta_S_q17=delta_s_q17,
             delta_S_q50=delta_s_q50,
