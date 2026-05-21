@@ -113,23 +113,15 @@ def plot_observed_and_projected_single_run(
     seg_starts = projection_start_year + np.concatenate(([0.0], np.cumsum(seg_durations)[:-1]))
     seg_ends = seg_starts + seg_durations
 
-    # Anchor projections at the trailing 5-year mean of the LOESS curve.
-    # If LOESS is unavailable in that window, fall back to observed values.
-    baseline_window_years = 5.0
-    window_start = projection_start_year - baseline_window_years
+    # Anchor projections at the last point of the LOESS curve.
+    # If LOESS is unavailable, fall back to observed values.
 
     baseline_source_t = t_loess if (t_loess is not None and t_loess.size > 0) else t_obs
     baseline_source_y = y_loess if (y_loess is not None and y_loess.size > 0) else y_obs
 
-    baseline_mask = (
-        (baseline_source_t >= window_start)
-        & (baseline_source_t <= projection_start_year)
-    )
-    if np.any(baseline_mask):
-        baseline_y = float(np.mean(baseline_source_y[baseline_mask]))
-    else:
-        baseline_idx = int(np.argmin(np.abs(baseline_source_t - projection_start_year)))
-        baseline_y = float(baseline_source_y[baseline_idx])
+
+    baseline_idx = int(np.argmin(np.abs(baseline_source_t - projection_start_year)))
+    baseline_y = float(baseline_source_y[baseline_idx])
 
     cum_dy = np.cumsum(dy_matrix, axis=1)
     proj_years = np.concatenate(([projection_start_year], seg_ends))
@@ -213,23 +205,23 @@ def plot_observed_and_projected_single_run(
             label="Projected SLR-only",
         )
 
-    first_label = True
-    for i in range(n_segments):
-        x0 = seg_starts[i]
-        x1 = seg_ends[i]
-        y0 = seg_start_shoreline[i]
-        y1 = y0 + r_mean[i] * seg_durations[i]
+    # first_label = True
+    # for i in range(n_segments):
+    #     x0 = seg_starts[i]
+    #     x1 = seg_ends[i]
+    #     y0 = seg_start_shoreline[i]
+    #     y1 = y0 + r_mean[i] * seg_durations[i]
 
-        ax.plot(
-            [x0, x1],
-            [y0, y1],
-            linestyle="--",
-            color="tab:orange",
-            linewidth=1.1,
-            alpha=0.85,
-            label="Mean 5-year trend" if first_label else None,
-        )
-        first_label = False
+    #     ax.plot(
+    #         [x0, x1],
+    #         [y0, y1],
+    #         linestyle="--",
+    #         color="tab:orange",
+    #         linewidth=1.1,
+    #         alpha=0.85,
+    #         label="Mean 5-year trend" if first_label else None,
+    #     )
+    #     first_label = False
 
     if slr_years.size > 0:
         slr_order = np.argsort(slr_years)

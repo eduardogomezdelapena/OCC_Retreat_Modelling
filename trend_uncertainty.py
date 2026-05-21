@@ -34,7 +34,9 @@ print(f"{len(nzd_sites)} NZD sites found")
 seed = 42 
 single_preview_random_state = seed
 n_mc_realizations_per_transect = 10
-loess_window = 10 
+loess_window = 10  # years, used for both LOESS smoothing 
+#and block bootstrap window to match the timescale 
+# of variability captured by the smoothed trend.
 
 
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
@@ -257,7 +259,6 @@ def block_bootstrap_slopes(
 def mc_shoreline_change(
     c, tan_beta, delta_S,
     r_samples,
-    p_low, p_high,
     segment_years,
     random_state,   
     delta_S_q17,
@@ -343,7 +344,7 @@ def mc_shoreline_change(
     sampled_tan_beta = rng.uniform(low=tan_beta * 0.8, high=tan_beta * 1.2, size=n)
 
     bases = -(c / sampled_tan_beta) * sampled_delta_s         # total SLR term (n,): SLR drives retreat (negative y)
-    sampled_p = rng.uniform(low=p_low, high=p_high, size=n)
+
 
     # Split dt into block-year segments; each gets its own independently sampled r.
     # e.g. dt=75 => 15 segments of block_years each.
@@ -359,13 +360,13 @@ def mc_shoreline_change(
 
     # dy has shape (n, n_segments): change during each block-year simulation
     dy = (bases_per_seg[:, np.newaxis] 
-          + sampled_p[:, np.newaxis] * sampled_r_segs * segment_years)
+          + sampled_r_segs * segment_years)
 
 
     if remainder > 0:
         sampled_r_rem = rng.choice(r_samples, size=n)
         sampled_r_all = np.concatenate([sampled_r_all, sampled_r_rem[:, np.newaxis]], axis=1)
-        dy_rem = (bases * remainder / dt) + sampled_p * sampled_r_rem * remainder
+        dy_rem = (bases * remainder / dt) + sampled_r_rem * remainder
         dy = np.concatenate([dy, dy_rem[:, np.newaxis]], axis=1)
 
     # SLR-only shoreline change per segment, shape-matched with dy.
@@ -381,9 +382,9 @@ def mc_shoreline_change(
         "dt_years": dt,
         "base_term_m": float(np.mean(bases)),  # mean of sampled bases
 
-        "p_mean": float(np.mean(sampled_p)),
-        "p_p05": p_low,  # since uniform
-        "p_p95": p_high,
+        # "p_mean": float(np.mean(sampled_p)),
+        # "p_p05": p_low,  # since uniform
+        # "p_p95": p_high,
 
         "slr_sampling": "gaussian_q17_q50_q83" if use_slr_gaussian else "deterministic",
         "delta_S_mean_m": float(np.mean(sampled_delta_s)),
@@ -723,8 +724,6 @@ for site_id in nzd_sites_trial:
             tan_beta=tan_beta ,
             delta_S=delta_s_q50,
             r_samples = boot_slopes,
-            p_low=0.9,
-            p_high=1,
             segment_years= loess_window,  # Match the LOESS window for consistency
             random_state=single_preview_random_state,
             delta_S_q17=delta_s_q17,
@@ -766,7 +765,8 @@ for site_id in nzd_sites_trial:
         preview_r_samples = np.asarray(sampled_r_all, dtype=float)
         preview_slr_only_dy = np.asarray(sampled_slr_dy, dtype=float)
 
-        preview_segment_years = 5
+        preview_segment_years = loess_window  # Match the Monte Carlo 
+        # segment length to the LOESS window for interpretability
         preview_dt = int(summ["dt_years"])
 
         if preview_r_samples.shape != preview_dy.shape:
