@@ -33,7 +33,7 @@ print(f"{len(nzd_sites)} NZD sites found")
 # Define random seed for reproducibility
 seed = 42 
 single_preview_random_state = seed
-n_mc_realizations_per_transect = 10
+n_mc_realizations_per_transect = 50
 loess_window = 10  # years, used for both LOESS smoothing 
 #and block bootstrap window to match the timescale 
 # of variability captured by the smoothed trend.
@@ -264,7 +264,7 @@ def mc_shoreline_change(
     delta_S_q17,
     delta_S_q50,
     delta_S_q83,
-    dt=75,                      # 2025 as baseline year, projections to 2100
+    dt=25,                      # 2025 as baseline year, projections to 2100
     n=200_000,
     return_delta_s_samples=True,
     return_r_segment_samples=True,
@@ -345,25 +345,37 @@ def mc_shoreline_change(
     #  and is scaled by the sampled tan_beta per realization.
     bases = -(c / sampled_tan_beta) * sampled_delta_s         
 
-    # Split dt into segments; if there is a remainder, place it first so the
-    # following segment boundaries align to round years (e.g., 2030, 2040, ...).
-    n_full_segments = dt // segment_years
+    # Split dt into block-year segments; each gets its own independently sampled r.
+    # e.g. dt=75 => 15 segments of block_years each.
+    n_segments = dt // segment_years
     remainder = dt % segment_years
-    seg_durations = []
+
+    # Pro-rate the SLR base term evenly across segments
+    bases_per_seg = bases / n_segments                         # (n,)
+
+    # Sample an independent r per simulation per segment: shape (n, n_segments)
+    sampled_r_segs = rng.choice(r_samples, size=(n, n_segments))
+    sampled_r_all = sampled_r_segs.copy()
+
+    # dy has shape (n, n_segments): change during each block-year simulation
+    dy = (bases_per_seg[:, np.newaxis] 
+          + sampled_r_segs * segment_years)
+
+    # Handle any remaining years if dt is not divisible by segment_years.
     if remainder > 0:
-        seg_durations.append(float(remainder))
-    seg_durations.extend([float(segment_years)] * int(n_full_segments))
-    seg_durations = np.asarray(seg_durations, dtype=float)
+        # Sample an additional r for the remaining segment, shape (n,)
+        sampled_r_rem = rng.choice(r_samples, size=n)
+        sampled_r_all = np.concatenate([sampled_r_all, sampled_r_rem[:, np.newaxis]], axis=1)
+        # Pro-rate the SLR base term for the remaining years 
+        # and add the trend component for the shorter segment.
+        dy_rem = (bases * remainder / dt) + sampled_r_rem * remainder
+        dy = np.concatenate([dy, dy_rem[:, np.newaxis]], axis=1)
 
-    # One independent trend sample per realization per segment.
-    sampled_r_all = rng.choice(r_samples, size=(n, seg_durations.size))
-
-    # SLR-only contribution is apportioned by segment duration so the per-segment
-    # terms sum exactly to the total sampled SLR base term for each realization.
-    slr_dy = bases[:, np.newaxis] * (seg_durations[np.newaxis, :] / float(dt))
-
-    # Segment-wise shoreline change combines SLR-only and trend components.
-    dy = slr_dy + sampled_r_all * seg_durations[np.newaxis, :]
+    # SLR-only shoreline change per segment, shape-matched with dy.
+    slr_dy = np.repeat(bases_per_seg[:, np.newaxis], n_segments, axis=1)
+    if remainder > 0:
+        slr_rem = bases * remainder / dt
+        slr_dy = np.concatenate([slr_dy, slr_rem[:, np.newaxis]], axis=1)
 
     # Total 75-year change used for summary statistics
     dy_total = dy.sum(axis=1)                                  # (n,)
@@ -478,8 +490,8 @@ debug_slr_histograms = True
 debug_variance_plots = True
 
 # nzd_sites_trial = nzd_sites[0:5]
-nzd_sites_trial = ["nzd0001"]
-# nzd_sites_trial = ["nzd0161"]
+# nzd_sites_trial = ["nzd0001"]
+nzd_sites_trial = ["nzd0138"]
 
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
@@ -498,7 +510,7 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    transect_trials=transect_cols[18:19] #Try only 3 transects first
+    transect_trials=transect_cols[3:4] #Try only 3 transects first
 
     for transect_id in transect_trials:
     # for transect_id in transect_cols:
