@@ -189,6 +189,8 @@ def prepare_observed_and_projected_single_run_data(
             axis=1,
         )
         slr_only_shoreline_mean = np.mean(slr_only_shoreline_all, axis=0)
+        slr_only_shoreline_q05 = np.quantile(slr_only_shoreline_all, 0.05, axis=0)
+        slr_only_shoreline_q95 = np.quantile(slr_only_shoreline_all, 0.95, axis=0)
 
     if slr_years.size > 0:
         slr_order = np.argsort(slr_years)
@@ -228,6 +230,8 @@ def prepare_observed_and_projected_single_run_data(
         "proj_shoreline_q05": proj_shoreline_q05,
         "proj_shoreline_q95": proj_shoreline_q95,
         "slr_only_shoreline_mean": slr_only_shoreline_mean,
+        "slr_only_shoreline_q05": slr_only_shoreline_q05,
+        "slr_only_shoreline_q95": slr_only_shoreline_q95,
         "t_loess": t_loess,
         "y_loess": y_loess,
         "is_ensemble": bool(dy_matrix.shape[0] > 1),
@@ -257,6 +261,8 @@ def plot_observed_and_projected_single_run_from_processed(
     proj_shoreline_q05 = prepared["proj_shoreline_q05"]
     proj_shoreline_q95 = prepared["proj_shoreline_q95"]
     slr_only_shoreline_mean = prepared["slr_only_shoreline_mean"]
+    slr_only_shoreline_q05 = prepared["slr_only_shoreline_q05"]
+    slr_only_shoreline_q95 = prepared["slr_only_shoreline_q95"]
     t_loess = prepared["t_loess"]
     y_loess = prepared["y_loess"]
     is_ensemble = prepared["is_ensemble"]
@@ -329,6 +335,14 @@ def plot_observed_and_projected_single_run_from_processed(
             linewidth=2.0,
             alpha=0.7,
             label="Projected SLR-only",
+        )
+        ax.fill_between(
+            proj_years,
+            slr_only_shoreline_q05,
+            slr_only_shoreline_q95,
+            color="deeppink",
+            alpha=0.15,
+            label="SLR-only envelope (5-95%)",
         )
 
     if slr_years.size > 0:
