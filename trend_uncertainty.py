@@ -491,7 +491,7 @@ debug_variance_plots = True
 
 # nzd_sites_trial = nzd_sites[0:5]
 # nzd_sites_trial = ["nzd0001"]
-nzd_sites_trial = ["nzd0138"]
+nzd_sites_trial = ["nzd0137"]
 
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
@@ -510,10 +510,10 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    transect_trials=transect_cols[3:4] #Try only 3 transects first
+    # transect_trials=transect_cols[3:4] #Try only 3 transects first
 
-    for transect_id in transect_trials:
-    # for transect_id in transect_cols:
+    # for transect_id in transect_trials:
+    for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -1035,25 +1035,25 @@ for i, vals in enumerate(groups, start=1):
     x = np.full(len(vals), i, dtype=float) + jitter
     plt.plot(x, vals, "o", alpha=0.6, color="tab:blue", markersize=4)
 plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
-plt.ylim(0, 1000)
+plt.ylim(0, 100)
 plt.ylabel("dy 5–95% CI length [m]")
 plt.title("Spread of shoreline-change uncertainty per site")
 
-# --- reference lines ---
-for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
-    plt.axhline(
-        y,
-        color="red",
-        linestyle="--",
-        linewidth=1
-    )
-    plt.text(
-        0.5, y,
-        txt,
-        color="red",
-        fontsize=9,
-        va="bottom"
-    )
+# # --- reference lines ---
+# for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
+#     plt.axhline(
+#         y,
+#         color="red",
+#         linestyle="--",
+#         linewidth=1
+#     )
+#     plt.text(
+#         0.5, y,
+#         txt,
+#         color="red",
+#         fontsize=9,
+#         va="bottom"
+#     )
 
 plt.tight_layout()
 plt.show()

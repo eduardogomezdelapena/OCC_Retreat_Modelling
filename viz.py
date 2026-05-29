@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
 
-def plot_observed_and_projected_single_run(
+#%%
+def prepare_observed_and_projected_single_run_data(
     t_obs,
     y_obs,
     projection_start_year,
@@ -16,21 +17,60 @@ def plot_observed_and_projected_single_run(
     slr_q83_values,
     dt,
     segment_years,
-    site_id,
-    transect_id,
-    out_fp,
     t_loess,
     y_loess,
     trend_pool,
     slr_only_dy_segments,
 ):
-    """Plot observed shoreline and projected trajectories.
+    """Validate and prepare arrays used by the shoreline projection plot.
 
-    Supports either:
-    - single realization: dy_segments shape (n_segments,)
-    - ensemble realizations: dy_segments shape (n_realizations, n_segments)
+    Parameters
+    ----------
+    t_obs : array-like
+        Observation timestamps in decimal years.
+    y_obs : array-like
+        Observed shoreline position [m], same length as ``t_obs``.
+    projection_start_year : float
+        Year where projection begins and where projected shoreline is anchored.
+    dy_segments : array-like
+        Projected shoreline change per segment [m].
+        Shape can be ``(n_segments,)`` for a single run or
+        ``(n_realizations, n_segments)`` for an ensemble.
+    r_segments : array-like
+        Trend values used per segment [m/yr], with the same segment layout as
+        ``dy_segments``.
+    slr_years : array-like
+        Years associated with sea-level projection quantiles.
+    slr_q17_values : array-like
+        Sea-level change [m] at the 17th percentile for each year in
+        ``slr_years``.
+    slr_q50_values : array-like
+        Sea-level change [m] at the 50th percentile for each year in
+        ``slr_years``.
+    slr_q83_values : array-like
+        Sea-level change [m] at the 83rd percentile for each year in
+        ``slr_years``.
+    dt : int
+        Total projection duration in years.
+    segment_years : int
+        Duration of each projection segment in years.
+    t_loess : array-like or None
+        Optional LOESS timestamps in decimal years.
+    y_loess : array-like or None
+        Optional LOESS shoreline values [m], same length as ``t_loess``.
+    trend_pool : array-like or None
+        Optional full pool of extracted trends [m/yr] for the trend
+        distribution panel. If ``None``, trends used in realizations are used.
+    slr_only_dy_segments : array-like or None
+        Optional SLR-only shoreline change per segment [m] with the same shape
+        as ``dy_segments``.
 
-    In ensemble mode, plots the mean projected shoreline with a 5-95% envelope.
+    Returns
+    -------
+    dict
+        Dictionary containing normalized arrays and derived quantities used by
+        plotting, including sorted time series, projected shoreline statistics,
+        trend density precomputations, and metadata needed for labels.
     """
     t_obs = np.asarray(t_obs, dtype=float).ravel()
     y_obs = np.asarray(y_obs, dtype=float).ravel()
@@ -126,11 +166,8 @@ def plot_observed_and_projected_single_run(
 
     # Anchor projections at the last point of the LOESS curve.
     # If LOESS is unavailable, fall back to observed values.
-
     baseline_source_t = t_loess if (t_loess is not None and t_loess.size > 0) else t_obs
     baseline_source_y = y_loess if (y_loess is not None and y_loess.size > 0) else y_obs
-
-
     baseline_idx = int(np.argmin(np.abs(baseline_source_t - projection_start_year)))
     baseline_y = float(baseline_source_y[baseline_idx])
 
@@ -144,6 +181,7 @@ def plot_observed_and_projected_single_run(
     proj_shoreline_q05 = np.quantile(proj_shoreline_all, 0.05, axis=0)
     proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
 
+    slr_only_shoreline_mean = None
     if slr_only_matrix is not None:
         slr_only_cum = np.cumsum(slr_only_matrix, axis=1)
         slr_only_shoreline_all = baseline_y + np.concatenate(
@@ -152,9 +190,84 @@ def plot_observed_and_projected_single_run(
         )
         slr_only_shoreline_mean = np.mean(slr_only_shoreline_all, axis=0)
 
-    dy_mean = np.mean(dy_matrix, axis=0)
-    seg_start_shoreline = baseline_y + np.concatenate(([0.0], np.cumsum(dy_mean)[:-1]))
-    r_mean = np.mean(r_matrix, axis=0)
+    if slr_years.size > 0:
+        slr_order = np.argsort(slr_years)
+        slr_years = slr_years[slr_order]
+        slr_q17_values = slr_q17_values[slr_order]
+        slr_q50_values = slr_q50_values[slr_order]
+        slr_q83_values = slr_q83_values[slr_order]
+
+    used_trends = r_matrix.ravel()
+    used_trends = used_trends[np.isfinite(used_trends)]
+    all_trends = used_trends if trend_pool is None else trend_pool
+
+    trend_line_x = None
+    trend_line_y = None
+    trend_degenerate_mean = None
+    if all_trends.size > 0:
+        if all_trends.size == 1 or np.allclose(np.std(all_trends), 0.0):
+            trend_degenerate_mean = float(np.mean(all_trends))
+        else:
+            # Gaussian KDE with Silverman's rule-of-thumb bandwidth.
+            n_all = all_trends.size
+            sigma_all = float(np.std(all_trends, ddof=1))
+            bw = 1.06 * sigma_all * (n_all ** (-1.0 / 5.0))
+            bw = max(bw, 1e-6)
+            x_lo = float(np.min(all_trends) - 3.0 * bw)
+            x_hi = float(np.max(all_trends) + 3.0 * bw)
+            trend_line_x = np.linspace(x_lo, x_hi, 300)
+            z = (trend_line_x[:, np.newaxis] - all_trends[np.newaxis, :]) / bw
+            trend_line_y = np.exp(-0.5 * z * z).sum(axis=1) / (n_all * bw * np.sqrt(2.0 * np.pi))
+
+    return {
+        "t_obs": t_obs,
+        "y_obs": y_obs,
+        "projection_start_year": float(projection_start_year),
+        "proj_years": proj_years,
+        "proj_shoreline_mean": proj_shoreline_mean,
+        "proj_shoreline_q05": proj_shoreline_q05,
+        "proj_shoreline_q95": proj_shoreline_q95,
+        "slr_only_shoreline_mean": slr_only_shoreline_mean,
+        "t_loess": t_loess,
+        "y_loess": y_loess,
+        "is_ensemble": bool(dy_matrix.shape[0] > 1),
+        "slr_years": slr_years,
+        "slr_q17_values": slr_q17_values,
+        "slr_q50_values": slr_q50_values,
+        "slr_q83_values": slr_q83_values,
+        "used_trends": used_trends,
+        "trend_line_x": trend_line_x,
+        "trend_line_y": trend_line_y,
+        "trend_degenerate_mean": trend_degenerate_mean,
+    }
+
+#%%
+def plot_observed_and_projected_single_run_from_processed(
+    prepared,
+    site_id,
+    transect_id,
+    out_fp,
+):
+    """Render the shoreline projection figure from precomputed data only."""
+    t_obs = prepared["t_obs"]
+    y_obs = prepared["y_obs"]
+    projection_start_year = prepared["projection_start_year"]
+    proj_years = prepared["proj_years"]
+    proj_shoreline_mean = prepared["proj_shoreline_mean"]
+    proj_shoreline_q05 = prepared["proj_shoreline_q05"]
+    proj_shoreline_q95 = prepared["proj_shoreline_q95"]
+    slr_only_shoreline_mean = prepared["slr_only_shoreline_mean"]
+    t_loess = prepared["t_loess"]
+    y_loess = prepared["y_loess"]
+    is_ensemble = prepared["is_ensemble"]
+    slr_years = prepared["slr_years"]
+    slr_q17_values = prepared["slr_q17_values"]
+    slr_q50_values = prepared["slr_q50_values"]
+    slr_q83_values = prepared["slr_q83_values"]
+    used_trends = prepared["used_trends"]
+    trend_line_x = prepared["trend_line_x"]
+    trend_line_y = prepared["trend_line_y"]
+    trend_degenerate_mean = prepared["trend_degenerate_mean"]
 
     fig = plt.figure(figsize=(15, 6.5))
     gs = GridSpec(
@@ -167,6 +280,7 @@ def plot_observed_and_projected_single_run(
     ax = fig.add_subplot(gs[:, 0])
     ax_trend = fig.add_subplot(gs[0, 1])
     ax_slr = fig.add_subplot(gs[1, 1])
+
     ax.plot(t_obs, y_obs, color="tab:blue", marker="o", markersize=2.5, linewidth=1.2, label="Observed")
     if t_loess is not None and t_loess.size > 0:
         ax.plot(
@@ -177,7 +291,8 @@ def plot_observed_and_projected_single_run(
             alpha=0.9,
             label="LOESS smoothed",
         )
-    if dy_matrix.shape[0] > 1:
+
+    if is_ensemble:
         ax.fill_between(
             proj_years,
             proj_shoreline_q05,
@@ -206,7 +321,7 @@ def plot_observed_and_projected_single_run(
             label="Projected single run",
         )
 
-    if slr_only_matrix is not None:
+    if slr_only_shoreline_mean is not None:
         ax.plot(
             proj_years,
             slr_only_shoreline_mean,
@@ -216,31 +331,7 @@ def plot_observed_and_projected_single_run(
             label="Projected SLR-only",
         )
 
-    # first_label = True
-    # for i in range(n_segments):
-    #     x0 = seg_starts[i]
-    #     x1 = seg_ends[i]
-    #     y0 = seg_start_shoreline[i]
-    #     y1 = y0 + r_mean[i] * seg_durations[i]
-
-    #     ax.plot(
-    #         [x0, x1],
-    #         [y0, y1],
-    #         linestyle="--",
-    #         color="tab:orange",
-    #         linewidth=1.1,
-    #         alpha=0.85,
-    #         label="Mean 5-year trend" if first_label else None,
-    #     )
-    #     first_label = False
-
     if slr_years.size > 0:
-        slr_order = np.argsort(slr_years)
-        slr_years = slr_years[slr_order]
-        slr_q17_values = slr_q17_values[slr_order]
-        slr_q50_values = slr_q50_values[slr_order]
-        slr_q83_values = slr_q83_values[slr_order]
-
         ax_slr.plot(
             slr_years,
             slr_q50_values,
@@ -288,37 +379,22 @@ def plot_observed_and_projected_single_run(
     ax.set_title(f"Observed + projected shoreline with uncertainty: {site_id} {transect_id}")
     ax.grid(alpha=0.25)
 
-    # Right subplot: trend distribution from bootstrap, with sampled realization trends highlighted.
-    used_trends = r_matrix.ravel()
-    used_trends = used_trends[np.isfinite(used_trends)]
-    all_trends = used_trends if trend_pool is None else trend_pool
+    if trend_degenerate_mean is not None:
+        ax_trend.axvline(
+            trend_degenerate_mean,
+            color="gray",
+            linewidth=2.0,
+            label="Extracted trends (degenerate)",
+        )
+    elif trend_line_x is not None and trend_line_y is not None:
+        ax_trend.plot(
+            trend_line_x,
+            trend_line_y,
+            color="dimgray",
+            linewidth=2.0,
+            label="Extracted trends (KDE)",
+        )
 
-    if all_trends.size > 0:
-        if all_trends.size == 1 or np.allclose(np.std(all_trends), 0.0):
-            ax_trend.axvline(
-                float(np.mean(all_trends)),
-                color="gray",
-                linewidth=2.0,
-                label="Extracted trends (degenerate)",
-            )
-        else:
-            # Gaussian KDE with Silverman's rule-of-thumb bandwidth.
-            n_all = all_trends.size
-            sigma_all = float(np.std(all_trends, ddof=1))
-            bw = 1.06 * sigma_all * (n_all ** (-1.0 / 5.0))
-            bw = max(bw, 1e-6)
-            x_lo = float(np.min(all_trends) - 3.0 * bw)
-            x_hi = float(np.max(all_trends) + 3.0 * bw)
-            x_grid = np.linspace(x_lo, x_hi, 300)
-            z = (x_grid[:, np.newaxis] - all_trends[np.newaxis, :]) / bw
-            kde = np.exp(-0.5 * z * z).sum(axis=1) / (n_all * bw * np.sqrt(2.0 * np.pi))
-            ax_trend.plot(
-                x_grid,
-                kde,
-                color="dimgray",
-                linewidth=2.0,
-                label="Extracted trends (KDE)",
-            )
     if used_trends.size > 0:
         # Rug ticks for sampled trends used in realizations.
         y_min, y_max = ax_trend.get_ylim()
@@ -352,3 +428,56 @@ def plot_observed_and_projected_single_run(
     fig.tight_layout()
     fig.savefig(out_fp, dpi=300)
     plt.close(fig)
+
+#%%
+def plot_observed_and_projected_single_run(
+    t_obs,
+    y_obs,
+    projection_start_year,
+    dy_segments,
+    r_segments,
+    slr_years,
+    slr_q17_values,
+    slr_q50_values,
+    slr_q83_values,
+    dt,
+    segment_years,
+    site_id,
+    transect_id,
+    out_fp,
+    t_loess,
+    y_loess,
+    trend_pool,
+    slr_only_dy_segments,
+):
+    """Plot observed shoreline and projected trajectories.
+
+    Supports either:
+    - single realization: dy_segments shape (n_segments,)
+    - ensemble realizations: dy_segments shape (n_realizations, n_segments)
+
+    In ensemble mode, plots the mean projected shoreline with a 5-95% envelope.
+    """
+    prepared = prepare_observed_and_projected_single_run_data(
+        t_obs=t_obs,
+        y_obs=y_obs,
+        projection_start_year=projection_start_year,
+        dy_segments=dy_segments,
+        r_segments=r_segments,
+        slr_years=slr_years,
+        slr_q17_values=slr_q17_values,
+        slr_q50_values=slr_q50_values,
+        slr_q83_values=slr_q83_values,
+        dt=dt,
+        segment_years=segment_years,
+        t_loess=t_loess,
+        y_loess=y_loess,
+        trend_pool=trend_pool,
+        slr_only_dy_segments=slr_only_dy_segments,
+    )
+    plot_observed_and_projected_single_run_from_processed(
+        prepared=prepared,
+        site_id=site_id,
+        transect_id=transect_id,
+        out_fp=out_fp,
+    )
