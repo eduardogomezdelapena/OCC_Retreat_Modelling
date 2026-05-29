@@ -269,6 +269,7 @@ def mc_shoreline_change(
     return_delta_s_samples=True,
     return_r_segment_samples=True,
     return_slr_segment_samples=False,
+    return_trend_segment_samples=False,
 ):
     """
     Monte Carlo propagation for shoreline change using an
@@ -294,6 +295,8 @@ def mc_shoreline_change(
             time segment (useful for single-run diagnostics)
         - return_slr_segment_samples: if True, also return the SLR-only shoreline
             change component per segment for each realization
+        - return_trend_segment_samples: if True, also return the trend-only shoreline
+            change component per segment for each realization (i.e., without SLR contribution)
 
     Uncertainty sources:
     - Trend rate r_samples (from bootstrap)
@@ -377,6 +380,11 @@ def mc_shoreline_change(
         slr_rem = bases * remainder / dt
         slr_dy = np.concatenate([slr_dy, slr_rem[:, np.newaxis]], axis=1)
 
+    # Trend-only shoreline change per segment (no SLR contribution).
+    trend_dy = sampled_r_segs * segment_years
+    if remainder > 0:
+        trend_dy = np.concatenate([trend_dy, (sampled_r_rem * remainder)[:, np.newaxis]], axis=1)
+
     # Total 75-year change used for summary statistics
     dy_total = dy.sum(axis=1)                                  # (n,)
 
@@ -409,6 +417,8 @@ def mc_shoreline_change(
         outputs.append(sampled_r_all)
     if return_slr_segment_samples:
         outputs.append(slr_dy)
+    if return_trend_segment_samples:
+        outputs.append(trend_dy)
 
     return tuple(outputs)
 
@@ -510,10 +520,10 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    # transect_trials=transect_cols[3:4] #Try only 3 transects first
+    transect_trials=transect_cols[0:11] #Try only 1 transect first
 
-    # for transect_id in transect_trials:
-    for transect_id in transect_cols:
+    for transect_id in transect_trials:
+    # for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -731,9 +741,10 @@ for site_id in nzd_sites_trial:
             return_delta_s_samples=True,
             return_r_segment_samples=True,
             return_slr_segment_samples=True,
+            return_trend_segment_samples=True,
             )
         
-        dy, summ, sampled_delta_s, sampled_r_all, sampled_slr_dy = mc_result
+        dy, summ, sampled_delta_s, sampled_r_all, sampled_slr_dy, sampled_trend_dy = mc_result
 
         # Store results
         dy_rows.append({
@@ -762,6 +773,7 @@ for site_id in nzd_sites_trial:
         preview_dy = np.asarray(dy, dtype=float)
         preview_r_samples = np.asarray(sampled_r_all, dtype=float)
         preview_slr_only_dy = np.asarray(sampled_slr_dy, dtype=float)
+        preview_trend_only_dy = np.asarray(sampled_trend_dy, dtype=float)
 
         preview_segment_years = loess_window  # Match the Monte Carlo 
         # segment length to the LOESS window for interpretability
@@ -775,6 +787,8 @@ for site_id in nzd_sites_trial:
             raise ValueError("Preview r samples and dy segments must have matching shapes.")
         if preview_slr_only_dy.shape != preview_dy.shape:
             raise ValueError("Preview SLR-only segments and dy segments must have matching shapes.")
+        if preview_trend_only_dy.shape != preview_dy.shape:
+            raise ValueError("Preview trend-only segments and dy segments must have matching shapes.")
 
         preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
         
@@ -798,6 +812,7 @@ for site_id in nzd_sites_trial:
             out_fp=preview_ts_plot_fp,
             trend_pool=boot_slopes,
             slr_only_dy_segments=preview_slr_only_dy,
+            trend_only_dy_segments=preview_trend_only_dy,
         )
 
         print(site_id, transect_id)

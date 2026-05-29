@@ -21,6 +21,7 @@ def prepare_observed_and_projected_single_run_data(
     y_loess,
     trend_pool,
     slr_only_dy_segments,
+    trend_only_dy_segments,
 ):
     """Validate and prepare arrays used by the shoreline projection plot.
 
@@ -64,6 +65,9 @@ def prepare_observed_and_projected_single_run_data(
     slr_only_dy_segments : array-like or None
         Optional SLR-only shoreline change per segment [m] with the same shape
         as ``dy_segments``.
+    trend_only_dy_segments : array-like or None
+        Optional trend-only shoreline change per segment [m] (no SLR
+        contribution) with the same shape as ``dy_segments``.
 
     Returns
     -------
@@ -91,6 +95,8 @@ def prepare_observed_and_projected_single_run_data(
         trend_pool = trend_pool[np.isfinite(trend_pool)]
     if slr_only_dy_segments is not None:
         slr_only_dy_segments = np.asarray(slr_only_dy_segments, dtype=float)
+    if trend_only_dy_segments is not None:
+        trend_only_dy_segments = np.asarray(trend_only_dy_segments, dtype=float)
 
     if t_obs.size == 0 or y_obs.size == 0:
         raise ValueError("Observed time series is empty.")
@@ -129,6 +135,17 @@ def prepare_observed_and_projected_single_run_data(
             raise ValueError("slr_only_dy_segments must have the same shape as dy_segments.")
     else:
         slr_only_matrix = None
+    if trend_only_dy_segments is not None:
+        if trend_only_dy_segments.ndim == 1:
+            trend_only_matrix = trend_only_dy_segments[np.newaxis, :]
+        elif trend_only_dy_segments.ndim == 2:
+            trend_only_matrix = trend_only_dy_segments
+        else:
+            raise ValueError("trend_only_dy_segments must be a 1D or 2D array.")
+        if trend_only_matrix.shape != dy_matrix.shape:
+            raise ValueError("trend_only_dy_segments must have the same shape as dy_segments.")
+    else:
+        trend_only_matrix = None
     if slr_years.size != slr_q17_values.size:
         raise ValueError("slr_years and slr_q17_values must have the same length.")
     if slr_years.size != slr_q50_values.size:
@@ -182,6 +199,8 @@ def prepare_observed_and_projected_single_run_data(
     proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
 
     slr_only_shoreline_mean = None
+    slr_only_shoreline_q05 = None
+    slr_only_shoreline_q95 = None
     if slr_only_matrix is not None:
         slr_only_cum = np.cumsum(slr_only_matrix, axis=1)
         slr_only_shoreline_all = baseline_y + np.concatenate(
@@ -191,6 +210,19 @@ def prepare_observed_and_projected_single_run_data(
         slr_only_shoreline_mean = np.mean(slr_only_shoreline_all, axis=0)
         slr_only_shoreline_q05 = np.quantile(slr_only_shoreline_all, 0.05, axis=0)
         slr_only_shoreline_q95 = np.quantile(slr_only_shoreline_all, 0.95, axis=0)
+
+    trend_only_shoreline_mean = None
+    trend_only_shoreline_q05 = None
+    trend_only_shoreline_q95 = None
+    if trend_only_matrix is not None:
+        trend_only_cum = np.cumsum(trend_only_matrix, axis=1)
+        trend_only_shoreline_all = baseline_y + np.concatenate(
+            [np.zeros((trend_only_matrix.shape[0], 1)), trend_only_cum],
+            axis=1,
+        )
+        trend_only_shoreline_mean = np.mean(trend_only_shoreline_all, axis=0)
+        trend_only_shoreline_q05 = np.quantile(trend_only_shoreline_all, 0.05, axis=0)
+        trend_only_shoreline_q95 = np.quantile(trend_only_shoreline_all, 0.95, axis=0)
 
     if slr_years.size > 0:
         slr_order = np.argsort(slr_years)
@@ -232,6 +264,9 @@ def prepare_observed_and_projected_single_run_data(
         "slr_only_shoreline_mean": slr_only_shoreline_mean,
         "slr_only_shoreline_q05": slr_only_shoreline_q05,
         "slr_only_shoreline_q95": slr_only_shoreline_q95,
+        "trend_only_shoreline_mean": trend_only_shoreline_mean,
+        "trend_only_shoreline_q05": trend_only_shoreline_q05,
+        "trend_only_shoreline_q95": trend_only_shoreline_q95,
         "t_loess": t_loess,
         "y_loess": y_loess,
         "is_ensemble": bool(dy_matrix.shape[0] > 1),
@@ -263,6 +298,9 @@ def plot_observed_and_projected_single_run_from_processed(
     slr_only_shoreline_mean = prepared["slr_only_shoreline_mean"]
     slr_only_shoreline_q05 = prepared["slr_only_shoreline_q05"]
     slr_only_shoreline_q95 = prepared["slr_only_shoreline_q95"]
+    trend_only_shoreline_mean = prepared["trend_only_shoreline_mean"]
+    trend_only_shoreline_q05 = prepared["trend_only_shoreline_q05"]
+    trend_only_shoreline_q95 = prepared["trend_only_shoreline_q95"]
     t_loess = prepared["t_loess"]
     y_loess = prepared["y_loess"]
     is_ensemble = prepared["is_ensemble"]
@@ -343,6 +381,24 @@ def plot_observed_and_projected_single_run_from_processed(
             color="deeppink",
             alpha=0.15,
             label="SLR-only envelope (5-95%)",
+        )
+
+    if trend_only_shoreline_mean is not None:
+        ax.plot(
+            proj_years,
+            trend_only_shoreline_mean,
+            color="black",
+            linewidth=2.0,
+            alpha=0.7,
+            label="Projected trend-only",
+        )
+        ax.fill_between(
+            proj_years,
+            trend_only_shoreline_q05,
+            trend_only_shoreline_q95,
+            color="black",
+            alpha=0.15,
+            label="Trend-only envelope (5-95%)",
         )
 
     if slr_years.size > 0:
@@ -463,6 +519,7 @@ def plot_observed_and_projected_single_run(
     y_loess,
     trend_pool,
     slr_only_dy_segments,
+    trend_only_dy_segments,
 ):
     """Plot observed shoreline and projected trajectories.
 
@@ -488,6 +545,7 @@ def plot_observed_and_projected_single_run(
         y_loess=y_loess,
         trend_pool=trend_pool,
         slr_only_dy_segments=slr_only_dy_segments,
+        trend_only_dy_segments=trend_only_dy_segments,
     )
     plot_observed_and_projected_single_run_from_processed(
         prepared=prepared,
