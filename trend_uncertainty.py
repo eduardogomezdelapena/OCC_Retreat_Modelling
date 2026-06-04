@@ -255,6 +255,51 @@ def block_bootstrap_slopes(
 
     return slopes
 
+
+def build_projection_segment_durations(
+    projection_start_year,
+    dt,
+    segment_years,
+    align_to_decades,
+):
+    """Build segment durations from a start year and total horizon.
+
+    If align_to_decades is True, the first segment ends at the next decade
+    boundary (e.g., 2026->2030 gives 4 years), then regular segment_years
+    segments are used for the remaining horizon.
+    """
+    total_years = float(dt)
+    if total_years <= 0.0:
+        raise ValueError("dt must be positive.")
+    if segment_years <= 0:
+        raise ValueError("segment_years must be positive.")
+
+    durations = []
+    remaining = total_years
+
+    if align_to_decades:
+        if projection_start_year is None:
+            raise ValueError("projection_start_year is required when align_to_decades=True.")
+        start_year = float(projection_start_year)
+        next_decade = float(np.ceil(start_year / 10.0) * 10.0)
+        first_step = next_decade - start_year
+        tol = 1e-9
+        if first_step > tol and first_step < (remaining - tol):
+            durations.append(first_step)
+            remaining -= first_step
+
+    step_years = float(segment_years)
+    tol = 1e-9
+    while remaining > tol:
+        step = min(step_years, remaining)
+        durations.append(step)
+        remaining -= step
+
+    durations = np.asarray(durations, dtype=float)
+    if durations.size == 0:
+        raise ValueError("No segment durations were generated.")
+    return durations
+
 # %% Monte Carlo simulations. Function DEFINITION
 def mc_shoreline_change(
     c, tan_beta, delta_S,
@@ -264,6 +309,8 @@ def mc_shoreline_change(
     delta_S_q17,
     delta_S_q50,
     delta_S_q83,
+    projection_start_year=None,
+    align_to_decades=False,
     dt=25,                      # 2025 as baseline year, projections to 2100
     n=200_000,
     return_delta_s_samples=True,
@@ -278,10 +325,10 @@ def mc_shoreline_change(
     For each simulation, dt is split into block-year segments and an independent
     trend rate is sampled per segment:
 
-    dy_total = sum_k [ -(c/tanβ) * ΔS / K + (r_k * Δt_k) ]
+    dy_total = sum_k [ -(c/tanβ) * ΔS * (Δt_k/dt) + (r_k * Δt_k) ]
 
-    where K is the number of segments, Δt_k is usually block_years, and the last
-    segment can be shorter if dt is not divisible by block_years.
+    where Δt_k is usually segment_years. If align_to_decades is enabled, the
+    first segment can be shorter so projections land on decade years.
 
     Parameters:
     - c: adjustment factor (fixed)
@@ -312,6 +359,13 @@ def mc_shoreline_change(
     r_samples = r_samples[np.isfinite(r_samples)]
     if r_samples.size == 0:
         raise ValueError("r_samples is empty after removing non-finite values.")
+
+    trend_low = float(np.min(r_samples))
+    trend_high = float(np.max(r_samples))
+    if not np.isfinite(trend_low) or not np.isfinite(trend_high):
+        raise ValueError("Trend range is invalid after filtering non-finite values.")
+    if trend_low == trend_high:
+        raise ValueError("Trend range has zero width; cannot sample uniformly.")
 
     # If quantiles are provided, fit a Gaussian to SLR quantiles and sample delta_S.
     # For a Normal distribution: q_p = mu + sigma*z_p.
@@ -348,42 +402,30 @@ def mc_shoreline_change(
     #  and is scaled by the sampled tan_beta per realization.
     bases = -(c / sampled_tan_beta) * sampled_delta_s         
 
-    # Split dt into block-year segments; each gets its own independently sampled r.
-    # e.g. dt=75 => 15 segments of block_years each.
-    n_segments = dt // segment_years
-    remainder = dt % segment_years
+    seg_durations = build_projection_segment_durations(
+        projection_start_year=projection_start_year,
+        dt=dt,
+        segment_years=segment_years,
+        align_to_decades=align_to_decades,
+    )
+    n_segments = int(seg_durations.size)
+    duration_weights = seg_durations / float(dt)
 
-    # Pro-rate the SLR base term evenly across segments
-    bases_per_seg = bases / n_segments                         # (n,)
+    # Sample an independent r per simulation per segment uniformly across the
+    # full extracted trend range: shape (n, n_segments)
+    sampled_r_all = rng.uniform(low=trend_low, high=trend_high, size=(n, n_segments))
 
-    # Sample an independent r per simulation per segment: shape (n, n_segments)
-    sampled_r_segs = rng.choice(r_samples, size=(n, n_segments))
-    sampled_r_all = sampled_r_segs.copy()
-
-    # dy has shape (n, n_segments): change during each block-year simulation
-    dy = (bases_per_seg[:, np.newaxis] 
-          + sampled_r_segs * segment_years)
-
-    # Handle any remaining years if dt is not divisible by segment_years.
-    if remainder > 0:
-        # Sample an additional r for the remaining segment, shape (n,)
-        sampled_r_rem = rng.choice(r_samples, size=n)
-        sampled_r_all = np.concatenate([sampled_r_all, sampled_r_rem[:, np.newaxis]], axis=1)
-        # Pro-rate the SLR base term for the remaining years 
-        # and add the trend component for the shorter segment.
-        dy_rem = (bases * remainder / dt) + sampled_r_rem * remainder
-        dy = np.concatenate([dy, dy_rem[:, np.newaxis]], axis=1)
+    # dy has shape (n, n_segments): change during each segment simulation.
+    dy = (
+        bases[:, np.newaxis] * duration_weights[np.newaxis, :]
+        + sampled_r_all * seg_durations[np.newaxis, :]
+    )
 
     # SLR-only shoreline change per segment, shape-matched with dy.
-    slr_dy = np.repeat(bases_per_seg[:, np.newaxis], n_segments, axis=1)
-    if remainder > 0:
-        slr_rem = bases * remainder / dt
-        slr_dy = np.concatenate([slr_dy, slr_rem[:, np.newaxis]], axis=1)
+    slr_dy = bases[:, np.newaxis] * duration_weights[np.newaxis, :]
 
     # Trend-only shoreline change per segment (no SLR contribution).
-    trend_dy = sampled_r_segs * segment_years
-    if remainder > 0:
-        trend_dy = np.concatenate([trend_dy, (sampled_r_rem * remainder)[:, np.newaxis]], axis=1)
+    trend_dy = sampled_r_all * seg_durations[np.newaxis, :]
 
     # Total 75-year change used for summary statistics
     dy_total = dy.sum(axis=1)                                  # (n,)
@@ -391,6 +433,8 @@ def mc_shoreline_change(
     summary = {
         "dt_years": dt,
         "base_term_m": float(np.mean(bases)),  # mean of sampled bases
+        "segment_durations_years": seg_durations.tolist(),
+        "align_to_decades": bool(align_to_decades),
 
         "slr_sampling": "gaussian_q17_q50_q83" if use_slr_gaussian else "deterministic",
         "delta_S_mean_m": float(np.mean(sampled_delta_s)),
@@ -402,6 +446,8 @@ def mc_shoreline_change(
         "trend_rate_mean": float(np.mean(r_samples)),  # population mean
         "trend_rate_p05": float(np.quantile(r_samples, 0.05)),
         "trend_rate_p95": float(np.quantile(r_samples, 0.95)),
+        "trend_rate_min": trend_low,
+        "trend_rate_max": trend_high,
 
         "dy_median_m": float(np.median(dy_total)),
         "dy_p05_m": float(np.quantile(dy_total, 0.05)),
@@ -520,7 +566,7 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    transect_trials=transect_cols[0:11] #Try only 1 transect first
+    transect_trials=transect_cols[1:2] #Try only 1 transect first
 
     for transect_id in transect_trials:
     # for transect_id in transect_cols:
@@ -737,6 +783,8 @@ for site_id in nzd_sites_trial:
             delta_S_q17=delta_s_q17,
             delta_S_q50=delta_s_q50,
             delta_S_q83=delta_s_q83,
+            projection_start_year=float(custom_ref_year),
+            align_to_decades=True,
             n=n_mc_realizations_per_transect,
             return_delta_s_samples=True,
             return_r_segment_samples=True,

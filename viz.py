@@ -4,6 +4,42 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
 
+
+def build_projection_segment_durations(projection_start_year, dt, segment_years):
+    """Build decade-aligned segment durations for projection plotting.
+
+    The first segment runs to the next decade boundary, then regular
+    ``segment_years`` steps are used.
+    """
+    total_years = float(dt)
+    if total_years <= 0.0:
+        raise ValueError("dt must be positive.")
+    if segment_years <= 0:
+        raise ValueError("segment_years must be positive.")
+
+    start_year = float(projection_start_year)
+    next_decade = float(np.ceil(start_year / 10.0) * 10.0)
+    first_step = next_decade - start_year
+
+    durations = []
+    remaining = total_years
+    tol = 1e-9
+
+    if first_step > tol and first_step < (remaining - tol):
+        durations.append(first_step)
+        remaining -= first_step
+
+    step_years = float(segment_years)
+    while remaining > tol:
+        step = min(step_years, remaining)
+        durations.append(step)
+        remaining -= step
+
+    seg_durations = np.asarray(durations, dtype=float)
+    if seg_durations.size == 0:
+        raise ValueError("No projection segment durations were generated.")
+    return seg_durations
+
 #%%
 def prepare_observed_and_projected_single_run_data(
     t_obs,
@@ -162,21 +198,15 @@ def prepare_observed_and_projected_single_run_data(
         y_loess = y_loess[loess_order]
 
     n_segments = dy_matrix.shape[1]
-    n_full_segments = dt // segment_years
-    remainder = dt % segment_years
-    seg_durations = np.full(n_segments, float(segment_years), dtype=float)
-    if remainder > 0:
-        # Keep the short segment first so projection years land on round decades.
-        seg_durations[0] = float(remainder)
-        if n_segments != (int(n_full_segments) + 1):
-            raise ValueError(
-                "dy_segments shape is inconsistent with dt and segment_years when remainder is non-zero."
-            )
-    else:
-        if n_segments != int(n_full_segments):
-            raise ValueError(
-                "dy_segments shape is inconsistent with dt and segment_years when remainder is zero."
-            )
+    seg_durations = build_projection_segment_durations(
+        projection_start_year=projection_start_year,
+        dt=dt,
+        segment_years=segment_years,
+    )
+    if n_segments != int(seg_durations.size):
+        raise ValueError(
+            "dy_segments shape is inconsistent with decade-aligned timeline for projection_start_year/dt/segment_years."
+        )
 
     seg_starts = projection_start_year + np.concatenate(([0.0], np.cumsum(seg_durations)[:-1]))
     seg_ends = seg_starts + seg_durations
