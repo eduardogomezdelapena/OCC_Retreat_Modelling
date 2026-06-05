@@ -583,3 +583,5 @@ def plot_observed_and_projected_single_run(
         transect_id=transect_id,
         out_fp=out_fp,
     )
+    
+    return prepared

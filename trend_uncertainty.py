@@ -841,7 +841,7 @@ for site_id in nzd_sites_trial:
         preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
         
         
-        plot_observed_and_projected_single_run(
+        prepared = plot_observed_and_projected_single_run(
             t_obs=t_clean,
             y_obs=y_clean,
             t_loess=t_smooth,
@@ -864,6 +864,49 @@ for site_id in nzd_sites_trial:
         )
 
         print(site_id, transect_id)
+
+#%% Export results to CSV for further plotting in a webdashboard.
+
+def export_results_to_csv(prepared, meta_str):
+    """Export the prepared data for a single site/transect to a CSV file."""
+
+
+    proj_years = prepared["proj_years"]
+    proj_shoreline_mean = prepared["proj_shoreline_mean"]
+    proj_shoreline_q05 = prepared["proj_shoreline_q05"]
+    proj_shoreline_q95 = prepared["proj_shoreline_q95"]
+
+    slr_only_shoreline_mean = prepared["slr_only_shoreline_mean"]
+    slr_only_shoreline_q05 = prepared["slr_only_shoreline_q05"]
+    slr_only_shoreline_q95 = prepared["slr_only_shoreline_q95"]
+
+    trend_only_shoreline_mean = prepared["trend_only_shoreline_mean"]
+    trend_only_shoreline_q05 = prepared["trend_only_shoreline_q05"]
+    trend_only_shoreline_q95 = prepared["trend_only_shoreline_q95"]
+
+
+    # Export projected  YEAR, mean, q05, q95 to CSV
+    df_proj = pd.DataFrame({
+        "year": proj_years,
+        "proj_shoreline_mean": proj_shoreline_mean,
+        "proj_shoreline_q05": proj_shoreline_q05,
+        "proj_shoreline_q95": proj_shoreline_q95,
+        "slr_only_shoreline_mean": slr_only_shoreline_mean,
+        "slr_only_shoreline_q05": slr_only_shoreline_q05,
+        "slr_only_shoreline_q95": slr_only_shoreline_q95,
+        "trend_only_shoreline_mean": trend_only_shoreline_mean,
+        "trend_only_shoreline_q05": trend_only_shoreline_q05,
+        "trend_only_shoreline_q95": trend_only_shoreline_q95,
+    })
+    # Save to csv, but include ssp, site_id and transect_id in the filename
+    # # for easy identification
+    csv_fp = f"{meta_str}_projection_results.csv"
+    df_proj.to_csv(csv_fp, index=False)
+    print(f"Exported projection results to {csv_fp}")
+
+meta_str = f"{site_id}_{transect_id}_{ssp_target}_{scenario_target}"
+export_results_to_csv(prepared, meta_str)
+
 
 #%% Plot projections
 
