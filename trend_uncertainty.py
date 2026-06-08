@@ -480,9 +480,11 @@ from utils import load_metadata_nzrise, load_slrdata_nzrise, load_and_merge_coas
 CRS_WGS84 = 4326 # Lat/Lon
 custom_ref_year = 2025
 
+#preprocessing files are in preprocessing directory 
 
-meta_data_fp = "NZ_VLM_final_May24.csv"
-slr_fp = f"NZ_Searise_noVLM-2005_{custom_ref_year}adjusted.csv"
+
+meta_data_fp = "preprocessing/NZ_VLM_final_May24.csv"
+slr_fp = f"preprocessing/NZ_Searise_noVLM-2005_{custom_ref_year}adjusted.csv"
 meta_data = load_metadata_nzrise(meta_data_fp, crs_str= CRS_WGS84 ) # gpd.DataFrame
 slr_data  = load_slrdata_nzrise(slr_fp) #pd.DataFrame
 
@@ -491,8 +493,8 @@ merged= pd.merge(meta_data,slr_data,
 nzrise_merged = gpd.GeoDataFrame(merged, crs=f"EPSG:{CRS_WGS84}", geometry= 'geom_nzrise')
 
 coastsat_merged = load_and_merge_coastsat_data(
-    "transects_reindexed_Nickupdate.geojson",
-    f"points_ref_shoreline_{custom_ref_year}_Nickupdate.geojson",
+    "preprocessing/transects_reindexed_Nickupdate.geojson",
+    f"preprocessing/points_ref_shoreline_{custom_ref_year}_Nickupdate.geojson",
     CRS_WGS84
 )
 
