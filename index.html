@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shoreline Projections - Interactive Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Leaflet providers -->
+  <script src="https://unpkg.com/leaflet-providers@1.3.0/leaflet-providers.js"></script>
+
+  <!-- Chart.js for time series -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body, #map {
+      height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* Map controls */
+    .map-container {
+      display: flex;
+      height: 100%;
+    }
+
+    #map {
+      flex: 1;
+    }
+
+    /* Info panel */
+    .info-panel {
+      width: 350px;
+      background: white;
+      box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+      overflow-y: auto;
+      position: relative;
+    }
+
+    .panel-header {
+      padding: 15px;
+      border-bottom: 2px solid #007bff;
+      background: #f8f9fa;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .panel-header h2 {
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .panel-header p {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+    }
+
+    .close-btn:hover {
+      color: #000;
+    }
+
+    .panel-content {
+      padding: 15px;
+    }
+
+    .scenario-container {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 5px;
+      border-left: 4px solid #007bff;
+    }
+
+    .scenario-title {
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+
+    .scenario-select {
+      width: 100%;
+      padding: 6px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 250px;
+      margin-bottom: 15px;
+    }
+
+    .data-table {
+      width: 100%;
+      font-size: 11px;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    .data-table th,
+    .data-table td {
+      padding: 6px;
+      border: 1px solid #ddd;
+      text-align: right;
+    }
+
+    .data-table th {
+      background: #e9ecef;
+      font-weight: bold;
+    }
+
+    .data-table tr:nth-child(even) {
+      background: #f9f9f9;
+    }
+
+    .legend {
+      font-size: 11px;
+      margin-top: 10px;
+      padding: 10px;
+      background: white;
+      border-radius: 3px;
+      border: 1px solid #ddd;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+
+    .legend-color {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    /* Hidden state */
+    #infoPanel.hidden {
+      display: none;
+    }
+
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+      .map-container {
+        flex-direction: column;
+      }
+
+      .info-panel {
+        width: 100%;
+        height: 40%;
+        box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+      }
+
+      #map {
+        height: 60%;
+      }
+    }
+
+    /* Point styling */
+    .leaflet-marker-icon {
+      border-radius: 50% !important;
+    }
+
+    .marker-active {
+      filter: drop-shadow(0 0 8px rgba(0, 123, 255, 0.8));
+    }
+
+    .intro-message {
+      padding: 20px;
+      text-align: center;
+      color: #666;
+    }
+
+    .intro-message h3 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="map-container">
+    <div id="map"></div>
+    <div id="infoPanel" class="info-panel hidden">
+      <div class="panel-header">
+        <h2 id="panelTitle">Select a point</h2>
+        <p id="panelSubtitle"></p>
+        <button class="close-btn" onclick="closePanel()">×</button>
+      </div>
+      <div class="panel-content">
+        <div id="panelBody">
+          <div class="intro-message">
+            <h3>Click on a geographic point on the map to view projections</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global state
+    let map;
+    let markers = {};
+    let projectionsData = {};
+    let currentTransectId = null;
+    let currentChart = null;
+
+    // Initialize map
+    function initMap() {
+      map = L.map('map').setView([-40.5, 172.5], 6);
+      
+      // Add base layer
+      L.tileLayer.provider('CartoDB.Positron').addTo(map);
+
+      // Load data
+      loadProjectionsData();
+      loadPointsData();
+    }
+
+    // Load projections data from JSON
+    function loadProjectionsData() {
+      fetch('data/projections.json')
+        .then(response => response.json())
+        .then(data => {
+          projectionsData = data;
+          console.log('Loaded projections for', Object.keys(data).length, 'transects');
+        })
+        .catch(error => console.error('Error loading projections:', error));
+    }
+
+    // Load GeoJSON points
+    function loadPointsData() {
+      fetch('preprocessing/points_ref_shoreline_2025.geojson')
+        .then(response => response.json())
+        .then(geojson => {
+          L.geoJSON(geojson, {
+            pointToLayer: (feature, latlng) => {
+              const transectId = feature.properties.transect_id;
+              const marker = L.circleMarker(latlng, {
+                radius: 5,
+                fillColor: hasProjections(transectId) ? '#007bff' : '#999',
+                color: '#fff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.7,
+                cursor: 'pointer'
+              });
+
+              marker.bindTooltip(transectId, { 
+                permanent: false,
+                direction: 'top',
+                offset: [0, -10]
+              });
+
+              marker.on('click', () => showProjections(transectId, feature.properties));
+              markers[transectId] = marker;
+              return marker;
+            }
+          }).addTo(map);
+        })
+        .catch(error => console.error('Error loading GeoJSON:', error));
+    }
+
+    // Check if transect has projections data
+    function hasProjections(transectId) {
+      return projectionsData.hasOwnProperty(transectId);
+    }
+
+    // Show projections when point is clicked
+    function showProjections(transectId, properties) {
+      currentTransectId = transectId;
+      
+      const transectData = projectionsData[transectId];
+      if (!transectData) {
+        alert('No projection data available for ' + transectId);
+        return;
+      }
+
+      // Update header
+      document.getElementById('panelTitle').textContent = transectId;
+      document.getElementById('panelSubtitle').textContent = 'Site: ' + properties.site_id;
+
+      // Create scenario selector and content
+      const scenarios = Object.keys(transectData.scenarios);
+      let html = '<div class="scenario-container">';
+      html += '<div class="scenario-title">Climate Scenario</div>';
+      html += '<select id="scenarioSelect" class="scenario-select" onchange="updateChart()">';
+      
+      scenarios.forEach(scenario => {
+        html += `<option value="${scenario}">${scenario}</option>`;
+      });
+      
+      html += '</select>';
+      html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
+      html += '<table class="data-table" id="dataTable"></table>';
+      html += '<div class="legend">';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #007bff;"></div> Mean Projection</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 123, 255, 0.2);"></div> 5%-95% Range</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #28a745;"></div> SLR Only</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #ff6b6b;"></div> Trend Only</div>';
+      html += '</div>';
+      html += '</div>';
+
+      document.getElementById('panelBody').innerHTML = html;
+      document.getElementById('infoPanel').classList.remove('hidden');
+
+      // Update chart with first scenario
+      updateChart();
+
+      // Highlight marker
+      Object.values(markers).forEach(m => m.setStyle({ color: '#fff' }));
+      if (markers[transectId]) {
+        markers[transectId].setStyle({ color: '#007bff', weight: 3 });
+      }
+    }
+
+    // Update chart based on selected scenario
+    function updateChart() {
+      const select = document.getElementById('scenarioSelect');
+      const scenario = select.value;
+      const transectData = projectionsData[currentTransectId];
+      const data = transectData.scenarios[scenario];
+
+      if (!data || data.length === 0) {
+        console.error('No data for scenario:', scenario);
+        return;
+      }
+
+      // Prepare chart data
+      const years = data.map(d => d.year.toFixed(0));
+      const projMean = data.map(d => d.proj_shoreline_mean);
+      const projQ05 = data.map(d => d.proj_shoreline_q05);
+      const projQ95 = data.map(d => d.proj_shoreline_q95);
+      const slrMean = data.map(d => d.slr_only_shoreline_mean);
+      const trendMean = data.map(d => d.trend_only_shoreline_mean);
+
+      // Destroy previous chart if exists
+      if (currentChart) {
+        currentChart.destroy();
+      }
+
+      // Create new chart
+      const ctx = document.getElementById('projectionChart').getContext('2d');
+      currentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: years,
+          datasets: [
+            {
+              label: 'Projection (Mean)',
+              data: projMean,
+              borderColor: '#007bff',
+              backgroundColor: 'rgba(0, 123, 255, 0.1)',
+              borderWidth: 2,
+              fill: false,
+              tension: 0.1,
+              pointRadius: 2
+            },
+            {
+              label: '5%-95% Range',
+              data: projQ05.map((q05, i) => ({
+                x: years[i],
+                y0: q05,
+                y1: projQ95[i]
+              })),
+              borderColor: 'rgba(0, 123, 255, 0.3)',
+              backgroundColor: 'rgba(0, 123, 255, 0.1)',
+              fill: false,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              showLine: false
+            },
+            {
+              label: 'SLR Only (Mean)',
+              data: slrMean,
+              borderColor: '#28a745',
+              borderWidth: 1,
+              fill: false,
+              tension: 0.1,
+              pointRadius: 1,
+              borderDash: [3, 3]
+            },
+            {
+              label: 'Trend Only (Mean)',
+              data: trendMean,
+              borderColor: '#ff6b6b',
+              borderWidth: 1,
+              fill: false,
+              tension: 0.1,
+              pointRadius: 1,
+              borderDash: [3, 3]
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                font: { size: 10 },
+                boxWidth: 12
+              }
+            },
+            title: {
+              display: true,
+              text: 'Shoreline Projection: ' + scenario.replace(/_/g, ' '),
+              font: { size: 12 }
+            }
+          },
+          scales: {
+            y: {
+              title: {
+                display: true,
+                text: 'Shoreline Position (m)'
+              },
+              font: { size: 10 }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Year'
+              }
+            }
+          }
+        }
+      });
+
+      // Update data table
+      updateDataTable(data);
+    }
+
+    // Update data table with projection values
+    function updateDataTable(data) {
+      let html = '<tr><th>Year</th><th>Mean</th><th>Q05</th><th>Q95</th></tr>';
+      // Show every 5 years or all if dataset is small
+      const step = data.length > 10 ? 5 : 1;
+      for (let i = 0; i < data.length; i += step) {
+        const d = data[i];
+        html += `<tr>
+          <td>${d.year.toFixed(0)}</td>
+          <td>${d.proj_shoreline_mean.toFixed(1)}</td>
+          <td>${d.proj_shoreline_q05.toFixed(1)}</td>
+          <td>${d.proj_shoreline_q95.toFixed(1)}</td>
+        </tr>`;
+      }
+      document.getElementById('dataTable').innerHTML = html;
+    }
+
+    // Close info panel
+    function closePanel() {
+      document.getElementById('infoPanel').classList.add('hidden');
+      Object.values(markers).forEach(m => m.setStyle({ color: '#fff', weight: 2 }));
+      currentTransectId = null;
+    }
+
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', initMap);
+  </script>
+
+</body>
+</html>

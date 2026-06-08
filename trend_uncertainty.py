@@ -922,283 +922,283 @@ export_results_to_csv(prepared, meta_str)
 
 
 
-#%% Plot projections
+# #%% Plot projections
 
-#What is in preview_dy? 
-# #It should be the full array of shape (n_mc_realizations_per_transect, n_segments)
-# containing the projected shoreline change 
-# for each Monte Carlo realization and each time segment. 
-# Each row corresponds to one realization's trajectory of shoreline change
-#  over the projection period, segmented into 5-year intervals 
-# (or however the segments were defined). 
-# The values in preview_dy represent the change in shoreline
-#  position (in meters) for each segment of each realization,
-#  which can be summed across segments to get the total projected 
-# change at the end of the time horizon.
+# #What is in preview_dy? 
+# # #It should be the full array of shape (n_mc_realizations_per_transect, n_segments)
+# # containing the projected shoreline change 
+# # for each Monte Carlo realization and each time segment. 
+# # Each row corresponds to one realization's trajectory of shoreline change
+# #  over the projection period, segmented into 5-year intervals 
+# # (or however the segments were defined). 
+# # The values in preview_dy represent the change in shoreline
+# #  position (in meters) for each segment of each realization,
+# #  which can be summed across segments to get the total projected 
+# # change at the end of the time horizon.
 
-#Plotting average
-plt_dy = np.asarray(preview_dy, dtype=float)
+# #Plotting average
+# plt_dy = np.asarray(preview_dy, dtype=float)
 
-plt.plot(plt_dy.T, alpha=0.2)  # Plot all individual trajectories with low opacity
-plt.plot(np.cumsum(np.average(plt_dy, axis=0)), "o-", label ='average cumulative change')  # Plot average cumulative change
-plt.plot(np.mean(plt_dy, axis=0), "o-", label ='average change per segment')
-plt.legend(loc="lower right")
+# plt.plot(plt_dy.T, alpha=0.2)  # Plot all individual trajectories with low opacity
+# plt.plot(np.cumsum(np.average(plt_dy, axis=0)), "o-", label ='average cumulative change')  # Plot average cumulative change
+# plt.plot(np.mean(plt_dy, axis=0), "o-", label ='average change per segment')
+# plt.legend(loc="lower right")
 
-#How to visualize uncertainty in the projected trajectories?
-# One common approach is to plot the mean trajectory along with 
-# a shaded area representing the range of trajectories
-#  (e.g., min-max or confidence intervals).
-
-
-cum_dy = np.cumsum(plt_dy, axis=1)                         # cumulative per realization
-cum_mean = np.mean(cum_dy, axis=0)
-cum_q05, cum_q25, cum_q75, cum_q95 = np.quantile(cum_dy, [0.05, 0.25, 0.75, 0.95], axis=0)
+# #How to visualize uncertainty in the projected trajectories?
+# # One common approach is to plot the mean trajectory along with 
+# # a shaded area representing the range of trajectories
+# #  (e.g., min-max or confidence intervals).
 
 
-plt.plot(cum_mean, "o-", label="Mean cumulative change")
-plt.fill_between(
-    np.arange(cum_dy.shape[1]),
-    cum_q05,
-    cum_q95,
-    color="blue",
-    alpha=0.3,
-    label="90% CI",
-)
-plt.xlabel("Segment index")
-plt.ylabel("Cumulative shoreline change (m)")
-
-#%%
-#What about preview_slr_only_dy?
-# preview_slr_only_dy should be the array of shape (n_mc_realizations_per_transect, 
-# n_segments) containing the sampled SLR-only shoreline change (dy_slr_k) for each Monte Carlo
-#  realization and each time segment.
-
-plt_slr_only_dy = np.asarray(preview_slr_only_dy, dtype=float)
-
-plt.plot(plt_slr_only_dy.T, alpha=0.2)  # Plot all individual trajectories with low opacity
-plt.plot(np.cumsum(np.average(plt_slr_only_dy, axis=0)), "o-", label ='average cumulative change')  # Plot average cumulative change
-plt.plot(np.mean(plt_slr_only_dy, axis=0), "o-", label ='average change per segment')
-plt.legend(loc="lower right")
+# cum_dy = np.cumsum(plt_dy, axis=1)                         # cumulative per realization
+# cum_mean = np.mean(cum_dy, axis=0)
+# cum_q05, cum_q25, cum_q75, cum_q95 = np.quantile(cum_dy, [0.05, 0.25, 0.75, 0.95], axis=0)
 
 
-cum_dy_slr = np.cumsum(plt_slr_only_dy, axis=1)                         # cumulative per realization
-cum_mean = np.mean(cum_dy_slr, axis=0)
-cum_q05, cum_q25, cum_q75, cum_q95 = np.quantile(cum_dy_slr, [0.05, 0.25, 0.75, 0.95], axis=0)
+# plt.plot(cum_mean, "o-", label="Mean cumulative change")
+# plt.fill_between(
+#     np.arange(cum_dy.shape[1]),
+#     cum_q05,
+#     cum_q95,
+#     color="blue",
+#     alpha=0.3,
+#     label="90% CI",
+# )
+# plt.xlabel("Segment index")
+# plt.ylabel("Cumulative shoreline change (m)")
+
+# #%%
+# #What about preview_slr_only_dy?
+# # preview_slr_only_dy should be the array of shape (n_mc_realizations_per_transect, 
+# # n_segments) containing the sampled SLR-only shoreline change (dy_slr_k) for each Monte Carlo
+# #  realization and each time segment.
+
+# plt_slr_only_dy = np.asarray(preview_slr_only_dy, dtype=float)
+
+# plt.plot(plt_slr_only_dy.T, alpha=0.2)  # Plot all individual trajectories with low opacity
+# plt.plot(np.cumsum(np.average(plt_slr_only_dy, axis=0)), "o-", label ='average cumulative change')  # Plot average cumulative change
+# plt.plot(np.mean(plt_slr_only_dy, axis=0), "o-", label ='average change per segment')
+# plt.legend(loc="lower right")
 
 
-plt.plot(cum_mean, "o-", label="Mean cumulative change")
-plt.fill_between(
-    np.arange(cum_dy_slr.shape[1]),
-    cum_q05,
-    cum_q95,
-    color="blue",
-    alpha=0.3,
-    label="90% CI",
-)
-plt.xlabel("Segment index")
-plt.ylabel("Cumulative shoreline change (m)")
-
-#%%
-
-plt.plot(year_average_end_obs + np.cumsum(np.average(plt_dy, axis=0)), "o-")
-#%%
-projection_years = np.arange(float(custom_ref_year) + preview_segment_years,
-                             float(custom_ref_year) + preview_dt + 1,
-                             preview_segment_years)
-
-proj_mean= year_average_end_obs +np.cumsum(np.average(plt_dy, axis=0))
-proj_min = proj_mean - np.cumsum(np.min(plt_dy, axis=0))
-proj_max = proj_mean + np.cumsum(np.max(plt_dy, axis=0))    
-
-fig = plt.figure(figsize=(10, 5))
-plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed observed")
-plt.plot(projection_years, proj_mean, "o-", label="Mean projected change")
-plt.fill_between(
-    projection_years,
-    proj_min,
-    proj_max,
-    color="blue",
-    alpha=0.3,
-    label="Min-Max range",
-)
-plt.xlabel("Segment index")
-plt.ylabel("Cumulative shoreline change (m)")
-plt.title(f"{site_id} {transect_id} – Projected shoreline change (min-max range)")
-plt.legend()
-plt.tight_layout()
-plt.show()
-#%%
-# Use the same baseline and trajectory construction as
-#  plot_observed_and_projected_single_run.
-baseline_mask = (
-    (t_smooth >= (custom_ref_year - 5.0))
-    & (t_smooth <= custom_ref_year)
-)
-# If there are points in the 5-year window before the reference year,
-#  average them for the baseline.
-if np.any(baseline_mask): 
-    year_average_end_obs = float(np.mean(y_smooth[baseline_mask]))
-
-# If no points in the 5-year window, use the closest point to the reference year.
-else:
-    baseline_idx = int(np.argmin(np.abs(t_smooth - custom_ref_year)))
-    year_average_end_obs = float(y_smooth[baseline_idx])
+# cum_dy_slr = np.cumsum(plt_slr_only_dy, axis=1)                         # cumulative per realization
+# cum_mean = np.mean(cum_dy_slr, axis=0)
+# cum_q05, cum_q25, cum_q75, cum_q95 = np.quantile(cum_dy_slr, [0.05, 0.25, 0.75, 0.95], axis=0)
 
 
-# Construct projection years based on segment lengths.
-#  This allows for non-uniform segments if the last one is shorter.
-n_segments = plt_dy.shape[1]
-# By default, segments are 5 years, but the last segment can be shorter 
-# if dt is not divisible by 5.
-seg_durations = np.full(n_segments, float(preview_segment_years), dtype=float)
-remainder = preview_dt % preview_segment_years
-if remainder > 0:
-    seg_durations[-1] = float(remainder)
+# plt.plot(cum_mean, "o-", label="Mean cumulative change")
+# plt.fill_between(
+#     np.arange(cum_dy_slr.shape[1]),
+#     cum_q05,
+#     cum_q95,
+#     color="blue",
+#     alpha=0.3,
+#     label="90% CI",
+# )
+# plt.xlabel("Segment index")
+# plt.ylabel("Cumulative shoreline change (m)")
 
-# The projection years are the cumulative sum of segment durations
-#  added to the reference year.
-projection_years = np.concatenate(
-    ([float(custom_ref_year)], float(custom_ref_year) + np.cumsum(seg_durations))
-)
+# #%%
 
-# Construct cumulative change for each realization at each projection year.
-cum_dy = np.cumsum(plt_dy, axis=1)
-proj_shoreline_all = year_average_end_obs + np.concatenate(
-    [np.zeros((plt_dy.shape[0], 1)), cum_dy],
-    axis=1,
-)
+# plt.plot(year_average_end_obs + np.cumsum(np.average(plt_dy, axis=0)), "o-")
+# #%%
+# projection_years = np.arange(float(custom_ref_year) + preview_segment_years,
+#                              float(custom_ref_year) + preview_dt + 1,
+#                              preview_segment_years)
 
-plt.plot(proj_shoreline_all)
-proj_shoreline_mean = np.mean(proj_shoreline_all, axis=0)
-proj_shoreline_q05 = np.quantile(proj_shoreline_all, 0.05, axis=0)
-proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
+# proj_mean= year_average_end_obs +np.cumsum(np.average(plt_dy, axis=0))
+# proj_min = proj_mean - np.cumsum(np.min(plt_dy, axis=0))
+# proj_max = proj_mean + np.cumsum(np.max(plt_dy, axis=0))    
 
-# Plot projections from Monte Carlo simulations
-plt.figure(figsize=(10, 5))
-plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed observed")
-plt.plot(projection_years, proj_shoreline_mean, "b-", label="Mean projected change")
-plt.fill_between(
-    projection_years,
-    proj_shoreline_q05,
-    proj_shoreline_q95,
-    color="blue",
-    alpha=0.3,
-    label="90% CI"
-)
-plt.xlabel("Year")
-plt.ylabel("Shoreline position (m)")
-plt.title(f"{site_id} {transect_id} – Projected shoreline change with uncertainty")
-plt.legend()
-plt.tight_layout()
-plt.show()  
+# fig = plt.figure(figsize=(10, 5))
+# plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed observed")
+# plt.plot(projection_years, proj_mean, "o-", label="Mean projected change")
+# plt.fill_between(
+#     projection_years,
+#     proj_min,
+#     proj_max,
+#     color="blue",
+#     alpha=0.3,
+#     label="Min-Max range",
+# )
+# plt.xlabel("Segment index")
+# plt.ylabel("Cumulative shoreline change (m)")
+# plt.title(f"{site_id} {transect_id} – Projected shoreline change (min-max range)")
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
+# #%%
+# # Use the same baseline and trajectory construction as
+# #  plot_observed_and_projected_single_run.
+# baseline_mask = (
+#     (t_smooth >= (custom_ref_year - 5.0))
+#     & (t_smooth <= custom_ref_year)
+# )
+# # If there are points in the 5-year window before the reference year,
+# #  average them for the baseline.
+# if np.any(baseline_mask): 
+#     year_average_end_obs = float(np.mean(y_smooth[baseline_mask]))
+
+# # If no points in the 5-year window, use the closest point to the reference year.
+# else:
+#     baseline_idx = int(np.argmin(np.abs(t_smooth - custom_ref_year)))
+#     year_average_end_obs = float(y_smooth[baseline_idx])
 
 
+# # Construct projection years based on segment lengths.
+# #  This allows for non-uniform segments if the last one is shorter.
+# n_segments = plt_dy.shape[1]
+# # By default, segments are 5 years, but the last segment can be shorter 
+# # if dt is not divisible by 5.
+# seg_durations = np.full(n_segments, float(preview_segment_years), dtype=float)
+# remainder = preview_dt % preview_segment_years
+# if remainder > 0:
+#     seg_durations[-1] = float(remainder)
+
+# # The projection years are the cumulative sum of segment durations
+# #  added to the reference year.
+# projection_years = np.concatenate(
+#     ([float(custom_ref_year)], float(custom_ref_year) + np.cumsum(seg_durations))
+# )
+
+# # Construct cumulative change for each realization at each projection year.
+# cum_dy = np.cumsum(plt_dy, axis=1)
+# proj_shoreline_all = year_average_end_obs + np.concatenate(
+#     [np.zeros((plt_dy.shape[0], 1)), cum_dy],
+#     axis=1,
+# )
+
+# plt.plot(proj_shoreline_all)
+# proj_shoreline_mean = np.mean(proj_shoreline_all, axis=0)
+# proj_shoreline_q05 = np.quantile(proj_shoreline_all, 0.05, axis=0)
+# proj_shoreline_q95 = np.quantile(proj_shoreline_all, 0.95, axis=0)
+
+# # Plot projections from Monte Carlo simulations
+# plt.figure(figsize=(10, 5))
+# plt.plot(t_smooth, y_smooth, "r-", label="LOESS smoothed observed")
+# plt.plot(projection_years, proj_shoreline_mean, "b-", label="Mean projected change")
+# plt.fill_between(
+#     projection_years,
+#     proj_shoreline_q05,
+#     proj_shoreline_q95,
+#     color="blue",
+#     alpha=0.3,
+#     label="90% CI"
+# )
+# plt.xlabel("Year")
+# plt.ylabel("Shoreline position (m)")
+# plt.title(f"{site_id} {transect_id} – Projected shoreline change with uncertainty")
+# plt.legend()
+# plt.tight_layout()
+# plt.show()  
 
 
 
 
 
-#%%
-#Loop ends
-dy_df = (
-        pd.DataFrame(dy_rows)
-        .sort_values(["site_id", "transect_id"])
-        .reset_index(drop=True)
-    )
 
-print(dy_df.head())
-meta_df = pd.DataFrame(meta_rows).sort_values(["site_id", "transect_id"]).reset_index(drop=True)
-print(meta_df.head())
 
-# %% Quick plot
-
-dy_df["dy_ci90_len_m"] = dy_df["dy_p95_m"] - dy_df["dy_p05_m"]
-
-plt.figure()
-plt.hist(dy_df["dy_ci90_len_m"].dropna(), bins=40)
-plt.xlabel("CI length (dy_p95 - dy_p05) [m]")
-plt.ylabel("Count")
-plt.title("Distribution of dy 5–95% CI length (all transects)")
-plt.show()
-# %% Plot by site (median CI length per site)
-
-plt.figure(figsize=(12, 5))
-labels = dy_df["site_id"].unique()
-
-for i, (site_id, g) in enumerate(dy_df.groupby("site_id"), start=1):
-    y = g["dy_ci90_len_m"].values
-    x = np.full_like(y, i, dtype=float)
-    plt.plot(x, y, "o", alpha=0.4)
-
-plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
-plt.ylabel("dy 5–95% CI length [m]")
-plt.title("Transect-level CI length spread per site")
-plt.tight_layout()
-plt.show()
-# %%
-
-# CI length (if not already computed)
-dy_df["dy_ci90_len_m"] = dy_df["dy_p95_m"] - dy_df["dy_p05_m"]
-
-# Group CI lengths by site
-groups = [
-    g["dy_ci90_len_m"].values
-    for _, g in dy_df.groupby("site_id")
-]
-
-labels = dy_df["site_id"].unique()
-
-plt.figure(figsize=(12, 5))
-plt.boxplot(groups, showfliers=True)
-for i, vals in enumerate(groups, start=1):
-    jitter = np.random.uniform(-0.08, 0.08, size=len(vals))
-    x = np.full(len(vals), i, dtype=float) + jitter
-    plt.plot(x, vals, "o", alpha=0.6, color="tab:blue", markersize=4)
-plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
-plt.ylim(0, 100)
-plt.ylabel("dy 5–95% CI length [m]")
-plt.title("Spread of shoreline-change uncertainty per site")
-
-# # --- reference lines ---
-# for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
-#     plt.axhline(
-#         y,
-#         color="red",
-#         linestyle="--",
-#         linewidth=1
-#     )
-#     plt.text(
-#         0.5, y,
-#         txt,
-#         color="red",
-#         fontsize=9,
-#         va="bottom"
+# #%%
+# #Loop ends
+# dy_df = (
+#         pd.DataFrame(dy_rows)
+#         .sort_values(["site_id", "transect_id"])
+#         .reset_index(drop=True)
 #     )
 
-plt.tight_layout()
-plt.show()
+# print(dy_df.head())
+# meta_df = pd.DataFrame(meta_rows).sort_values(["site_id", "transect_id"]).reset_index(drop=True)
+# print(meta_df.head())
 
-# %%
-# Plot dy_median_m by site (boxplot)
-plt.figure(figsize=(12, 5))
-groups_median = [
-    g["dy_median_m"].values
-    for _, g in dy_df.groupby("site_id")
-]
+# # %% Quick plot
 
-labels = dy_df["site_id"].unique()
+# dy_df["dy_ci90_len_m"] = dy_df["dy_p95_m"] - dy_df["dy_p05_m"]
 
-plt.boxplot(groups_median, showfliers=True)
-for i, vals in enumerate(groups_median, start=1):
-    jitter = np.random.uniform(-0.08, 0.08, size=len(vals))
-    x = np.full(len(vals), i, dtype=float) + jitter
-    plt.plot(x, vals, "o", alpha=0.6, color="tab:blue", markersize=4)
-plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
-plt.ylabel("Median shoreline change (m)")
-plt.title("Median shoreline change per site")
-# plt.ylim(-0, 20)
-plt.tight_layout()
-plt.show()
+# plt.figure()
+# plt.hist(dy_df["dy_ci90_len_m"].dropna(), bins=40)
+# plt.xlabel("CI length (dy_p95 - dy_p05) [m]")
+# plt.ylabel("Count")
+# plt.title("Distribution of dy 5–95% CI length (all transects)")
+# plt.show()
+# # %% Plot by site (median CI length per site)
+
+# plt.figure(figsize=(12, 5))
+# labels = dy_df["site_id"].unique()
+
+# for i, (site_id, g) in enumerate(dy_df.groupby("site_id"), start=1):
+#     y = g["dy_ci90_len_m"].values
+#     x = np.full_like(y, i, dtype=float)
+#     plt.plot(x, y, "o", alpha=0.4)
+
+# plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
+# plt.ylabel("dy 5–95% CI length [m]")
+# plt.title("Transect-level CI length spread per site")
+# plt.tight_layout()
+# plt.show()
+# # %%
+
+# # CI length (if not already computed)
+# dy_df["dy_ci90_len_m"] = dy_df["dy_p95_m"] - dy_df["dy_p05_m"]
+
+# # Group CI lengths by site
+# groups = [
+#     g["dy_ci90_len_m"].values
+#     for _, g in dy_df.groupby("site_id")
+# ]
+
+# labels = dy_df["site_id"].unique()
+
+# plt.figure(figsize=(12, 5))
+# plt.boxplot(groups, showfliers=True)
+# for i, vals in enumerate(groups, start=1):
+#     jitter = np.random.uniform(-0.08, 0.08, size=len(vals))
+#     x = np.full(len(vals), i, dtype=float) + jitter
+#     plt.plot(x, vals, "o", alpha=0.6, color="tab:blue", markersize=4)
+# plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
+# plt.ylim(0, 100)
+# plt.ylabel("dy 5–95% CI length [m]")
+# plt.title("Spread of shoreline-change uncertainty per site")
+
+# # # --- reference lines ---
+# # for y, txt in [(100, "100 m"), (200, "200 m"), (500, "500 m")]:
+# #     plt.axhline(
+# #         y,
+# #         color="red",
+# #         linestyle="--",
+# #         linewidth=1
+# #     )
+# #     plt.text(
+# #         0.5, y,
+# #         txt,
+# #         color="red",
+# #         fontsize=9,
+# #         va="bottom"
+# #     )
+
+# plt.tight_layout()
+# plt.show()
+
+# # %%
+# # Plot dy_median_m by site (boxplot)
+# plt.figure(figsize=(12, 5))
+# groups_median = [
+#     g["dy_median_m"].values
+#     for _, g in dy_df.groupby("site_id")
+# ]
+
+# labels = dy_df["site_id"].unique()
+
+# plt.boxplot(groups_median, showfliers=True)
+# for i, vals in enumerate(groups_median, start=1):
+#     jitter = np.random.uniform(-0.08, 0.08, size=len(vals))
+#     x = np.full(len(vals), i, dtype=float) + jitter
+#     plt.plot(x, vals, "o", alpha=0.6, color="tab:blue", markersize=4)
+# plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
+# plt.ylabel("Median shoreline change (m)")
+# plt.title("Median shoreline change per site")
+# # plt.ylim(-0, 20)
+# plt.tight_layout()
+# plt.show()
 
 
 # %%
