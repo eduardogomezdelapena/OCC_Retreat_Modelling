@@ -904,8 +904,20 @@ def export_results_to_csv(prepared, meta_str):
     df_proj.to_csv(csv_fp, index=False)
     print(f"Exported projection results to {csv_fp}")
 
-meta_str = f"{site_id}_{transect_id}_{ssp_target}_{scenario_target}"
+#create outputs directory if it doesn't exist
+output_dir = Path("outputs")
+output_dir.mkdir(parents=True, exist_ok=True)
+#create site-specific directory if it doesn't exist
+site_dir = output_dir / site_id
+site_dir.mkdir(parents=True, exist_ok=True)
+
+meta_str =site_dir / f"{site_id}_{transect_id}_{ssp_target}_{scenario_target}"
+
+
+#Then save the CSV in the site-specific directory
 export_results_to_csv(prepared, meta_str)
+
+
 
 
 #%% Plot projections
