@@ -468,7 +468,44 @@ def mc_shoreline_change(
 
     return tuple(outputs)
 
+#%% Export results to CSV for further plotting in a webdashboard.
 
+def export_results_to_csv(prepared, meta_str):
+    """Export the prepared data for a single site/transect to a CSV file."""
+
+
+    proj_years = prepared["proj_years"]
+    proj_shoreline_mean = prepared["proj_shoreline_mean"]
+    proj_shoreline_q05 = prepared["proj_shoreline_q05"]
+    proj_shoreline_q95 = prepared["proj_shoreline_q95"]
+
+    slr_only_shoreline_mean = prepared["slr_only_shoreline_mean"]
+    slr_only_shoreline_q05 = prepared["slr_only_shoreline_q05"]
+    slr_only_shoreline_q95 = prepared["slr_only_shoreline_q95"]
+
+    trend_only_shoreline_mean = prepared["trend_only_shoreline_mean"]
+    trend_only_shoreline_q05 = prepared["trend_only_shoreline_q05"]
+    trend_only_shoreline_q95 = prepared["trend_only_shoreline_q95"]
+
+
+    # Export projected  YEAR, mean, q05, q95 to CSV
+    df_proj = pd.DataFrame({
+        "year": proj_years,
+        "proj_shoreline_mean": proj_shoreline_mean,
+        "proj_shoreline_q05": proj_shoreline_q05,
+        "proj_shoreline_q95": proj_shoreline_q95,
+        "slr_only_shoreline_mean": slr_only_shoreline_mean,
+        "slr_only_shoreline_q05": slr_only_shoreline_q05,
+        "slr_only_shoreline_q95": slr_only_shoreline_q95,
+        "trend_only_shoreline_mean": trend_only_shoreline_mean,
+        "trend_only_shoreline_q05": trend_only_shoreline_q05,
+        "trend_only_shoreline_q95": trend_only_shoreline_q95,
+    })
+    # Save to csv, but include ssp, site_id and transect_id in the filename
+    # # for easy identification
+    csv_fp = f"{meta_str}_projection_results.csv"
+    df_proj.to_csv(csv_fp, index=False)
+    print(f"Exported projection results to {csv_fp}")
 #%%
 
 import pandas as pd
@@ -551,6 +588,9 @@ debug_variance_plots = True
 # nzd_sites_trial = ["nzd0001"]
 nzd_sites_trial = ["nzd0137"]
 
+import time
+start_time = time.perf_counter()
+
 #Try only 2 sites first
 for site_id in nzd_sites_trial:
 
@@ -568,10 +608,10 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    transect_trials=transect_cols[1:2] #Try only 1 transect first
+    # transect_trials=transect_cols[1:2] #Try only 1 transect first
 
-    for transect_id in transect_trials:
-    # for transect_id in transect_cols:
+    # for transect_id in transect_trials:
+    for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -867,58 +907,22 @@ for site_id in nzd_sites_trial:
 
         print(site_id, transect_id)
 
-#%% Export results to CSV for further plotting in a webdashboard.
+        #create outputs directory if it doesn't exist
+        output_dir = Path("outputs")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        #create site-specific directory if it doesn't exist
+        site_dir = output_dir / site_id
+        site_dir.mkdir(parents=True, exist_ok=True)
 
-def export_results_to_csv(prepared, meta_str):
-    """Export the prepared data for a single site/transect to a CSV file."""
+        meta_str =site_dir / f"{site_id}_{transect_id}_{ssp_target}_{scenario_target}"
 
+        #Then save the CSV in the site-specific directory
+        export_results_to_csv(prepared, meta_str)
 
-    proj_years = prepared["proj_years"]
-    proj_shoreline_mean = prepared["proj_shoreline_mean"]
-    proj_shoreline_q05 = prepared["proj_shoreline_q05"]
-    proj_shoreline_q95 = prepared["proj_shoreline_q95"]
-
-    slr_only_shoreline_mean = prepared["slr_only_shoreline_mean"]
-    slr_only_shoreline_q05 = prepared["slr_only_shoreline_q05"]
-    slr_only_shoreline_q95 = prepared["slr_only_shoreline_q95"]
-
-    trend_only_shoreline_mean = prepared["trend_only_shoreline_mean"]
-    trend_only_shoreline_q05 = prepared["trend_only_shoreline_q05"]
-    trend_only_shoreline_q95 = prepared["trend_only_shoreline_q95"]
-
-
-    # Export projected  YEAR, mean, q05, q95 to CSV
-    df_proj = pd.DataFrame({
-        "year": proj_years,
-        "proj_shoreline_mean": proj_shoreline_mean,
-        "proj_shoreline_q05": proj_shoreline_q05,
-        "proj_shoreline_q95": proj_shoreline_q95,
-        "slr_only_shoreline_mean": slr_only_shoreline_mean,
-        "slr_only_shoreline_q05": slr_only_shoreline_q05,
-        "slr_only_shoreline_q95": slr_only_shoreline_q95,
-        "trend_only_shoreline_mean": trend_only_shoreline_mean,
-        "trend_only_shoreline_q05": trend_only_shoreline_q05,
-        "trend_only_shoreline_q95": trend_only_shoreline_q95,
-    })
-    # Save to csv, but include ssp, site_id and transect_id in the filename
-    # # for easy identification
-    csv_fp = f"{meta_str}_projection_results.csv"
-    df_proj.to_csv(csv_fp, index=False)
-    print(f"Exported projection results to {csv_fp}")
-
-#create outputs directory if it doesn't exist
-output_dir = Path("outputs")
-output_dir.mkdir(parents=True, exist_ok=True)
-#create site-specific directory if it doesn't exist
-site_dir = output_dir / site_id
-site_dir.mkdir(parents=True, exist_ok=True)
-
-meta_str =site_dir / f"{site_id}_{transect_id}_{ssp_target}_{scenario_target}"
-
-
-#Then save the CSV in the site-specific directory
-export_results_to_csv(prepared, meta_str)
-
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        minutes, seconds = divmod(elapsed_time, 60)
+        print(f"Elapsed time for {site_id} {transect_id}: {int(minutes)} minutes {seconds:.2f} seconds")
 
 
 
