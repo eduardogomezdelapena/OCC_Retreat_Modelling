@@ -320,10 +320,12 @@
       html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
       html += '<table class="data-table" id="dataTable"></table>';
       html += '<div class="legend">';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #007bff;"></div> Mean Projection</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 123, 255, 0.2);"></div> 5%-95% Range</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #28a745;"></div> SLR Only</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #ff6b6b;"></div> Trend Only</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #2ca02c;"></div> Mean Projection</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(44, 160, 44, 0.30);"></div> Projection 5%-95% Range</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: deeppink;"></div> SLR Only</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(255, 20, 147, 0.22);"></div> SLR Only 5%-95% Range</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #000;"></div> Trend Only</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 0, 0, 0.16);"></div> Trend Only 5%-95% Range</div>';
       html += '</div>';
       html += '</div>';
 
@@ -353,12 +355,18 @@
       }
 
       // Prepare chart data
-      const years = data.map(d => d.year.toFixed(0));
-      const projMean = data.map(d => d.proj_shoreline_mean);
-      const projQ05 = data.map(d => d.proj_shoreline_q05);
-      const projQ95 = data.map(d => d.proj_shoreline_q95);
-      const slrMean = data.map(d => d.slr_only_shoreline_mean);
-      const trendMean = data.map(d => d.trend_only_shoreline_mean);
+      const years = data.map(d => Number(d.year));
+      const projMean = data.map(d => Number(d.proj_shoreline_mean));
+      const projQ05 = data.map(d => Number(d.proj_shoreline_q05));
+      const projQ95 = data.map(d => Number(d.proj_shoreline_q95));
+      const slrMean = data.map(d => Number(d.slr_only_shoreline_mean));
+      const slrQ05 = data.map(d => Number(d.slr_only_shoreline_q05));
+      const slrQ95 = data.map(d => Number(d.slr_only_shoreline_q95));
+      const trendMean = data.map(d => Number(d.trend_only_shoreline_mean));
+      const trendQ05 = data.map(d => Number(d.trend_only_shoreline_q05));
+      const trendQ95 = data.map(d => Number(d.trend_only_shoreline_q95));
+
+      const asXY = (values) => years.map((x, i) => ({ x, y: values[i] }));
 
       // Destroy previous chart if exists
       if (currentChart) {
@@ -370,47 +378,98 @@
       currentChart = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: years,
           datasets: [
             {
+              label: '_Projection Q05',
+              data: asXY(projQ05),
+              borderColor: 'rgba(44, 160, 44, 0)',
+              backgroundColor: 'rgba(44, 160, 44, 0)',
+              borderWidth: 0,
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              spanGaps: true
+            },
+            {
+              label: '5%-95% Range',
+              data: asXY(projQ95),
+              borderColor: 'rgba(44, 160, 44, 0)',
+              backgroundColor: 'rgba(44, 160, 44, 0.30)',
+              borderWidth: 0,
+              pointRadius: 0,
+              fill: '-1',
+              tension: 0,
+              spanGaps: true
+            },
+            {
+              label: '_SLR Q05',
+              data: asXY(slrQ05),
+              borderColor: 'rgba(255, 20, 147, 0)',
+              backgroundColor: 'rgba(255, 20, 147, 0)',
+              borderWidth: 0,
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              spanGaps: true
+            },
+            {
+              label: 'SLR Only 5%-95% Range',
+              data: asXY(slrQ95),
+              borderColor: 'rgba(255, 20, 147, 0)',
+              backgroundColor: 'rgba(255, 20, 147, 0.22)',
+              borderWidth: 0,
+              pointRadius: 0,
+              fill: '-1',
+              tension: 0,
+              spanGaps: true
+            },
+            {
+              label: '_Trend Q05',
+              data: asXY(trendQ05),
+              borderColor: 'rgba(0, 0, 0, 0)',
+              backgroundColor: 'rgba(0, 0, 0, 0)',
+              borderWidth: 0,
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              spanGaps: true
+            },
+            {
+              label: 'Trend Only 5%-95% Range',
+              data: asXY(trendQ95),
+              borderColor: 'rgba(0, 0, 0, 0)',
+              backgroundColor: 'rgba(0, 0, 0, 0.16)',
+              borderWidth: 0,
+              pointRadius: 0,
+              fill: '-1',
+              tension: 0,
+              spanGaps: true
+            },
+            {
               label: 'Projection (Mean)',
-              data: projMean,
-              borderColor: '#007bff',
-              backgroundColor: 'rgba(0, 123, 255, 0.1)',
+              data: asXY(projMean),
+              borderColor: '#2ca02c',
+              backgroundColor: 'rgba(44, 160, 44, 0.22)',
               borderWidth: 2,
               fill: false,
               tension: 0.1,
               pointRadius: 2
             },
             {
-              label: '5%-95% Range',
-              data: projQ05.map((q05, i) => ({
-                x: years[i],
-                y0: q05,
-                y1: projQ95[i]
-              })),
-              borderColor: 'rgba(0, 123, 255, 0.3)',
-              backgroundColor: 'rgba(0, 123, 255, 0.1)',
-              fill: false,
-              borderDash: [5, 5],
-              pointRadius: 0,
-              showLine: false
-            },
-            {
               label: 'SLR Only (Mean)',
-              data: slrMean,
-              borderColor: '#28a745',
-              borderWidth: 1,
+              data: asXY(slrMean),
+              borderColor: 'deeppink',
+              borderWidth: 2,
               fill: false,
               tension: 0.1,
               pointRadius: 1,
-              borderDash: [3, 3]
+              borderDash: [6, 3]
             },
             {
               label: 'Trend Only (Mean)',
-              data: trendMean,
-              borderColor: '#ff6b6b',
-              borderWidth: 1,
+              data: asXY(trendMean),
+              borderColor: '#000',
+              borderWidth: 2,
               fill: false,
               tension: 0.1,
               pointRadius: 1,
@@ -425,6 +484,7 @@
             legend: {
               display: true,
               labels: {
+                filter: (item) => !item.text.startsWith('_'),
                 font: { size: 10 },
                 boxWidth: 12
               }
@@ -435,6 +495,7 @@
               font: { size: 12 }
             }
           },
+          parsing: false,
           scales: {
             y: {
               title: {
@@ -444,9 +505,15 @@
               font: { size: 10 }
             },
             x: {
+              type: 'linear',
               title: {
                 display: true,
                 text: 'Year'
+              },
+              ticks: {
+                callback: function(value) {
+                  return Number(value).toFixed(0);
+                }
               }
             }
           }
