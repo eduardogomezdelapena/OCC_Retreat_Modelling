@@ -37,7 +37,7 @@ n_mc_realizations_per_transect = 50
 loess_window = 10  # years, used for both LOESS smoothing 
 #and block bootstrap window to match the timescale 
 # of variability captured by the smoothed trend.
-first_segment_recent_weight = 0.3
+first_segment_recent_weight = 0.5
 recent_trend_window_years = 5.0
 # and min_span_years in filter_to_longest_consecutive_year_run 
 # to ensure a long enough record for stable trend estimation.
@@ -322,6 +322,7 @@ def mc_shoreline_change(
     return_r_segment_samples=True,
     return_slr_segment_samples=False,
     return_trend_segment_samples=False,
+    return_first_segment_sampled_sources=False,
 ):
     """
     Monte Carlo propagation for shoreline change using an
@@ -444,6 +445,11 @@ def mc_shoreline_change(
     # full extracted trend range: shape (n, n_segments)
     sampled_r_all = rng.uniform(low=trend_low, high=trend_high, size=(n, n_segments))
 
+    # Keep sampled trends split by source for plotting diagnostics:
+    # - all historic-sampled trends across all segments
+    # - recent-sampled trends from segment 1 only
+    first_segment_recent_used = np.full(n, np.nan, dtype=float)
+
     # Blend only the first segment trend distribution with a recent trend pool.
     used_recent_first_segment = np.zeros(n, dtype=bool)
     if n_segments > 0 and weight_recent > 0.0 and recent_pool_available:
@@ -451,6 +457,13 @@ def mc_shoreline_change(
         use_recent_draw = rng.random(n) < weight_recent
         sampled_r_all[:, 0] = np.where(use_recent_draw, recent_first_segment, sampled_r_all[:, 0])
         used_recent_first_segment = use_recent_draw
+        first_segment_recent_used[use_recent_draw] = recent_first_segment[use_recent_draw]
+
+    historic_sampled_all = sampled_r_all.copy()
+    if n_segments > 0 and np.any(used_recent_first_segment):
+        historic_sampled_all[used_recent_first_segment, 0] = np.nan
+    historic_sampled_all = historic_sampled_all[np.isfinite(historic_sampled_all)]
+    first_segment_recent_used = first_segment_recent_used[np.isfinite(first_segment_recent_used)]
 
     # dy has shape (n, n_segments): change during each segment simulation.
     dy = (
@@ -507,6 +520,9 @@ def mc_shoreline_change(
         outputs.append(slr_dy)
     if return_trend_segment_samples:
         outputs.append(trend_dy)
+    if return_first_segment_sampled_sources:
+        outputs.append(historic_sampled_all)
+        outputs.append(first_segment_recent_used)
 
     return tuple(outputs)
 
@@ -897,9 +913,19 @@ for site_id in nzd_sites_trial:
             return_r_segment_samples=True,
             return_slr_segment_samples=True,
             return_trend_segment_samples=True,
+            return_first_segment_sampled_sources=True,
             )
         
-        dy, summ, sampled_delta_s, sampled_r_all, sampled_slr_dy, sampled_trend_dy = mc_result
+        (
+            dy,
+            summ,
+            sampled_delta_s,
+            sampled_r_all,
+            sampled_slr_dy,
+            sampled_trend_dy,
+            sampled_first_segment_historic,
+            sampled_first_segment_recent,
+        ) = mc_result
 
         # Store results
         dy_rows.append({
@@ -929,6 +955,14 @@ for site_id in nzd_sites_trial:
         preview_r_samples = np.asarray(sampled_r_all, dtype=float)
         preview_slr_only_dy = np.asarray(sampled_slr_dy, dtype=float)
         preview_trend_only_dy = np.asarray(sampled_trend_dy, dtype=float)
+        preview_sampled_first_segment_historic = np.asarray(
+            sampled_first_segment_historic,
+            dtype=float,
+        )
+        preview_sampled_first_segment_recent = np.asarray(
+            sampled_first_segment_recent,
+            dtype=float,
+        )
 
         preview_segment_years = loess_window  # Match the Monte Carlo 
         # segment length to the LOESS window for interpretability
@@ -944,7 +978,6 @@ for site_id in nzd_sites_trial:
             raise ValueError("Preview SLR-only segments and dy segments must have matching shapes.")
         if preview_trend_only_dy.shape != preview_dy.shape:
             raise ValueError("Preview trend-only segments and dy segments must have matching shapes.")
-
         preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
         
         
@@ -966,6 +999,9 @@ for site_id in nzd_sites_trial:
             transect_id=transect_id,
             out_fp=preview_ts_plot_fp,
             trend_pool=boot_slopes,
+            recent_trend_pool=recent_boot_slopes,
+            sampled_historic_trends=preview_sampled_first_segment_historic,
+            sampled_recent_trends=preview_sampled_first_segment_recent,
             slr_only_dy_segments=preview_slr_only_dy,
             trend_only_dy_segments=preview_trend_only_dy,
         )

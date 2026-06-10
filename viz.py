@@ -56,6 +56,9 @@ def prepare_observed_and_projected_single_run_data(
     t_loess,
     y_loess,
     trend_pool,
+    recent_trend_pool,
+    sampled_historic_trends,
+    sampled_recent_trends,
     slr_only_dy_segments,
     trend_only_dy_segments,
 ):
@@ -129,6 +132,15 @@ def prepare_observed_and_projected_single_run_data(
     if trend_pool is not None:
         trend_pool = np.asarray(trend_pool, dtype=float).ravel()
         trend_pool = trend_pool[np.isfinite(trend_pool)]
+    if recent_trend_pool is not None:
+        recent_trend_pool = np.asarray(recent_trend_pool, dtype=float).ravel()
+        recent_trend_pool = recent_trend_pool[np.isfinite(recent_trend_pool)]
+    if sampled_historic_trends is not None:
+        sampled_historic_trends = np.asarray(sampled_historic_trends, dtype=float).ravel()
+        sampled_historic_trends = sampled_historic_trends[np.isfinite(sampled_historic_trends)]
+    if sampled_recent_trends is not None:
+        sampled_recent_trends = np.asarray(sampled_recent_trends, dtype=float).ravel()
+        sampled_recent_trends = sampled_recent_trends[np.isfinite(sampled_recent_trends)]
     if slr_only_dy_segments is not None:
         slr_only_dy_segments = np.asarray(slr_only_dy_segments, dtype=float)
     if trend_only_dy_segments is not None:
@@ -263,7 +275,15 @@ def prepare_observed_and_projected_single_run_data(
 
     used_trends = r_matrix.ravel()
     used_trends = used_trends[np.isfinite(used_trends)]
-    all_trends = used_trends if trend_pool is None else trend_pool
+    if sampled_historic_trends is not None:
+        historic_rug_trends = sampled_historic_trends
+    else:
+        historic_rug_trends = used_trends
+    if sampled_recent_trends is not None:
+        recent_rug_trends = sampled_recent_trends
+    else:
+        recent_rug_trends = np.array([], dtype=float)
+    all_trends = trend_pool if trend_pool is not None else historic_rug_trends
 
     trend_line_x = None
     trend_line_y = None
@@ -305,6 +325,8 @@ def prepare_observed_and_projected_single_run_data(
         "slr_q50_values": slr_q50_values,
         "slr_q83_values": slr_q83_values,
         "used_trends": used_trends,
+        "historic_rug_trends": historic_rug_trends,
+        "recent_rug_trends": recent_rug_trends,
         "trend_line_x": trend_line_x,
         "trend_line_y": trend_line_y,
         "trend_degenerate_mean": trend_degenerate_mean,
@@ -339,6 +361,8 @@ def plot_observed_and_projected_single_run_from_processed(
     slr_q50_values = prepared["slr_q50_values"]
     slr_q83_values = prepared["slr_q83_values"]
     used_trends = prepared["used_trends"]
+    historic_rug_trends = prepared["historic_rug_trends"]
+    recent_rug_trends = prepared["recent_rug_trends"]
     trend_line_x = prepared["trend_line_x"]
     trend_line_y = prepared["trend_line_y"]
     trend_degenerate_mean = prepared["trend_degenerate_mean"]
@@ -495,20 +519,31 @@ def plot_observed_and_projected_single_run_from_processed(
             label="Extracted trends (KDE)",
         )
 
-    if used_trends.size > 0:
-        # Rug ticks for sampled trends used in realizations.
+    if historic_rug_trends.size > 0 or recent_rug_trends.size > 0:
+        # Rug ticks for historic and recent trend pools.
         y_min, y_max = ax_trend.get_ylim()
         rug_bottom = y_min
         rug_top = y_min + 0.08 * (y_max - y_min if y_max > y_min else 1.0)
-        ax_trend.vlines(
-            used_trends,
-            rug_bottom,
-            rug_top,
-            color="tab:green",
-            alpha=0.8,
-            linewidth=1.2,
-            label="Trends used in realizations (rug)",
-        )
+        if historic_rug_trends.size > 0:
+            ax_trend.vlines(
+                historic_rug_trends,
+                rug_bottom,
+                rug_top,
+                color="tab:green",
+                alpha=0.8,
+                linewidth=1.2,
+                label="Historic sampled trends used in projection (rug)",
+            )
+        if recent_rug_trends.size > 0:
+            ax_trend.vlines(
+                recent_rug_trends,
+                rug_bottom,
+                rug_top,
+                color="darkorange",
+                alpha=0.85,
+                linewidth=1.2,
+                label="Recent sampled trends used in projection (rug)",
+            )
 
     ax_trend.set_xlabel("Trend [m/yr]")
     ax_trend.set_ylabel("Probability density [1/(m/yr)]")
@@ -548,8 +583,11 @@ def plot_observed_and_projected_single_run(
     t_loess,
     y_loess,
     trend_pool,
-    slr_only_dy_segments,
-    trend_only_dy_segments,
+    recent_trend_pool,
+    sampled_historic_trends=None,
+    sampled_recent_trends=None,
+    slr_only_dy_segments=None,
+    trend_only_dy_segments=None,
 ):
     """Plot observed shoreline and projected trajectories.
 
@@ -574,6 +612,9 @@ def plot_observed_and_projected_single_run(
         t_loess=t_loess,
         y_loess=y_loess,
         trend_pool=trend_pool,
+        recent_trend_pool=recent_trend_pool,
+        sampled_historic_trends=sampled_historic_trends,
+        sampled_recent_trends=sampled_recent_trends,
         slr_only_dy_segments=slr_only_dy_segments,
         trend_only_dy_segments=trend_only_dy_segments,
     )
