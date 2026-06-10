@@ -37,7 +37,8 @@ n_mc_realizations_per_transect = 50
 loess_window = 10  # years, used for both LOESS smoothing 
 #and block bootstrap window to match the timescale 
 # of variability captured by the smoothed trend.
-
+# and min_span_years in filter_to_longest_consecutive_year_run 
+# to ensure a long enough record for stable trend estimation.
 
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
 def load_transect_data(site_id):
@@ -255,7 +256,7 @@ def block_bootstrap_slopes(
 
     return slopes
 
-
+#%% Build projection segment durations. Function DEFINITION
 def build_projection_segment_durations(
     projection_start_year,
     dt,
@@ -469,7 +470,6 @@ def mc_shoreline_change(
     return tuple(outputs)
 
 #%% Export results to CSV for further plotting in a webdashboard.
-
 def export_results_to_csv(prepared, meta_str):
     """Export the prepared data for a single site/transect to a CSV file."""
 
@@ -639,7 +639,7 @@ for site_id in nzd_sites_trial:
         # Keep the most recent segment without a gap longer than 9 months.
         t_clean, y_clean, meta = filter_to_longest_consecutive_year_run(
             t_clean, y_clean, dates_clean,
-            min_span_years=5,
+            min_span_years=loess_window,
             max_gap_months=10,
             site_id = site_id,
             transect_id = transect_id,

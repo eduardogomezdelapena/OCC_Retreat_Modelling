@@ -1,0 +1,85 @@
+
+
+Uncertainty bands
+
+
+	Questions:
+
+
+		Is it really the mean projection?
+
+		There are some sites that the "mean" projection is closer to the slr only than trend only.
+
+		When looking to the uncertainty bands, 
+		there are places (like nzd0137-0001) where the green band starts wider than only slr uncertainty band, and then the oslr band somehow surpasses the greend band. 
+
+		Look at plot "nzd0137_nzd0137-0001_single_run_observed_projected.png"
+
+		the green band is suppose to be a composite of oslr and only-trend. Right?
+
+		If they are composites, shouldnt the green band increment more or less in same magnitude thant the pink, and hence the pink would never stop intersecting the green one?
+
+
+		Change projection starting point to 2026.
+
+
+		Ok, so the green line is mean of the total composite realizations. Ofc, not the mean between the only slr and only trend scenarios. SO by design, is closer to the sum between the two, right?
+
+	Answers: 
+		Use this dashboard-friendly explanation:
+
+		Pink band: uncertainty from sea-level rise only.
+		Black band: uncertainty from shoreline trend only.
+		Green band: uncertainty from the full model when both effects act together in each simulation.
+		The key message:
+
+		The green center line is the expected combined result.
+		But the green limits are recalculated from the combined simulations, not built by “adding pink limits + black limits.”
+		Because of that, bands can overlap or cross and this is expected.
+		A plain-language analogy:
+
+		Think of total outcome as “wind + tide.”
+		Average wind + average tide gives the average total.
+		But “bad-wind day” and “bad-tide day” do not always happen together, so extreme ranges of each part do not add neatly.
+		Suggested tooltip text for the dashboard:
+		Green = combined model (SLR + trend) from full Monte Carlo runs.
+		Its mean is additive, but its uncertainty envelope is computed from the combined outcomes, so overlap/crossing with component envelopes is normal.
+
+
+Trend weights
+
+	Q's: 
+		I've been thinking, my projections start at 2025, but I have observed data for a bit more. So I can calibrate my approach. 
+
+
+		there are some sites that the projections look great, and I'm happy about them (nzd0137_nzd0137-0012_single_run_observed_projected.png)
+
+
+		There are other sites, however, where the observations fall vey much outside the uncertainty evenlope. E.g.:
+
+		nzd0137_nzd0137-0006_single_run_observed_projected.png
+
+		I was thinking one way to solve this, could be to assign more weight to the resent observed trend on the trend pool for that initial (2030) projection. What do you think?
+
+		No code modification, just thougths at this stage.
+
+	Answers: 
+
+		That is a very good constraint. Keeping blending only in the first segment gives you calibration where you need it most, without distorting long-term behavior.
+
+A clean way to think about it:
+
+
+For segment 1 (2025→2030), sample trend from a mixture:
+
+r   ∼  w p		 (r) + ( 1 - w) p           (r)
+ 1 		  recent				historical
+
+
+For all later segments:
+
+r   ∼  p           (r),  k≥2
+ k     historical
+
+
+diagnostic plots
