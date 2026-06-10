@@ -37,6 +37,8 @@ n_mc_realizations_per_transect = 50
 loess_window = 10  # years, used for both LOESS smoothing 
 #and block bootstrap window to match the timescale 
 # of variability captured by the smoothed trend.
+first_segment_recent_weight = 0.3
+recent_trend_window_years = 5.0
 # and min_span_years in filter_to_longest_consecutive_year_run 
 # to ensure a long enough record for stable trend estimation.
 
@@ -310,6 +312,8 @@ def mc_shoreline_change(
     delta_S_q17,
     delta_S_q50,
     delta_S_q83,
+    r_recent_samples=None,
+    first_segment_recent_weight=0.0,
     projection_start_year=None,
     align_to_decades=False,
     dt=25,                      # 2025 as baseline year, projections to 2100
@@ -337,7 +341,12 @@ def mc_shoreline_change(
         - delta_S: sea level rise (m), used directly if quantiles are not supplied
         - delta_S_q17, delta_S_q50, delta_S_q83: optional shifted SLR quantiles
             used to fit a Gaussian SLR distribution for sampling
-    - r_samples: empirical trend rates (sampled from r_samples)
+        - r_samples: empirical trend rates (sampled from r_samples)
+        - r_recent_samples: optional empirical trend rates from a recent-only window.
+            When provided with first_segment_recent_weight > 0, only the first segment
+            draws from a blend of historical and recent trend pools.
+        - first_segment_recent_weight: blend weight in [0, 1] used only for the
+            first segment trend sampling. 0 means historical-only; 1 means recent-only.
     - dt: time horizon (years)
         - return_r_segment_samples: if True, also return sampled r values for each
             time segment (useful for single-run diagnostics)
@@ -367,6 +376,25 @@ def mc_shoreline_change(
         raise ValueError("Trend range is invalid after filtering non-finite values.")
     if trend_low == trend_high:
         raise ValueError("Trend range has zero width; cannot sample uniformly.")
+
+    recent_pool_available = False
+    recent_low = np.nan
+    recent_high = np.nan
+    if r_recent_samples is not None:
+        r_recent_samples = np.asarray(r_recent_samples, dtype=float)
+        r_recent_samples = r_recent_samples[np.isfinite(r_recent_samples)]
+        if r_recent_samples.size > 0:
+            recent_low = float(np.min(r_recent_samples))
+            recent_high = float(np.max(r_recent_samples))
+            recent_pool_available = (
+                np.isfinite(recent_low)
+                and np.isfinite(recent_high)
+                and (recent_low < recent_high)
+            )
+
+    weight_recent = float(first_segment_recent_weight)
+    if not np.isfinite(weight_recent) or weight_recent < 0.0 or weight_recent > 1.0:
+        raise ValueError("first_segment_recent_weight must be finite and within [0, 1].")
 
     # If quantiles are provided, fit a Gaussian to SLR quantiles and sample delta_S.
     # For a Normal distribution: q_p = mu + sigma*z_p.
@@ -416,6 +444,14 @@ def mc_shoreline_change(
     # full extracted trend range: shape (n, n_segments)
     sampled_r_all = rng.uniform(low=trend_low, high=trend_high, size=(n, n_segments))
 
+    # Blend only the first segment trend distribution with a recent trend pool.
+    used_recent_first_segment = np.zeros(n, dtype=bool)
+    if n_segments > 0 and weight_recent > 0.0 and recent_pool_available:
+        recent_first_segment = rng.uniform(low=recent_low, high=recent_high, size=n)
+        use_recent_draw = rng.random(n) < weight_recent
+        sampled_r_all[:, 0] = np.where(use_recent_draw, recent_first_segment, sampled_r_all[:, 0])
+        used_recent_first_segment = use_recent_draw
+
     # dy has shape (n, n_segments): change during each segment simulation.
     dy = (
         bases[:, np.newaxis] * duration_weights[np.newaxis, :]
@@ -449,6 +485,11 @@ def mc_shoreline_change(
         "trend_rate_p95": float(np.quantile(r_samples, 0.95)),
         "trend_rate_min": trend_low,
         "trend_rate_max": trend_high,
+        "first_segment_recent_weight": weight_recent,
+        "recent_pool_available": bool(recent_pool_available),
+        "recent_trend_rate_min": None if not recent_pool_available else recent_low,
+        "recent_trend_rate_max": None if not recent_pool_available else recent_high,
+        "first_segment_recent_share_realized": float(np.mean(used_recent_first_segment)),
 
         "dy_median_m": float(np.median(dy_total)),
         "dy_p05_m": float(np.quantile(dy_total, 0.05)),
@@ -705,6 +746,28 @@ for site_id in nzd_sites_trial:
             return_table=True,
         )
 
+        recent_boot_slopes = None
+        recent_mask = t_smooth >= (float(np.max(t_smooth)) - recent_trend_window_years)
+        t_recent = t_smooth[recent_mask]
+        y_recent = y_smooth[recent_mask]
+
+        if t_recent.size >= 2:
+            recent_span_years = float(np.max(t_recent) - np.min(t_recent))
+            if recent_span_years > 0.0:
+                recent_block_years = min(recent_trend_window_years, recent_span_years * 0.8)
+                if recent_block_years > 0.0:
+                    try:
+                        recent_boot_slopes = block_bootstrap_slopes(
+                            t_recent,
+                            y_recent,
+                            block_years=recent_block_years,
+                            n_boot=1000,
+                            random_state=seed + 1,
+                            return_table=False,
+                        )
+                    except ValueError:
+                        recent_boot_slopes = None
+
 
         # Extract tan_beta (beach slope) from the coastsat data for this transect
         if "beach_slope" not in coastsat_merged.columns:
@@ -820,6 +883,8 @@ for site_id in nzd_sites_trial:
             tan_beta=tan_beta ,
             delta_S=delta_s_q50,
             r_samples = boot_slopes,
+            r_recent_samples=recent_boot_slopes,
+            first_segment_recent_weight=first_segment_recent_weight,
             segment_years= loess_window,  # Match the LOESS window for consistency
             random_state=single_preview_random_state,
             delta_S_q17=delta_s_q17,
