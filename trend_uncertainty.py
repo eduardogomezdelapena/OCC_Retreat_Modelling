@@ -694,13 +694,13 @@ all_merged = all_merged[
 ].copy()
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 
-# nzd_sites_trial = select_sites_within_region(
-#     all_merged=all_merged,
-#     nzd_sites=nzd_sites,
-#     target_region_name="Auckland",
-# )
-
-nzd_sites_trial = ["nzd0132"]
+nzd_sites_trial = select_sites_within_region(
+    all_merged=all_merged,
+    nzd_sites=nzd_sites,
+    target_region_name="Auckland",
+)
+nzd_sites_trial = nzd_sites_trial[16:]
+# nzd_sites_trial = ["nzd0132"]
 # # Quick trial mode: sample up to 5 sites at random from the region selection.
 # trial_n_sites = min(5, len(nzd_sites_trial))
 # rng_trial = np.random.default_rng(seed)
@@ -741,10 +741,10 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    transect_trials=transect_cols[63:-1] #Try only 1 transect first
+    # transect_trials=transect_cols[-1:] #Try only 1 transect first
 
-    for transect_id in transect_trials:
-    # for transect_id in transect_cols:
+    # for transect_id in transect_trials:
+    for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
