@@ -568,6 +568,64 @@ def export_results_to_csv(prepared, meta_str):
 import pandas as pd
 import geopandas as gpd
 from utils import load_metadata_nzrise, load_slrdata_nzrise, load_and_merge_coastsat_data, nearest_points
+from pathlib import Path
+
+
+def select_sites_within_region(
+    all_merged,
+    nzd_sites,
+    target_region_name="Auckland",
+    regions_fp=Path("Olds/postprocessing/regions/regional-council-2025.gpkg"),
+):
+    """Select CoastSat site IDs that fall within a named regional council polygon."""
+    if not regions_fp.exists():
+        raise FileNotFoundError(f"Regional council file not found: {regions_fp}")
+
+    regions = gpd.read_file(regions_fp)
+    region_name_col = "REGC2025_V1_00_NAME"
+    if region_name_col not in regions.columns:
+        raise KeyError(f"Expected '{region_name_col}' column in {regions_fp}")
+
+    regions = gpd.GeoDataFrame(
+        regions[[region_name_col, "geometry"]].copy(),
+        geometry="geometry",
+        crs=regions.crs,
+    )
+    regions = regions.to_crs(all_merged.crs)
+
+    site_points = (
+        all_merged[["site_id", "geom_points_ref"]]
+        .dropna(subset=["site_id", "geom_points_ref"])
+        .drop_duplicates(subset=["site_id"])
+        .rename(columns={"geom_points_ref": "geometry"})
+    )
+    site_points = gpd.GeoDataFrame(site_points, geometry="geometry", crs=all_merged.crs)
+
+    site_regions = gpd.sjoin(site_points, regions, how="left", predicate="within")
+
+    sites_in_target_region = sorted(
+        site_regions.loc[
+            site_regions[region_name_col].astype(str) == target_region_name,
+            "site_id",
+        ]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+
+    nzd_sites_trial = sorted(set(sites_in_target_region).intersection(nzd_sites))
+
+    print(f"Sites in region '{target_region_name}' ({len(nzd_sites_trial)}):")
+    for sid in nzd_sites_trial:
+        print(f"  {sid}")
+
+    if not nzd_sites_trial:
+        raise ValueError(
+            f"No CoastSat sites found in region '{target_region_name}'. "
+            "Check region boundaries and site point geometries."
+        )
+
+    return nzd_sites_trial
 #% Define constants, load data, and merge datasets (similar to merge_slr_sat.py)
 
 # Constants
@@ -630,20 +688,29 @@ all_merged = all_merged[
 ].copy()
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 
+nzd_sites_trial = select_sites_within_region(
+    all_merged=all_merged,
+    nzd_sites=nzd_sites,
+    target_region_name="Auckland",
+)
+
+# Quick trial mode: sample up to 5 sites at random from the region selection.
+trial_n_sites = min(5, len(nzd_sites_trial))
+rng_trial = np.random.default_rng(seed)
+nzd_sites_trial = sorted(rng_trial.choice(nzd_sites_trial, size=trial_n_sites, replace=False).tolist())
+print(f"Quick trial site subset ({len(nzd_sites_trial)}): {nzd_sites_trial}")
+
 
 # %% Main loop: load data, apply filters, bootstrap, Monte Carlo
 
 dy_rows = []
 meta_rows = []
 
-from pathlib import Path
 out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
 debug_variance_plots = True
 
-# nzd_sites_trial = nzd_sites[0:5]
-# nzd_sites_trial = ["nzd0001"]
-nzd_sites_trial = ["nzd0137"]
+# nzd_sites_trial is set from the target_region_name spatial filter above.
 
 import time
 start_time = time.perf_counter()
