@@ -375,8 +375,7 @@ def mc_shoreline_change(
     trend_high = float(np.max(r_samples))
     if not np.isfinite(trend_low) or not np.isfinite(trend_high):
         raise ValueError("Trend range is invalid after filtering non-finite values.")
-    if trend_low == trend_high:
-        raise ValueError("Trend range has zero width; cannot sample uniformly.")
+    trend_constant = np.isclose(trend_low, trend_high)
 
     recent_pool_available = False
     recent_low = np.nan
@@ -390,8 +389,9 @@ def mc_shoreline_change(
             recent_pool_available = (
                 np.isfinite(recent_low)
                 and np.isfinite(recent_high)
-                and (recent_low < recent_high)
+                and (recent_low <= recent_high)
             )
+    recent_constant = recent_pool_available and np.isclose(recent_low, recent_high)
 
     weight_recent = float(first_segment_recent_weight)
     if not np.isfinite(weight_recent) or weight_recent < 0.0 or weight_recent > 1.0:
@@ -443,7 +443,10 @@ def mc_shoreline_change(
 
     # Sample an independent r per simulation per segment uniformly across the
     # full extracted trend range: shape (n, n_segments)
-    sampled_r_all = rng.uniform(low=trend_low, high=trend_high, size=(n, n_segments))
+    if trend_constant:
+        sampled_r_all = np.full((n, n_segments), trend_low, dtype=float)
+    else:
+        sampled_r_all = rng.uniform(low=trend_low, high=trend_high, size=(n, n_segments))
 
     # Keep sampled trends split by source for plotting diagnostics:
     # - all historic-sampled trends across all segments
@@ -453,7 +456,10 @@ def mc_shoreline_change(
     # Blend only the first segment trend distribution with a recent trend pool.
     used_recent_first_segment = np.zeros(n, dtype=bool)
     if n_segments > 0 and weight_recent > 0.0 and recent_pool_available:
-        recent_first_segment = rng.uniform(low=recent_low, high=recent_high, size=n)
+        if recent_constant:
+            recent_first_segment = np.full(n, recent_low, dtype=float)
+        else:
+            recent_first_segment = rng.uniform(low=recent_low, high=recent_high, size=n)
         use_recent_draw = rng.random(n) < weight_recent
         sampled_r_all[:, 0] = np.where(use_recent_draw, recent_first_segment, sampled_r_all[:, 0])
         used_recent_first_segment = use_recent_draw
@@ -688,23 +694,26 @@ all_merged = all_merged[
 ].copy()
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 
-nzd_sites_trial = select_sites_within_region(
-    all_merged=all_merged,
-    nzd_sites=nzd_sites,
-    target_region_name="Auckland",
-)
+# nzd_sites_trial = select_sites_within_region(
+#     all_merged=all_merged,
+#     nzd_sites=nzd_sites,
+#     target_region_name="Auckland",
+# )
 
-# Quick trial mode: sample up to 5 sites at random from the region selection.
-trial_n_sites = min(5, len(nzd_sites_trial))
-rng_trial = np.random.default_rng(seed)
-nzd_sites_trial = sorted(rng_trial.choice(nzd_sites_trial, size=trial_n_sites, replace=False).tolist())
-print(f"Quick trial site subset ({len(nzd_sites_trial)}): {nzd_sites_trial}")
+nzd_sites_trial = ["nzd0132"]
+# # Quick trial mode: sample up to 5 sites at random from the region selection.
+# trial_n_sites = min(5, len(nzd_sites_trial))
+# rng_trial = np.random.default_rng(seed)
+# nzd_sites_trial = sorted(rng_trial.choice(nzd_sites_trial, size=trial_n_sites, replace=False).tolist())
+# print(f"Quick trial site subset ({len(nzd_sites_trial)}): {nzd_sites_trial}")
 
 
 # %% Main loop: load data, apply filters, bootstrap, Monte Carlo
 
 dy_rows = []
 meta_rows = []
+zero_spread_trend_site_transects = set()
+skipped_site_transects = set()
 
 out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
@@ -732,10 +741,10 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    # transect_trials=transect_cols[1:2] #Try only 1 transect first
+    transect_trials=transect_cols[63:-1] #Try only 1 transect first
 
-    # for transect_id in transect_trials:
-    for transect_id in transect_cols:
+    for transect_id in transect_trials:
+    # for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -777,6 +786,9 @@ for site_id in nzd_sites_trial:
 
         # If not enough consecutive years, skip bootstrap for this transect
         if meta["status"] != "ok":
+            skipped_site_transects.add(
+                (site_id, transect_id, f"{meta['status']} (best_run_len={meta.get('best_run_len')})")
+            )
             print(f"SKIP {site_id} {transect_id}: {meta['status']} (best_run_len={meta.get('best_run_len')})")
             continue
 
@@ -829,6 +841,14 @@ for site_id in nzd_sites_trial:
             return_table=True,
         )
 
+        boot_slopes_finite = np.asarray(boot_slopes, dtype=float)
+        boot_slopes_finite = boot_slopes_finite[np.isfinite(boot_slopes_finite)]
+        if (
+            boot_slopes_finite.size > 0
+            and np.isclose(np.min(boot_slopes_finite), np.max(boot_slopes_finite))
+        ):
+            zero_spread_trend_site_transects.add((site_id, transect_id))
+
         recent_boot_slopes = None
         recent_mask = t_smooth >= (float(np.max(t_smooth)) - recent_trend_window_years)
         t_recent = t_smooth[recent_mask]
@@ -861,6 +881,7 @@ for site_id in nzd_sites_trial:
             & (coastsat_merged["coastsat_transect_id"] == transect_id)
         )
         if not mask_tb.any():
+            skipped_site_transects.add((site_id, transect_id, "no matching tan_beta in coastsat_merged"))
             print(f"Skipping {site_id} {transect_id}: no matching tan_beta in coastsat_merged")
             continue
 
@@ -881,6 +902,7 @@ for site_id in nzd_sites_trial:
         )
   
         if not mask_slr.any():
+            skipped_site_transects.add((site_id, transect_id, "no matching SLR data in all_merged"))
             print(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
             continue
 
@@ -889,6 +911,9 @@ for site_id in nzd_sites_trial:
         slr_q83_vals = all_merged.loc[mask_slr, "83_shifted"].dropna()
 
         if slr_q17_vals.empty or slr_q50_vals.empty or slr_q83_vals.empty:
+            skipped_site_transects.add(
+                (site_id, transect_id, "missing one or more shifted SLR quantiles")
+            )
             print(
                 f"Skipping {site_id} {transect_id}: missing one or more shifted SLR quantiles"
             )
@@ -1091,6 +1116,31 @@ for site_id in nzd_sites_trial:
         elapsed_time = end_time - start_time
         minutes, seconds = divmod(elapsed_time, 60)
         print(f"Elapsed time for {site_id} {transect_id}: {int(minutes)} minutes {seconds:.2f} seconds")
+
+
+summary_site_transects = sorted(zero_spread_trend_site_transects)
+summary_header = "Site+transect with zero-spread bootstrap trend samples"
+summary_skipped_site_transects = sorted(skipped_site_transects)
+skipped_header = "Skipped site+transect"
+
+log_dir = Path("outputs")
+log_dir.mkdir(parents=True, exist_ok=True)
+log_fp = log_dir / "zero_spread_trend_sites.log"
+
+with open(log_fp, "w", encoding="utf-8") as f:
+    f.write(f"{summary_header}:\n")
+    for sid, tid in summary_site_transects:
+        f.write(f"{sid},{tid}\n")
+    f.write("\n")
+    f.write(f"{skipped_header}:\n")
+    for sid, tid, reason in summary_skipped_site_transects:
+        f.write(f"{sid},{tid},{reason}\n")
+
+print(f"{summary_header}:")
+print(summary_site_transects)
+print(f"{skipped_header}:")
+print(summary_skipped_site_transects)
+print(f"Summary log written to {log_fp}")
 
 
 
