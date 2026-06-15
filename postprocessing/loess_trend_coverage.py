@@ -13,6 +13,7 @@ This is intended to be cheap to rerun after projections already exist.
 from __future__ import annotations
 
 import argparse
+import random
 import re
 import time
 from pathlib import Path
@@ -290,6 +291,17 @@ def list_projection_csvs_for_site(site_id: str, outputs_dir: Path):
     return transect_to_csv
 
 
+def list_sites_with_projection_outputs(outputs_dir: Path):
+    """List site IDs that have at least one projection-results CSV under outputs/."""
+    sites = []
+    for site_dir in sorted(outputs_dir.iterdir()):
+        if not site_dir.is_dir() or not site_dir.name.startswith("nzd"):
+            continue
+        if any(site_dir.glob("*_projection_results.csv")):
+            sites.append(site_dir.name)
+    return sites
+
+
 def process_transect(
     site_id: str,
     transect_id: str,
@@ -556,95 +568,137 @@ def main():
         default=2030.0,
         help="Last year included in the LOESS-vs-envelope coverage metric and diagnostic plot.",
     )
+    parser.add_argument(
+        "--random-sites-count",
+        type=int,
+        default=0,
+        help="Number of additional random sites (with available projections) to process.",
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="Random seed used for selecting additional sites.",
+    )
     args = parser.parse_args()
-    site_start = time.perf_counter()
 
     outputs_dir = PROJECT_ROOT / "outputs"
     output_dir = Path(args.output_dir)
-    site_output_dir = output_dir / args.site_id
-    site_output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.all_transects:
-        transect_to_csv = list_projection_csvs_for_site(args.site_id, outputs_dir)
-        t_years, df = load_transect_data(args.site_id)
-        all_rows = []
-        failures = []
+    if args.random_sites_count < 0:
+        raise ValueError("--random-sites-count must be >= 0")
+    if args.random_sites_count > 0 and not args.all_transects:
+        raise ValueError("--random-sites-count requires --all-transects")
 
-        for transect_id, projection_csv in transect_to_csv.items():
-            try:
-                coverage, row, summary_csv, plot_fp = process_transect(
-                    site_id=args.site_id,
-                    transect_id=transect_id,
-                    projection_csv=projection_csv,
-                    output_dir=site_output_dir,
-                    loess_window=args.loess_window,
-                    evaluation_end_year=args.evaluation_end_year,
-                    save_plot=args.save_plot,
-                    t_years=t_years,
-                    df=df,
-                )
-                all_rows.append(row)
+    site_ids_to_process = [args.site_id]
+    if args.random_sites_count > 0:
+        available_sites = list_sites_with_projection_outputs(outputs_dir)
+        candidate_sites = [s for s in available_sites if s != args.site_id]
+        if args.random_sites_count > len(candidate_sites):
+            raise ValueError(
+                f"Requested {args.random_sites_count} random sites, but only "
+                f"{len(candidate_sites)} are available (excluding {args.site_id})."
+            )
+        rng = random.Random(args.random_seed)
+        sampled_sites = sorted(rng.sample(candidate_sites, k=args.random_sites_count))
+        site_ids_to_process.extend(sampled_sites)
+        print(
+            f"Randomly selected {args.random_sites_count} additional sites "
+            f"(seed={args.random_seed}): {', '.join(sampled_sites)}"
+        )
+
+    for current_site_id in site_ids_to_process:
+        site_start = time.perf_counter()
+        site_output_dir = output_dir / current_site_id
+        site_output_dir.mkdir(parents=True, exist_ok=True)
+
+        if args.all_transects:
+            transect_to_csv = list_projection_csvs_for_site(current_site_id, outputs_dir)
+            t_years, df = load_transect_data(current_site_id)
+            all_rows = []
+            failures = []
+            total_transects = len(transect_to_csv)
+
+            print(f"Processing site {current_site_id}: {total_transects} transects")
+
+            for idx, (transect_id, projection_csv) in enumerate(transect_to_csv.items(), start=1):
+                try:
+                    coverage, row, summary_csv, plot_fp = process_transect(
+                        site_id=current_site_id,
+                        transect_id=transect_id,
+                        projection_csv=projection_csv,
+                        output_dir=site_output_dir,
+                        loess_window=args.loess_window,
+                        evaluation_end_year=args.evaluation_end_year,
+                        save_plot=args.save_plot,
+                        t_years=t_years,
+                        df=df,
+                    )
+                    all_rows.append(row)
+                except Exception as exc:
+                    failures.append({
+                        "site_id": current_site_id,
+                        "transect_id": transect_id,
+                        "projection_csv": str(projection_csv),
+                        "error": str(exc),
+                    })
+
+                success_count = len(all_rows)
+                failure_count = len(failures)
                 print(
-                    f"{args.site_id} {transect_id}: {coverage['inside_points']}/{coverage['eval_points']} "
-                    f"inside through {coverage['evaluation_end_year']:.0f} ({coverage['coverage_percent']:.1f}%)"
+                    f"\r[{current_site_id}] Progress: {idx}/{total_transects} transects "
+                    f"(ok={success_count}, failed={failure_count})",
+                    end="",
+                    flush=True,
                 )
-                print(f"Saved summary to {summary_csv}")
-                if plot_fp is not None:
-                    print(f"Saved diagnostic plot to {plot_fp}")
-            except Exception as exc:
-                failures.append({
-                    "site_id": args.site_id,
-                    "transect_id": transect_id,
-                    "projection_csv": str(projection_csv),
-                    "error": str(exc),
-                })
-                print(f"FAILED {args.site_id} {transect_id}: {exc}")
 
-        site_summary_csv = site_output_dir / f"{args.site_id}_all_transects_loess_trend_coverage.csv"
-        pd.DataFrame(all_rows).to_csv(site_summary_csv, index=False)
-        print(f"Saved site summary to {site_summary_csv}")
+            print()
 
-        if failures:
-            failures_csv = site_output_dir / f"{args.site_id}_all_transects_loess_trend_coverage_failures.csv"
-            pd.DataFrame(failures).to_csv(failures_csv, index=False)
-            print(f"Saved failures to {failures_csv}")
+            site_summary_csv = site_output_dir / f"{current_site_id}_all_transects_loess_trend_coverage.csv"
+            pd.DataFrame(all_rows).to_csv(site_summary_csv, index=False)
+            print(f"Saved site summary to {site_summary_csv}")
 
-        elapsed_seconds = time.perf_counter() - site_start
-        print(
-            f"Site {args.site_id} processed in {elapsed_seconds:.2f} s "
-            f"({elapsed_seconds / 60.0:.2f} min)"
-        )
+            if failures:
+                failures_csv = site_output_dir / f"{current_site_id}_all_transects_loess_trend_coverage_failures.csv"
+                pd.DataFrame(failures).to_csv(failures_csv, index=False)
+                print(f"Saved failures to {failures_csv}")
 
-    else:
-        if args.projection_csv is None:
-            projection_csv = find_projection_csv(args.site_id, args.transect_id, outputs_dir)
+            elapsed_seconds = time.perf_counter() - site_start
+            print(
+                f"Site {current_site_id} processed in {elapsed_seconds:.2f} s "
+                f"({elapsed_seconds / 60.0:.2f} min)"
+            )
+
         else:
-            projection_csv = Path(args.projection_csv)
+            if args.projection_csv is None:
+                projection_csv = find_projection_csv(current_site_id, args.transect_id, outputs_dir)
+            else:
+                projection_csv = Path(args.projection_csv)
 
-        coverage, _, summary_csv, plot_fp = process_transect(
-            site_id=args.site_id,
-            transect_id=args.transect_id,
-            projection_csv=projection_csv,
-            output_dir=site_output_dir,
-            loess_window=args.loess_window,
-            evaluation_end_year=args.evaluation_end_year,
-            save_plot=args.save_plot,
-        )
+            coverage, _, summary_csv, plot_fp = process_transect(
+                site_id=current_site_id,
+                transect_id=args.transect_id,
+                projection_csv=projection_csv,
+                output_dir=site_output_dir,
+                loess_window=args.loess_window,
+                evaluation_end_year=args.evaluation_end_year,
+                save_plot=args.save_plot,
+            )
 
-        print(
-            f"{args.site_id} {args.transect_id}: {coverage['inside_points']}/{coverage['eval_points']} "
-            f"post-start LOESS points inside trend-only envelope through {coverage['evaluation_end_year']:.0f} "
-            f"({coverage['coverage_percent']:.1f}%)"
-        )
-        print(f"Saved summary to {summary_csv}")
-        if plot_fp is not None:
-            print(f"Saved diagnostic plot to {plot_fp}")
+            print(
+                f"{current_site_id} {args.transect_id}: {coverage['inside_points']}/{coverage['eval_points']} "
+                f"post-start LOESS points inside trend-only envelope through {coverage['evaluation_end_year']:.0f} "
+                f"({coverage['coverage_percent']:.1f}%)"
+            )
+            print(f"Saved summary to {summary_csv}")
+            if plot_fp is not None:
+                print(f"Saved diagnostic plot to {plot_fp}")
 
-        elapsed_seconds = time.perf_counter() - site_start
-        print(
-            f"Site {args.site_id} processed in {elapsed_seconds:.2f} s "
-            f"({elapsed_seconds / 60.0:.2f} min)"
-        )
+            elapsed_seconds = time.perf_counter() - site_start
+            print(
+                f"Site {current_site_id} processed in {elapsed_seconds:.2f} s "
+                f"({elapsed_seconds / 60.0:.2f} min)"
+            )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+site_id,total_transects,count_above_threshold,count_at_or_below_threshold
+nzd0116,3,3,0
+nzd0123,6,5,1
+nzd0144,9,3,6
+nzd0145,23,12,11
+nzd0146,7,4,3
+nzd0147,15,11,4
+nzd0148,7,3,4
+nzd0149,6,3,3
+nzd0151,13,13,0
+nzd0155,9,7,2
+nzd0161,310,177,133
+nzd0163,9,7,2
+nzd0165,6,0,6
+nzd0187,5,2,3
