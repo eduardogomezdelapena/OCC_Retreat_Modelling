@@ -492,7 +492,7 @@
       html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
       html += '<table class="data-table" id="dataTable"></table>';
       html += '<div class="legend">';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #2ca02c;"></div> Mean Projection</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #2ca02c;"></div> Compound Projection</div>';
       html += '<div class="legend-item"><div class="legend-color" style="background: rgba(44, 160, 44, 0.30);"></div> Projection 5%-95% Range</div>';
       html += '<div class="legend-item"><div class="legend-color" style="background: deeppink;"></div> SLR Only</div>';
       html += '<div class="legend-item"><div class="legend-color" style="background: rgba(255, 20, 147, 0.22);"></div> SLR Only 5%-95% Range</div>';
@@ -627,7 +627,7 @@
               spanGaps: true
             },
             {
-              label: 'Projection (Mean)',
+              label: 'Compound Projection (Mean)',
               data: asXY(projMean),
               borderColor: '#2ca02c',
               backgroundColor: 'rgba(44, 160, 44, 0.22)',
