@@ -201,6 +201,57 @@
       color: #333;
       margin-bottom: 10px;
     }
+
+    .map-colorbar {
+      background: rgba(255, 255, 255, 0.95);
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+      min-width: 210px;
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .map-colorbar-title {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .map-colorbar-scale {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .map-colorbar-gradient {
+      width: 16px;
+      height: 140px;
+      border: 1px solid #bbb;
+      border-radius: 2px;
+      background: linear-gradient(
+        to top,
+        #b2182b 0%,
+        #d6604d 20%,
+        #f7f7f7 50%,
+        #4393c3 80%,
+        #2166ac 100%
+      );
+    }
+
+    .map-colorbar-labels {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 140px;
+      color: #333;
+    }
+
+    .map-colorbar-note {
+      margin-top: 8px;
+      color: #444;
+    }
   </style>
 </head>
 <body>
@@ -230,6 +281,15 @@
     let projectionsData = {};
     let currentTransectId = null;
     let currentChart = null;
+    let activeScenarioKey = null;
+    let normalizedChangeByTransect = {};
+    let colorScaleLimit = 10;
+
+    const TARGET_SCENARIO_HINT = 'compound';
+    const BASELINE_YEAR = 2025;
+    const TARGET_YEAR = 2050;
+    const STABILITY_THRESHOLD = 3;
+    const FIXED_COLOR_SCALE_LIMIT = 10;
 
     // Initialize map
     function initMap() {
@@ -239,32 +299,43 @@
       L.tileLayer.provider('CartoDB.Positron').addTo(map);
 
       // Load data
-      loadProjectionsData();
-      loadPointsData();
+      loadProjectionsData()
+        .then(() => {
+          addColorbarControl();
+          return loadPointsData();
+        })
+        .catch(error => console.error('Error initializing dashboard data:', error));
     }
 
     // Load projections data from JSON
     function loadProjectionsData() {
-      fetch('data/projections.json')
+      return fetch('data/projections.json')
         .then(response => response.json())
         .then(data => {
           projectionsData = data;
+          const scenarioKey = resolveScenarioKey(data);
+          activeScenarioKey = scenarioKey;
+          normalizedChangeByTransect = computeNormalizedChangeForAllTransects(data, scenarioKey);
+          colorScaleLimit = FIXED_COLOR_SCALE_LIMIT;
           console.log('Loaded projections for', Object.keys(data).length, 'transects');
+          console.log('Using scenario key for normalized mapping:', scenarioKey);
+          console.log('Fixed symmetric color scale limit (+/-m):', colorScaleLimit);
         })
         .catch(error => console.error('Error loading projections:', error));
     }
 
     // Load GeoJSON points
     function loadPointsData() {
-      fetch('preprocessing/points_ref_shoreline_2025.geojson')
+      return fetch('preprocessing/points_ref_shoreline_2025.geojson')
         .then(response => response.json())
         .then(geojson => {
           L.geoJSON(geojson, {
             pointToLayer: (feature, latlng) => {
               const transectId = feature.properties.transect_id;
+              const delta = normalizedChangeByTransect[transectId];
               const marker = L.circleMarker(latlng, {
                 radius: 5,
-                fillColor: hasProjections(transectId) ? '#007bff' : '#999',
+                fillColor: getMarkerColor(delta),
                 color: '#fff',
                 weight: 2,
                 opacity: 1,
@@ -292,6 +363,111 @@
       return projectionsData.hasOwnProperty(transectId);
     }
 
+    function resolveScenarioKey(data) {
+      const transectIds = Object.keys(data);
+      if (transectIds.length === 0) {
+        return null;
+      }
+
+      for (const transectId of transectIds) {
+        const scenarioKeys = Object.keys((data[transectId] && data[transectId].scenarios) || {});
+        const compoundKey = scenarioKeys.find(key => key.toLowerCase().includes(TARGET_SCENARIO_HINT));
+        if (compoundKey) {
+          return compoundKey;
+        }
+      }
+
+      const firstScenario = Object.keys((data[transectIds[0]] && data[transectIds[0]].scenarios) || {})[0] || null;
+      if (firstScenario) {
+        console.warn('Compound scenario key not found. Falling back to first available scenario:', firstScenario);
+      }
+      return firstScenario;
+    }
+
+    function computeNormalizedChangeForAllTransects(data, scenarioKey) {
+      const deltas = {};
+      Object.entries(data).forEach(([transectId, transectData]) => {
+        const scenarioSeries = transectData.scenarios && transectData.scenarios[scenarioKey];
+        if (!scenarioSeries || !Array.isArray(scenarioSeries)) {
+          return;
+        }
+
+        const baselineRecord = scenarioSeries.find(d => Number(d.year) === BASELINE_YEAR);
+        const targetRecord = scenarioSeries.find(d => Number(d.year) === TARGET_YEAR);
+        if (!baselineRecord || !targetRecord) {
+          return;
+        }
+
+        const baseline = Number(baselineRecord.proj_shoreline_mean);
+        const target = Number(targetRecord.proj_shoreline_mean);
+        if (Number.isFinite(baseline) && Number.isFinite(target)) {
+          deltas[transectId] = target - baseline;
+        }
+      });
+      return deltas;
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function interpolateRgb(colorA, colorB, t) {
+      const clamped = clamp(t, 0, 1);
+      const r = Math.round(colorA[0] + (colorB[0] - colorA[0]) * clamped);
+      const g = Math.round(colorA[1] + (colorB[1] - colorA[1]) * clamped);
+      const b = Math.round(colorA[2] + (colorB[2] - colorA[2]) * clamped);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function getMarkerColor(delta) {
+      if (!Number.isFinite(delta)) {
+        return '#999';
+      }
+
+      const limited = clamp(delta, -colorScaleLimit, colorScaleLimit);
+      if (limited < 0) {
+        const t = (limited + colorScaleLimit) / colorScaleLimit;
+        return interpolateRgb([178, 24, 43], [247, 247, 247], t);
+      }
+      const t = limited / colorScaleLimit;
+      return interpolateRgb([247, 247, 247], [33, 102, 172], t);
+    }
+
+    function describeStability(delta) {
+      if (!Number.isFinite(delta)) {
+        return 'No normalized change available';
+      }
+      if (delta < -STABILITY_THRESHOLD) {
+        return 'Eroding';
+      }
+      if (delta > STABILITY_THRESHOLD) {
+        return 'Accreting';
+      }
+      return 'Stable';
+    }
+
+    function addColorbarControl() {
+      const control = L.control({ position: 'bottomleft' });
+      control.onAdd = function() {
+        const div = L.DomUtil.create('div', 'map-colorbar');
+        L.DomEvent.disableClickPropagation(div);
+        div.innerHTML = `
+          <div class="map-colorbar-title">Normalized shoreline change (2025→2050), m</div>
+          <div class="map-colorbar-scale">
+            <div class="map-colorbar-gradient"></div>
+            <div class="map-colorbar-labels">
+              <div>+${colorScaleLimit} (more accretion)</div>
+              <div>0 (stable center)</div>
+              <div>-${colorScaleLimit} (more erosion)</div>
+            </div>
+          </div>
+          <div class="map-colorbar-note">Stability threshold: ±${STABILITY_THRESHOLD} m</div>
+        `;
+        return div;
+      };
+      control.addTo(map);
+    }
+
     // Show projections when point is clicked
     function showProjections(transectId, properties) {
       currentTransectId = transectId;
@@ -304,19 +480,15 @@
 
       // Update header
       document.getElementById('panelTitle').textContent = transectId;
-      document.getElementById('panelSubtitle').textContent = 'Site: ' + properties.site_id;
+      const delta = normalizedChangeByTransect[transectId];
+      const deltaLabel = Number.isFinite(delta)
+        ? `${delta.toFixed(1)} m (${describeStability(delta)})`
+        : 'n/a';
+      document.getElementById('panelSubtitle').textContent = `Site: ${properties.site_id} | Normalized change 2025→2050: ${deltaLabel}`;
 
-      // Create scenario selector and content
-      const scenarios = Object.keys(transectData.scenarios);
+      // Compound-first display (fallback already resolved in activeScenarioKey)
       let html = '<div class="scenario-container">';
-      html += '<div class="scenario-title">Climate Scenario</div>';
-      html += '<select id="scenarioSelect" class="scenario-select" onchange="updateChart()">';
-      
-      scenarios.forEach(scenario => {
-        html += `<option value="${scenario}">${scenario}</option>`;
-      });
-      
-      html += '</select>';
+      html += `<div class="scenario-title">Scenario: ${activeScenarioKey || 'n/a'}</div>`;
       html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
       html += '<table class="data-table" id="dataTable"></table>';
       html += '<div class="legend">';
@@ -332,8 +504,8 @@
       document.getElementById('panelBody').innerHTML = html;
       document.getElementById('infoPanel').classList.remove('hidden');
 
-      // Update chart with first scenario
-      updateChart();
+      // Update chart with compound/fallback scenario only
+      updateChart(activeScenarioKey);
 
       // Highlight marker
       Object.values(markers).forEach(m => m.setStyle({ color: '#fff' }));
@@ -343,9 +515,7 @@
     }
 
     // Update chart based on selected scenario
-    function updateChart() {
-      const select = document.getElementById('scenarioSelect');
-      const scenario = select.value;
+    function updateChart(scenario) {
       const transectData = projectionsData[currentTransectId];
       const data = transectData.scenarios[scenario];
 
@@ -356,15 +526,26 @@
 
       // Prepare chart data
       const years = data.map(d => Number(d.year));
-      const projMean = data.map(d => Number(d.proj_shoreline_mean));
-      const projQ05 = data.map(d => Number(d.proj_shoreline_q05));
-      const projQ95 = data.map(d => Number(d.proj_shoreline_q95));
-      const slrMean = data.map(d => Number(d.slr_only_shoreline_mean));
-      const slrQ05 = data.map(d => Number(d.slr_only_shoreline_q05));
-      const slrQ95 = data.map(d => Number(d.slr_only_shoreline_q95));
-      const trendMean = data.map(d => Number(d.trend_only_shoreline_mean));
-      const trendQ05 = data.map(d => Number(d.trend_only_shoreline_q05));
-      const trendQ95 = data.map(d => Number(d.trend_only_shoreline_q95));
+      const baselineRow = data.find(d => Number(d.year) === BASELINE_YEAR) || data[0];
+      const baselineProj = Number(baselineRow.proj_shoreline_mean);
+      const baselineProjQ05 = Number(baselineRow.proj_shoreline_q05);
+      const baselineProjQ95 = Number(baselineRow.proj_shoreline_q95);
+      const baselineSlr = Number(baselineRow.slr_only_shoreline_mean);
+      const baselineSlrQ05 = Number(baselineRow.slr_only_shoreline_q05);
+      const baselineSlrQ95 = Number(baselineRow.slr_only_shoreline_q95);
+      const baselineTrend = Number(baselineRow.trend_only_shoreline_mean);
+      const baselineTrendQ05 = Number(baselineRow.trend_only_shoreline_q05);
+      const baselineTrendQ95 = Number(baselineRow.trend_only_shoreline_q95);
+
+      const projMean = data.map(d => Number(d.proj_shoreline_mean) - baselineProj);
+      const projQ05 = data.map(d => Number(d.proj_shoreline_q05) - baselineProjQ05);
+      const projQ95 = data.map(d => Number(d.proj_shoreline_q95) - baselineProjQ95);
+      const slrMean = data.map(d => Number(d.slr_only_shoreline_mean) - baselineSlr);
+      const slrQ05 = data.map(d => Number(d.slr_only_shoreline_q05) - baselineSlrQ05);
+      const slrQ95 = data.map(d => Number(d.slr_only_shoreline_q95) - baselineSlrQ95);
+      const trendMean = data.map(d => Number(d.trend_only_shoreline_mean) - baselineTrend);
+      const trendQ05 = data.map(d => Number(d.trend_only_shoreline_q05) - baselineTrendQ05);
+      const trendQ95 = data.map(d => Number(d.trend_only_shoreline_q95) - baselineTrendQ95);
 
       const asXY = (values) => years.map((x, i) => ({ x, y: values[i] }));
 
@@ -491,7 +672,7 @@
             },
             title: {
               display: true,
-              text: 'Shoreline Projection: ' + scenario.replace(/_/g, ' '),
+              text: 'Normalized Shoreline Change: ' + scenario.replace(/_/g, ' '),
               font: { size: 12 }
             }
           },
@@ -500,7 +681,7 @@
             y: {
               title: {
                 display: true,
-                text: 'Shoreline Position (m)'
+                text: 'Shoreline Change from 2025 (m)'
               },
               font: { size: 10 }
             },
@@ -526,16 +707,23 @@
 
     // Update data table with projection values
     function updateDataTable(data) {
+      const baselineRow = data.find(d => Number(d.year) === BASELINE_YEAR) || data[0];
+      const baselineProj = Number(baselineRow.proj_shoreline_mean);
+      const baselineQ05 = Number(baselineRow.proj_shoreline_q05);
+      const baselineQ95 = Number(baselineRow.proj_shoreline_q95);
       let html = '<tr><th>Year</th><th>Mean</th><th>Q05</th><th>Q95</th></tr>';
       // Show every 5 years or all if dataset is small
       const step = data.length > 10 ? 5 : 1;
       for (let i = 0; i < data.length; i += step) {
         const d = data[i];
+        const meanDelta = Number(d.proj_shoreline_mean) - baselineProj;
+        const q05Delta = Number(d.proj_shoreline_q05) - baselineQ05;
+        const q95Delta = Number(d.proj_shoreline_q95) - baselineQ95;
         html += `<tr>
           <td>${d.year.toFixed(0)}</td>
-          <td>${d.proj_shoreline_mean.toFixed(1)}</td>
-          <td>${d.proj_shoreline_q05.toFixed(1)}</td>
-          <td>${d.proj_shoreline_q95.toFixed(1)}</td>
+          <td>${meanDelta.toFixed(1)}</td>
+          <td>${q05Delta.toFixed(1)}</td>
+          <td>${q95Delta.toFixed(1)}</td>
         </tr>`;
       }
       document.getElementById('dataTable').innerHTML = html;
