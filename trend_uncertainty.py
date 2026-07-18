@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 from statistics import NormalDist
 from viz import (
     plot_observed_and_projected_single_run
@@ -393,6 +394,7 @@ def mc_shoreline_change(
             )
     recent_constant = recent_pool_available and np.isclose(recent_low, recent_high)
 
+
     weight_recent = float(first_segment_recent_weight)
     if not np.isfinite(weight_recent) or weight_recent < 0.0 or weight_recent > 1.0:
         raise ValueError("first_segment_recent_weight must be finite and within [0, 1].")
@@ -531,6 +533,115 @@ def mc_shoreline_change(
         outputs.append(first_segment_recent_used)
 
     return tuple(outputs)
+
+
+def plot_segment_trend_sampling_diagnostics(
+    historic_trend_pool,
+    recent_trend_pool,
+    sampled_r_all,
+    sampled_first_segment_recent,
+    segment_durations_years,
+    projection_start_year,
+    site_id,
+    transect_id,
+    out_fp,
+    first_segment_recent_weight=0.0,
+):
+    """Plot trend sampling diagnostics with a fixed 5-panel layout."""
+
+    historic_pool = np.asarray(historic_trend_pool, dtype=float)
+    historic_pool = historic_pool[np.isfinite(historic_pool)]
+
+    recent_pool = np.asarray(recent_trend_pool, dtype=float) if recent_trend_pool is not None else np.array([], dtype=float)
+    recent_pool = recent_pool[np.isfinite(recent_pool)]
+
+    sampled_recent = np.asarray(sampled_first_segment_recent, dtype=float) if sampled_first_segment_recent is not None else np.array([], dtype=float)
+    sampled_recent = sampled_recent[np.isfinite(sampled_recent)]
+
+    sampled_r_all = np.asarray(sampled_r_all, dtype=float)
+    if sampled_r_all.ndim != 2:
+        raise ValueError("sampled_r_all must be a 2D array with shape (n_realizations, n_segments).")
+
+    segment_durations = np.asarray(segment_durations_years, dtype=float)
+    if segment_durations.size != sampled_r_all.shape[1]:
+        raise ValueError("segment_durations_years length must match sampled_r_all segment count.")
+
+    n_segments_to_plot = min(3, sampled_r_all.shape[1])
+
+    fig = plt.figure(figsize=(18, 7))
+    gs = GridSpec(2, 4, figure=fig, width_ratios=[1.25, 1.0, 1.0, 1.0], hspace=0.35, wspace=0.28)
+
+    ax_hist = fig.add_subplot(gs[0, 0])
+    ax_recent = fig.add_subplot(gs[1, 0])
+    segment_axes = [
+        fig.add_subplot(gs[:, 1]),
+        fig.add_subplot(gs[:, 2]),
+        fig.add_subplot(gs[:, 3]),
+    ]
+
+    if historic_pool.size > 0:
+        ax_hist.hist(historic_pool, bins=24, density=True, color="tab:green", alpha=0.65, edgecolor="white")
+    else:
+        ax_hist.text(0.5, 0.5, "No historic trend pool", ha="center", va="center", transform=ax_hist.transAxes, color="gray")
+    ax_hist.set_title("Historic trend distribution")
+    ax_hist.set_xlabel("Trend [m/yr]")
+    ax_hist.set_ylabel("Density")
+    ax_hist.grid(alpha=0.25)
+
+    if recent_pool.size > 0:
+        ax_recent.hist(recent_pool, bins=24, density=True, color="darkorange", alpha=0.6, edgecolor="white", label="Recent trend pool")
+    if sampled_recent.size > 0:
+        y0, y1 = ax_recent.get_ylim()
+        top = y0 + 0.08 * (y1 - y0 if y1 > y0 else 1.0)
+        ax_recent.vlines(sampled_recent, y0, top, color="saddlebrown", alpha=0.85, linewidth=1.0, label="Sampled recent trends (segment 1)")
+    if recent_pool.size == 0 and sampled_recent.size == 0:
+        ax_recent.text(0.5, 0.5, "No recent trend pool / draws", ha="center", va="center", transform=ax_recent.transAxes, color="gray")
+    ax_recent.set_title("Recent sampled trend distribution")
+    ax_recent.set_xlabel("Trend [m/yr]")
+    ax_recent.set_ylabel("Density")
+    ax_recent.grid(alpha=0.25)
+    if recent_pool.size > 0 or sampled_recent.size > 0:
+        ax_recent.legend(loc="best", fontsize=8)
+
+    seg_starts = float(projection_start_year) + np.concatenate(([0.0], np.cumsum(segment_durations)[:-1]))
+    seg_ends = seg_starts + segment_durations
+
+    for seg_panel_idx, ax_seg in enumerate(segment_axes):
+        seg_idx = seg_panel_idx
+        if seg_idx >= n_segments_to_plot:
+            ax_seg.axis("off")
+            continue
+
+        if historic_pool.size > 0:
+            ax_seg.hist(historic_pool, bins=24, density=True, color="tab:blue", alpha=0.25, edgecolor="white", label="Historical distribution used for sampling")
+
+        seg_draws = sampled_r_all[:, seg_idx]
+        seg_draws = seg_draws[np.isfinite(seg_draws)]
+        y0, y1 = ax_seg.get_ylim()
+        top = y0 + 0.11 * (y1 - y0 if y1 > y0 else 1.0)
+        if seg_draws.size > 0:
+            ax_seg.vlines(seg_draws, y0, top, color="black", alpha=0.35, linewidth=0.8, label="Randomly selected trends (rug)")
+
+        year_lo = seg_starts[seg_idx]
+        year_hi = seg_ends[seg_idx]
+        if seg_idx == 0 and recent_pool.size > 0 and first_segment_recent_weight > 0.0:
+            title = (
+                f"Segment {seg_idx + 1}: {year_lo:.0f}-{year_hi:.0f}\n"
+                f"Historic + recent blend (w_recent={first_segment_recent_weight:.2f})"
+            )
+        else:
+            title = f"Segment {seg_idx + 1}: {year_lo:.0f}-{year_hi:.0f}"
+
+        ax_seg.set_title(title)
+        ax_seg.set_xlabel("Trend [m/yr]")
+        ax_seg.set_ylabel("Density")
+        ax_seg.grid(alpha=0.25)
+        ax_seg.legend(loc="best", fontsize=8)
+
+    fig.suptitle(f"Trend sampling diagnostics: {site_id} {transect_id}", fontsize=12)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    fig.savefig(out_fp, dpi=300)
+    plt.close(fig)
 
 #%% Export results to CSV for further plotting in a webdashboard.
 def export_results_to_csv(prepared, meta_str):
@@ -700,7 +811,7 @@ nzd_sites_trial = select_sites_within_region(
     target_region_name="Auckland",
 )
 nzd_sites_trial = nzd_sites_trial[16:]
-# nzd_sites_trial = ["nzd0132"]
+nzd_sites_trial = ["nzd0135"]
 # # Quick trial mode: sample up to 5 sites at random from the region selection.
 # trial_n_sites = min(5, len(nzd_sites_trial))
 # rng_trial = np.random.default_rng(seed)
@@ -741,10 +852,10 @@ for site_id in nzd_sites_trial:
         if c.startswith(site_id + "-")
     ]
     
-    # transect_trials=transect_cols[-1:] #Try only 1 transect first
+    transect_trials=transect_cols[3:5] #Try only 1 transect first
 
-    # for transect_id in transect_trials:
-    for transect_id in transect_cols:
+    for transect_id in transect_trials:
+    # for transect_id in transect_cols:
 
         # Extract shoreline position for this transect
         y = df[transect_id]
@@ -1096,6 +1207,20 @@ for site_id in nzd_sites_trial:
             sampled_recent_trends=preview_sampled_first_segment_recent,
             slr_only_dy_segments=preview_slr_only_dy,
             trend_only_dy_segments=preview_trend_only_dy,
+        )
+
+        preview_segment_trend_plot_fp = site_dir / f"{site_id}_{transect_id}_segment_trend_sampling_diagnostics.png"
+        plot_segment_trend_sampling_diagnostics(
+            historic_trend_pool=boot_slopes,
+            recent_trend_pool=recent_boot_slopes,
+            sampled_r_all=preview_r_samples,
+            sampled_first_segment_recent=preview_sampled_first_segment_recent,
+            segment_durations_years=summ["segment_durations_years"],
+            projection_start_year=float(custom_ref_year),
+            site_id=site_id,
+            transect_id=transect_id,
+            out_fp=preview_segment_trend_plot_fp,
+            first_segment_recent_weight=first_segment_recent_weight,
         )
 
         print(site_id, transect_id)
