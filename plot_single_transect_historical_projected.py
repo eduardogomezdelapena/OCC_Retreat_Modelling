@@ -148,31 +148,38 @@ def make_plot(
     """Render and save the requested combined time-series figure."""
     fig, ax = plt.subplots(figsize=(14, 6.8))
 
+    # Display historical observations only through 2025.
+    hist_mask = t_hist <= 2025.0
+    loess_mask = t_loess <= 2025.0
+    t_hist_plot = t_hist[hist_mask]
+    y_hist_plot = y_hist[hist_mask]
+    t_loess_plot = t_loess[loess_mask]
+    y_loess_plot = y_loess[loess_mask]
+
     # Historical data and smoothed trend.
-    ax.scatter(
-        t_hist,
-        y_hist,
+    sat_handle = ax.scatter(
+        t_hist_plot,
+        y_hist_plot,
         s=18,
         color="#6f6f6f",
-        alpha=0.5,
+        alpha=0.3,
         edgecolors="none",
-        label="Satellite shoreline observations",
+        label="Satellite observations",
         zorder=2,
     )
     ax.plot(
-        t_loess,
-        y_loess,
+        t_loess_plot,
+        y_loess_plot,
         color="#1f1f1f",
         linewidth=2.0,
-        label="Historical LOESS smoothed trend",
         zorder=3,
     )
 
     # Connect historical trend to the first projection node.
-    if t_loess.size > 0 and proj_years.size > 0:
+    if t_loess_plot.size > 0 and proj_years.size > 0 and t_loess_plot[-1] < proj_years[0]:
         ax.plot(
-            [t_loess[-1], proj_years[0]],
-            [y_loess[-1], trend_mean[0]],
+            [t_loess_plot[-1], proj_years[0]],
+            [y_loess_plot[-1], trend_mean[0]],
             color="#7f7f7f",
             linewidth=1.1,
             linestyle=(0, (2, 2)),
@@ -206,7 +213,6 @@ def make_plot(
             color=color,
             linewidth=2.4,
             linestyle=(0, (5, 3)),
-            label=f"{label} ({int(x_seg[0])}-{int(x_seg[1])})",
             zorder=4,
         )
         ax.scatter(
@@ -239,22 +245,27 @@ def make_plot(
 
     ax.axhline(0.0, color="#9c9c9c", linestyle=(0, (4, 4)), linewidth=1.0, zorder=0)
 
-    y_text = float(np.nanmax(y_hist)) + 1.8
+    hist_text_anchor = y_hist_plot if y_hist_plot.size > 0 else y_hist
+    y_text = float(np.nanmax(hist_text_anchor)) + 1.8
     ax.text(2009.5, y_text, "Historical", color="#4a4a4a", fontsize=15, fontweight="bold", ha="center")
     ax.text(2040.0, y_text, "Projected", color="#5a3e99", fontsize=15, fontweight="bold", ha="center")
 
-    y_min = float(min(np.nanmin(y_hist), np.nanmin(trend_q05))) - 2.0
-    y_max = float(max(np.nanmax(y_hist), np.nanmax(trend_q95))) + 2.8
+    hist_min_source = y_hist_plot if y_hist_plot.size > 0 else y_hist
+    hist_max_source = y_hist_plot if y_hist_plot.size > 0 else y_hist
+    y_min = float(min(np.nanmin(hist_min_source), np.nanmin(trend_q05))) - 2.0
+    y_max = float(max(np.nanmax(hist_max_source), np.nanmax(trend_q95))) + 2.8
 
     ax.set_xlim(float(np.floor(np.nanmin(t_hist))), 2051.0)
     ax.set_ylim(y_min, y_max)
-    ax.set_ylabel("Shoreline position (m)")
-    ax.set_xlabel("Year")
+    ax.set_ylabel("Shoreline\nposition (m)", fontsize=20, rotation=0, labelpad=72, va="center")
+    ax.yaxis.set_label_coords(-0.12, 0.5)
+    ax.set_xlabel("")
+    ax.tick_params(axis="both", which="major", labelsize=20)
     ax.set_title(f"{site_id} {transect_id} | Trend-only projection with uncertainty ({scenario})")
     ax.grid(axis="y", alpha=0.18)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(loc="lower left", frameon=False, fontsize=10)
+    ax.legend(handles=[sat_handle], loc="lower left", frameon=False, fontsize=10)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -311,6 +322,22 @@ def main() -> None:
     trend_mean = trend_mean[order]
     trend_q05 = trend_q05[order]
     trend_q95 = trend_q95[order]
+
+    # Normalize all series so shoreline position is centered around 0 at 2025.
+    baseline_idx = np.where(np.isclose(proj_years, 2025.0))[0]
+    if baseline_idx.size == 0:
+        raise ValueError("Could not find 2025 node to normalize shoreline positions.")
+    baseline_2025 = float(trend_mean[baseline_idx[0]])
+
+    y_hist = y_hist - baseline_2025
+    y_loess = y_loess - baseline_2025
+    trend_mean = trend_mean - baseline_2025
+    trend_q05 = trend_q05 - baseline_2025
+    trend_q95 = trend_q95 - baseline_2025
+
+    # Keep projection anchored at 0 in 2025, then shift LOESS so LOESS(2025)=0.
+    loess_at_2025 = float(np.interp(2025.0, t_loess, y_loess))
+    y_loess = y_loess - loess_at_2025
 
     output_path = Path(args.output)
     make_plot(
