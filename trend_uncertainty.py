@@ -643,6 +643,293 @@ def plot_segment_trend_sampling_diagnostics(
     fig.savefig(out_fp, dpi=300)
     plt.close(fig)
 
+
+def plot_historic_trend_distribution_kde(
+    historic_trend_pool,
+    site_id,
+    transect_id,
+    out_fp,
+    first_segment_trends=None,
+):
+    """Plot only the historic trend distribution with a Gaussian KDE curve."""
+    historic_pool = np.asarray(historic_trend_pool, dtype=float)
+    historic_pool = historic_pool[np.isfinite(historic_pool)]
+    first_segment_trends = (
+        np.asarray(first_segment_trends, dtype=float)
+        if first_segment_trends is not None
+        else np.array([], dtype=float)
+    )
+    first_segment_trends = first_segment_trends[np.isfinite(first_segment_trends)]
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.5))
+
+    if historic_pool.size == 0:
+        ax.text(
+            0.5,
+            0.5,
+            "No historic trend samples available",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            color="gray",
+        )
+    else:
+        ax.hist(
+            historic_pool,
+            bins=24,
+            density=True,
+            color="tab:green",
+            alpha=0.35,
+            edgecolor="white",
+            label="Historic trend samples",
+        )
+
+        if historic_pool.size == 1 or np.allclose(np.std(historic_pool), 0.0):
+            ax.axvline(
+                float(np.mean(historic_pool)),
+                color="black",
+                linewidth=2.0,
+                label="Degenerate trend",
+            )
+        else:
+            n_pool = historic_pool.size
+            sigma = float(np.std(historic_pool, ddof=1))
+            bw = 1.06 * sigma * (n_pool ** (-1.0 / 5.0))
+            bw = max(bw, 1e-6)
+            x_lo = float(np.min(historic_pool) - 3.0 * bw)
+            x_hi = float(np.max(historic_pool) + 3.0 * bw)
+            x_grid = np.linspace(x_lo, x_hi, 300)
+            z = (x_grid[:, np.newaxis] - historic_pool[np.newaxis, :]) / bw
+            kde = np.exp(-0.5 * z * z).sum(axis=1) / (n_pool * bw * np.sqrt(2.0 * np.pi))
+
+            ax.plot(
+                x_grid,
+                kde,
+                color="black",
+                linewidth=2.0,
+                label="KDE (Silverman bandwidth)",
+            )
+
+    if first_segment_trends.size > 0:
+        y0, y1 = ax.get_ylim()
+        top = y0 + 0.10 * (y1 - y0 if y1 > y0 else 1.0)
+        ax.vlines(
+            first_segment_trends,
+            y0,
+            top,
+            color="red",
+            alpha=0.75,
+            linewidth=1.0,
+            label="First-segment sampled trends (rug)",
+        )
+
+    ax.set_title(f"Historic trend distribution: {site_id} {transect_id}")
+    ax.set_xlabel("Trend [m/yr]")
+    ax.set_ylabel("Density")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_fp, dpi=300)
+    plt.close(fig)
+
+
+def plot_historic_trend_distribution_kde_by_segment(
+    historic_trend_pool,
+    sampled_r_all,
+    segment_durations_years,
+    projection_start_year,
+    site_id,
+    transect_id,
+    out_fp,
+    n_segments_to_plot=3,
+):
+    """Plot historic trend distribution + KDE with segment-specific red rugs."""
+    historic_pool = np.asarray(historic_trend_pool, dtype=float)
+    historic_pool = historic_pool[np.isfinite(historic_pool)]
+
+    sampled_r_all = np.asarray(sampled_r_all, dtype=float)
+    if sampled_r_all.ndim != 2:
+        raise ValueError("sampled_r_all must be 2D with shape (n_realizations, n_segments).")
+
+    segment_durations = np.asarray(segment_durations_years, dtype=float)
+    if segment_durations.size != sampled_r_all.shape[1]:
+        raise ValueError("segment_durations_years length must match sampled_r_all segment count.")
+
+    seg_count = min(int(n_segments_to_plot), int(sampled_r_all.shape[1]))
+    if seg_count <= 0:
+        raise ValueError("No segments available for plotting.")
+
+    fig, axes = plt.subplots(1, seg_count, figsize=(6.0 * seg_count, 4.5), sharey=True)
+    if seg_count == 1:
+        axes = [axes]
+
+    seg_starts = float(projection_start_year) + np.concatenate(([0.0], np.cumsum(segment_durations)[:-1]))
+    seg_ends = seg_starts + segment_durations
+
+    for seg_idx, ax in enumerate(axes):
+        if historic_pool.size == 0:
+            ax.text(
+                0.5,
+                0.5,
+                "No historic trend samples available",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color="gray",
+            )
+        else:
+            ax.hist(
+                historic_pool,
+                bins=24,
+                density=True,
+                color="tab:green",
+                alpha=0.35,
+                edgecolor="white",
+                label="Historic trend samples",
+            )
+
+            if historic_pool.size == 1 or np.allclose(np.std(historic_pool), 0.0):
+                ax.axvline(
+                    float(np.mean(historic_pool)),
+                    color="black",
+                    linewidth=2.0,
+                    label="Degenerate trend",
+                )
+            else:
+                n_pool = historic_pool.size
+                sigma = float(np.std(historic_pool, ddof=1))
+                bw = 1.06 * sigma * (n_pool ** (-1.0 / 5.0))
+                bw = max(bw, 1e-6)
+                x_lo = float(np.min(historic_pool) - 3.0 * bw)
+                x_hi = float(np.max(historic_pool) + 3.0 * bw)
+                x_grid = np.linspace(x_lo, x_hi, 300)
+                z = (x_grid[:, np.newaxis] - historic_pool[np.newaxis, :]) / bw
+                kde = np.exp(-0.5 * z * z).sum(axis=1) / (n_pool * bw * np.sqrt(2.0 * np.pi))
+                ax.plot(
+                    x_grid,
+                    kde,
+                    color="black",
+                    linewidth=2.0,
+                    label="KDE (Silverman bandwidth)",
+                )
+
+        seg_draws = sampled_r_all[:, seg_idx]
+        seg_draws = seg_draws[np.isfinite(seg_draws)]
+        if seg_draws.size > 0:
+            y0, y1 = ax.get_ylim()
+            top = y0 + 0.10 * (y1 - y0 if y1 > y0 else 1.0)
+            ax.vlines(
+                seg_draws,
+                y0,
+                top,
+                color="red",
+                alpha=0.75,
+                linewidth=1.0,
+                label="Segment sampled trends (rug)",
+            )
+
+        year_lo = seg_starts[seg_idx]
+        year_hi = seg_ends[seg_idx]
+        ax.set_title(f"Segment {seg_idx + 1}: {year_lo:.0f}-{year_hi:.0f}")
+        ax.set_xlabel("Trend [m/yr]")
+        ax.grid(alpha=0.25)
+        ax.legend(loc="best", fontsize=8)
+
+    axes[0].set_ylabel("Density")
+    fig.suptitle(f"Historic trend distribution with segment rugs: {site_id} {transect_id}", fontsize=12)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    fig.savefig(out_fp, dpi=300)
+    plt.close(fig)
+
+
+def plot_historic_trend_distribution_kde_with_all_segment_rug(
+    historic_trend_pool,
+    sampled_r_all,
+    site_id,
+    transect_id,
+    out_fp,
+):
+    """Plot historic trend distribution + KDE with all segment draws in one rug."""
+    historic_pool = np.asarray(historic_trend_pool, dtype=float)
+    historic_pool = historic_pool[np.isfinite(historic_pool)]
+
+    sampled_r_all = np.asarray(sampled_r_all, dtype=float)
+    if sampled_r_all.ndim != 2:
+        raise ValueError("sampled_r_all must be 2D with shape (n_realizations, n_segments).")
+
+    all_segment_draws = sampled_r_all.ravel()
+    all_segment_draws = all_segment_draws[np.isfinite(all_segment_draws)]
+
+    fig, ax = plt.subplots(figsize=(8.0, 4.8))
+
+    if historic_pool.size == 0:
+        ax.text(
+            0.5,
+            0.5,
+            "No historic trend samples available",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            color="gray",
+        )
+    else:
+        ax.hist(
+            historic_pool,
+            bins=24,
+            density=True,
+            color="tab:green",
+            alpha=0.35,
+            edgecolor="white",
+            label="Historic trend samples",
+        )
+
+        if historic_pool.size == 1 or np.allclose(np.std(historic_pool), 0.0):
+            ax.axvline(
+                float(np.mean(historic_pool)),
+                color="black",
+                linewidth=2.0,
+                label="Degenerate trend",
+            )
+        else:
+            n_pool = historic_pool.size
+            sigma = float(np.std(historic_pool, ddof=1))
+            bw = 1.06 * sigma * (n_pool ** (-1.0 / 5.0))
+            bw = max(bw, 1e-6)
+            x_lo = float(np.min(historic_pool) - 3.0 * bw)
+            x_hi = float(np.max(historic_pool) + 3.0 * bw)
+            x_grid = np.linspace(x_lo, x_hi, 300)
+            z = (x_grid[:, np.newaxis] - historic_pool[np.newaxis, :]) / bw
+            kde = np.exp(-0.5 * z * z).sum(axis=1) / (n_pool * bw * np.sqrt(2.0 * np.pi))
+            ax.plot(
+                x_grid,
+                kde,
+                color="black",
+                linewidth=2.0,
+                label="KDE (Silverman bandwidth)",
+            )
+
+    if all_segment_draws.size > 0:
+        y0, y1 = ax.get_ylim()
+        top = y0 + 0.10 * (y1 - y0 if y1 > y0 else 1.0)
+        ax.vlines(
+            all_segment_draws,
+            y0,
+            top,
+            color="red",
+            alpha=0.65,
+            linewidth=0.9,
+            label="All sampled trends across segments (rug)",
+        )
+
+    ax.set_title(f"Historic trend distribution + all sampled trends: {site_id} {transect_id}")
+    ax.set_xlabel("Trend [m/yr]")
+    ax.set_ylabel("Density")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_fp, dpi=300)
+    plt.close(fig)
+
 #%% Export results to CSV for further plotting in a webdashboard.
 def export_results_to_csv(prepared, meta_str):
     """Export the prepared data for a single site/transect to a CSV file."""
@@ -954,6 +1241,15 @@ for site_id in nzd_sites_trial:
 
         boot_slopes_finite = np.asarray(boot_slopes, dtype=float)
         boot_slopes_finite = boot_slopes_finite[np.isfinite(boot_slopes_finite)]
+
+        historic_trend_plot_fp = site_dir / f"{site_id}_{transect_id}_historic_trend_distribution_kde.png"
+        plot_historic_trend_distribution_kde(
+            historic_trend_pool=boot_slopes_finite,
+            site_id=site_id,
+            transect_id=transect_id,
+            out_fp=historic_trend_plot_fp,
+        )
+
         if (
             boot_slopes_finite.size > 0
             and np.isclose(np.min(boot_slopes_finite), np.max(boot_slopes_finite))
@@ -1221,6 +1517,36 @@ for site_id in nzd_sites_trial:
             transect_id=transect_id,
             out_fp=preview_segment_trend_plot_fp,
             first_segment_recent_weight=first_segment_recent_weight,
+        )
+
+        historic_trend_rug_plot_fp = site_dir / f"{site_id}_{transect_id}_historic_trend_distribution_kde_first_segment_rug.png"
+        plot_historic_trend_distribution_kde(
+            historic_trend_pool=boot_slopes_finite,
+            site_id=site_id,
+            transect_id=transect_id,
+            out_fp=historic_trend_rug_plot_fp,
+            first_segment_trends=preview_r_samples[:, 0],
+        )
+
+        historic_trend_segment_rugs_plot_fp = site_dir / f"{site_id}_{transect_id}_historic_trend_distribution_kde_segments_1_2_3_rugs.png"
+        plot_historic_trend_distribution_kde_by_segment(
+            historic_trend_pool=boot_slopes_finite,
+            sampled_r_all=preview_r_samples,
+            segment_durations_years=summ["segment_durations_years"],
+            projection_start_year=float(custom_ref_year),
+            site_id=site_id,
+            transect_id=transect_id,
+            out_fp=historic_trend_segment_rugs_plot_fp,
+            n_segments_to_plot=3,
+        )
+
+        historic_trend_all_segments_rug_plot_fp = site_dir / f"{site_id}_{transect_id}_historic_trend_distribution_kde_all_segments_rug.png"
+        plot_historic_trend_distribution_kde_with_all_segment_rug(
+            historic_trend_pool=boot_slopes_finite,
+            sampled_r_all=preview_r_samples,
+            site_id=site_id,
+            transect_id=transect_id,
+            out_fp=historic_trend_all_segments_rug_plot_fp,
         )
 
         print(site_id, transect_id)
