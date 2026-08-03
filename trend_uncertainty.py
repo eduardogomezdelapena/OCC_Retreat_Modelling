@@ -533,8 +533,8 @@ def mc_shoreline_change(
     return tuple(outputs)
 
 #%% Export results to CSV for further plotting in a webdashboard.
-def export_results_to_csv(prepared, meta_str):
-    """Export the prepared data for a single site/transect to a CSV file."""
+def export_results_to_csv(prepared, meta_str, historical_cutoff_year=2025.0):
+    """Export projection plus historical (observed/LOESS) data to one CSV."""
 
 
     proj_years = prepared["proj_years"]
@@ -551,9 +551,17 @@ def export_results_to_csv(prepared, meta_str):
     trend_only_shoreline_q95 = prepared["trend_only_shoreline_q95"]
 
 
-    # Export projected  YEAR, mean, q05, q95 to CSV
+    t_obs = np.asarray(prepared.get("t_obs", []), dtype=float)
+    y_obs = np.asarray(prepared.get("y_obs", []), dtype=float)
+    t_loess = np.asarray(prepared.get("t_loess", []), dtype=float)
+    y_loess = np.asarray(prepared.get("y_loess", []), dtype=float)
+
+    # Export projected YEAR, mean, q05, q95 to CSV.
     df_proj = pd.DataFrame({
         "year": proj_years,
+        "year_decimal": proj_years,
+        "series_type": "projection",
+        "shoreline_position": proj_shoreline_mean,
         "proj_shoreline_mean": proj_shoreline_mean,
         "proj_shoreline_q05": proj_shoreline_q05,
         "proj_shoreline_q95": proj_shoreline_q95,
@@ -564,10 +572,55 @@ def export_results_to_csv(prepared, meta_str):
         "trend_only_shoreline_q05": trend_only_shoreline_q05,
         "trend_only_shoreline_q95": trend_only_shoreline_q95,
     })
+
+    cutoff_year = float(historical_cutoff_year)
+    hist_frames = []
+
+    if t_obs.size > 0 and y_obs.size > 0:
+        obs_mask = np.isfinite(t_obs) & np.isfinite(y_obs) & (t_obs <= cutoff_year)
+        if np.any(obs_mask):
+            hist_frames.append(
+                pd.DataFrame({
+                    "year": np.floor(t_obs[obs_mask]).astype(float),
+                    "year_decimal": t_obs[obs_mask],
+                    "series_type": "satellite_observation",
+                    "shoreline_position": y_obs[obs_mask],
+                })
+            )
+
+    if t_loess.size > 0 and y_loess.size > 0:
+        loess_mask = np.isfinite(t_loess) & np.isfinite(y_loess) & (t_loess <= cutoff_year)
+        if np.any(loess_mask):
+            hist_frames.append(
+                pd.DataFrame({
+                    "year": np.floor(t_loess[loess_mask]).astype(float),
+                    "year_decimal": t_loess[loess_mask],
+                    "series_type": "loess_historical",
+                    "shoreline_position": y_loess[loess_mask],
+                })
+            )
+
+    if hist_frames:
+        df_historical = pd.concat(hist_frames, ignore_index=True)
+        df_all = pd.concat([df_proj, df_historical], ignore_index=True, sort=False)
+    else:
+        df_all = df_proj
+
+    # Keep projection points first so downstream baseline lookup remains stable.
+    series_order = {
+        "projection": 0,
+        "satellite_observation": 1,
+        "loess_historical": 2,
+    }
+    df_all["_series_order"] = (
+        df_all["series_type"].map(series_order).fillna(99).astype(int)
+    )
+    df_all = df_all.sort_values(["_series_order", "year_decimal", "year"]).drop(columns=["_series_order"])
+
     # Save to csv, but include ssp, site_id and transect_id in the filename
     # # for easy identification
     csv_fp = f"{meta_str}_projection_results.csv"
-    df_proj.to_csv(csv_fp, index=False)
+    df_all.to_csv(csv_fp, index=False)
     print(f"Exported projection results to {csv_fp}")
 #%%
 
@@ -699,8 +752,8 @@ nzd_sites_trial = select_sites_within_region(
     nzd_sites=nzd_sites,
     target_region_name="Auckland",
 )
-nzd_sites_trial = nzd_sites_trial[16:]
-# nzd_sites_trial = ["nzd0132"]
+# nzd_sites_trial = nzd_sites_trial[16:]
+nzd_sites_trial = ["nzd0131"]
 # # Quick trial mode: sample up to 5 sites at random from the region selection.
 # trial_n_sites = min(5, len(nzd_sites_trial))
 # rng_trial = np.random.default_rng(seed)

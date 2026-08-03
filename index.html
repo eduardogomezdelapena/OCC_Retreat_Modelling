@@ -392,8 +392,13 @@
           return;
         }
 
-        const baselineRecord = scenarioSeries.find(d => Number(d.year) === BASELINE_YEAR);
-        const targetRecord = scenarioSeries.find(d => Number(d.year) === TARGET_YEAR);
+        const projectionSeries = scenarioSeries.filter(d => !d.series_type || d.series_type === 'projection');
+        if (projectionSeries.length === 0) {
+          return;
+        }
+
+        const baselineRecord = projectionSeries.find(d => Number(d.year) === BASELINE_YEAR);
+        const targetRecord = projectionSeries.find(d => Number(d.year) === TARGET_YEAR);
         if (!baselineRecord || !targetRecord) {
           return;
         }
@@ -498,6 +503,8 @@
       html += '<div class="legend-item"><div class="legend-color" style="background: rgba(255, 20, 147, 0.22);"></div> SLR Only 5%-95% Range</div>';
       html += '<div class="legend-item"><div class="legend-color" style="background: #000;"></div> Trend Only</div>';
       html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 0, 0, 0.16);"></div> Trend Only 5%-95% Range</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #1f77b4;"></div> Satellite Observations</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #ff7f0e;"></div> LOESS Historical Signal</div>';
       html += '</div>';
       html += '</div>';
 
@@ -524,9 +531,18 @@
         return;
       }
 
+      const projectionData = data.filter(d => !d.series_type || d.series_type === 'projection');
+      const observationData = data.filter(d => d.series_type === 'satellite_observation');
+      const loessData = data.filter(d => d.series_type === 'loess_historical');
+
+      if (projectionData.length === 0) {
+        console.error('No projection rows found for scenario:', scenario);
+        return;
+      }
+
       // Prepare chart data
-      const years = data.map(d => Number(d.year));
-      const baselineRow = data.find(d => Number(d.year) === BASELINE_YEAR) || data[0];
+      const years = projectionData.map(d => Number(d.year));
+      const baselineRow = projectionData.find(d => Number(d.year) === BASELINE_YEAR) || projectionData[0];
       const baselineProj = Number(baselineRow.proj_shoreline_mean);
       const baselineProjQ05 = Number(baselineRow.proj_shoreline_q05);
       const baselineProjQ95 = Number(baselineRow.proj_shoreline_q95);
@@ -537,15 +553,31 @@
       const baselineTrendQ05 = Number(baselineRow.trend_only_shoreline_q05);
       const baselineTrendQ95 = Number(baselineRow.trend_only_shoreline_q95);
 
-      const projMean = data.map(d => Number(d.proj_shoreline_mean) - baselineProj);
-      const projQ05 = data.map(d => Number(d.proj_shoreline_q05) - baselineProjQ05);
-      const projQ95 = data.map(d => Number(d.proj_shoreline_q95) - baselineProjQ95);
-      const slrMean = data.map(d => Number(d.slr_only_shoreline_mean) - baselineSlr);
-      const slrQ05 = data.map(d => Number(d.slr_only_shoreline_q05) - baselineSlrQ05);
-      const slrQ95 = data.map(d => Number(d.slr_only_shoreline_q95) - baselineSlrQ95);
-      const trendMean = data.map(d => Number(d.trend_only_shoreline_mean) - baselineTrend);
-      const trendQ05 = data.map(d => Number(d.trend_only_shoreline_q05) - baselineTrendQ05);
-      const trendQ95 = data.map(d => Number(d.trend_only_shoreline_q95) - baselineTrendQ95);
+      const projMean = projectionData.map(d => Number(d.proj_shoreline_mean) - baselineProj);
+      const projQ05 = projectionData.map(d => Number(d.proj_shoreline_q05) - baselineProjQ05);
+      const projQ95 = projectionData.map(d => Number(d.proj_shoreline_q95) - baselineProjQ95);
+      const slrMean = projectionData.map(d => Number(d.slr_only_shoreline_mean) - baselineSlr);
+      const slrQ05 = projectionData.map(d => Number(d.slr_only_shoreline_q05) - baselineSlrQ05);
+      const slrQ95 = projectionData.map(d => Number(d.slr_only_shoreline_q95) - baselineSlrQ95);
+      const trendMean = projectionData.map(d => Number(d.trend_only_shoreline_mean) - baselineTrend);
+      const trendQ05 = projectionData.map(d => Number(d.trend_only_shoreline_q05) - baselineTrendQ05);
+      const trendQ95 = projectionData.map(d => Number(d.trend_only_shoreline_q95) - baselineTrendQ95);
+
+      const obsSeries = observationData
+        .map(d => ({
+          x: Number.isFinite(Number(d.year_decimal)) ? Number(d.year_decimal) : Number(d.year),
+          y: Number(d.shoreline_position) - baselineProj
+        }))
+        .filter(d => Number.isFinite(d.x) && Number.isFinite(d.y))
+        .sort((a, b) => a.x - b.x);
+
+      const loessSeries = loessData
+        .map(d => ({
+          x: Number.isFinite(Number(d.year_decimal)) ? Number(d.year_decimal) : Number(d.year),
+          y: Number(d.shoreline_position) - baselineProj
+        }))
+        .filter(d => Number.isFinite(d.x) && Number.isFinite(d.y))
+        .sort((a, b) => a.x - b.x);
 
       const asXY = (values) => years.map((x, i) => ({ x, y: values[i] }));
 
@@ -655,6 +687,25 @@
               tension: 0.1,
               pointRadius: 1,
               borderDash: [3, 3]
+            },
+            {
+              label: 'Satellite Observations',
+              data: obsSeries,
+              borderColor: '#1f77b4',
+              backgroundColor: '#1f77b4',
+              borderWidth: 0,
+              showLine: false,
+              pointRadius: 2
+            },
+            {
+              label: 'LOESS Historical Signal',
+              data: loessSeries,
+              borderColor: '#ff7f0e',
+              backgroundColor: '#ff7f0e',
+              borderWidth: 2,
+              fill: false,
+              tension: 0.1,
+              pointRadius: 0
             }
           ]
         },
@@ -702,7 +753,7 @@
       });
 
       // Update data table
-      updateDataTable(data);
+      updateDataTable(projectionData);
     }
 
     // Update data table with projection values
