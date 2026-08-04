@@ -33,7 +33,7 @@ print(f"{len(nzd_sites)} NZD sites found")
 # Define random seed for reproducibility
 seed = 42 
 single_preview_random_state = seed
-n_mc_realizations_per_transect = 50
+n_mc_realizations_per_transect = 2000
 loess_window = 10  # years, used for both LOESS smoothing 
 #and block bootstrap window to match the timescale 
 # of variability captured by the smoothed trend.
