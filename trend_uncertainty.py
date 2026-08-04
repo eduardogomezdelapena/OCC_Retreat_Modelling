@@ -695,7 +695,7 @@ custom_ref_year = 2025
 
 
 meta_data_fp = "preprocessing/NZ_VLM_final_May24.csv"
-slr_fp = f"preprocessing/NZ_Searise_noVLM-2005_{custom_ref_year}adjusted.csv"
+slr_fp = "preprocessing/NZ_Searise_noVLM-2005.csv"
 meta_data = load_metadata_nzrise(meta_data_fp, crs_str= CRS_WGS84 ) # gpd.DataFrame
 slr_data  = load_slrdata_nzrise(slr_fp) #pd.DataFrame
 
@@ -945,48 +945,80 @@ for site_id in nzd_sites_trial:
         else:
             tan_beta = float(tan_vals.iloc[0])
 
-        # Extract shifted SLR quantiles for this transect.
+        # Build per-transect SLR quantile series from original NZ SeaRise columns.
         mask_slr = (
             (all_merged["site_id"] == site_id)
             & (all_merged["transect_id"] == transect_id)
-            & (all_merged["year"] == target_year)
             & (all_merged["scenario"].astype(str) == scenario_target)
             & (all_merged["SSP"].astype(str).str.lower() == ssp_target)
         )
-  
+
         if not mask_slr.any():
             skipped_site_transects.add((site_id, transect_id, "no matching SLR data in all_merged"))
             print(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
             continue
 
-        slr_q17_vals = all_merged.loc[mask_slr, "17_shifted"].dropna()
-        slr_q50_vals = all_merged.loc[mask_slr, "50_shifted"].dropna()
-        slr_q83_vals = all_merged.loc[mask_slr, "83_shifted"].dropna()
-
-        if slr_q17_vals.empty or slr_q50_vals.empty or slr_q83_vals.empty:
-            skipped_site_transects.add(
-                (site_id, transect_id, "missing one or more shifted SLR quantiles")
-            )
-            print(
-                f"Skipping {site_id} {transect_id}: missing one or more shifted SLR quantiles"
-            )
-            continue
-
-        delta_s_q17 = float(slr_q17_vals.mean())
-        delta_s_q50 = float(slr_q50_vals.mean())
-        delta_s_q83 = float(slr_q83_vals.mean())
-##########################
         slr_series = (
             all_merged.loc[
-                (all_merged["site_id"] == site_id)
-                & (all_merged["transect_id"] == transect_id),
-                ["year", "17_shifted", "50_shifted", "83_shifted"],
+                mask_slr,
+                ["year", "17", "50", "83"],
             ]
             .dropna()
-            .groupby("year", as_index=False)[["17_shifted", "50_shifted", "83_shifted"]]
+            .groupby("year", as_index=False)[["17", "50", "83"]]
             .mean()
             .sort_values("year")
         )
+
+        if slr_series.empty:
+            skipped_site_transects.add((site_id, transect_id, "missing SLR quantiles after filtering"))
+            print(f"Skipping {site_id} {transect_id}: missing SLR quantiles after filtering")
+            continue
+
+        year_values = slr_series["year"].to_numpy(dtype=float)
+        min_year = float(np.min(year_values))
+        max_year = float(np.max(year_values))
+
+        if custom_ref_year < min_year or target_year > max_year:
+            skipped_site_transects.add(
+                (
+                    site_id,
+                    transect_id,
+                    f"SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span baseline/target",
+                )
+            )
+            print(
+                f"Skipping {site_id} {transect_id}: "
+                f"SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span "
+                f"baseline={custom_ref_year} and target={target_year}"
+            )
+            continue
+
+        q17_values = slr_series["17"].to_numpy(dtype=float)
+        q50_values = slr_series["50"].to_numpy(dtype=float)
+        q83_values = slr_series["83"].to_numpy(dtype=float)
+
+        q17_ref = float(np.interp(custom_ref_year, year_values, q17_values))
+        q50_ref = float(np.interp(custom_ref_year, year_values, q50_values))
+        q83_ref = float(np.interp(custom_ref_year, year_values, q83_values))
+
+        q17_target = float(np.interp(target_year, year_values, q17_values))
+        q50_target = float(np.interp(target_year, year_values, q50_values))
+        q83_target = float(np.interp(target_year, year_values, q83_values))
+
+        delta_s_q17 = q17_target - q17_ref
+        delta_s_q50 = q50_target - q50_ref
+        delta_s_q83 = q83_target - q83_ref
+
+        if not (np.isfinite(delta_s_q17) and np.isfinite(delta_s_q50) and np.isfinite(delta_s_q83)):
+            skipped_site_transects.add((site_id, transect_id, "non-finite delta_S quantiles"))
+            print(f"Skipping {site_id} {transect_id}: non-finite delta_S quantiles")
+            continue
+
+        if not (delta_s_q17 <= delta_s_q50 <= delta_s_q83):
+            skipped_site_transects.add((site_id, transect_id, "invalid delta_S quantile ordering"))
+            print(f"Skipping {site_id} {transect_id}: invalid delta_S quantile ordering")
+            continue
+##########################
 
         slr_projection_years = np.array([], dtype=float)
         slr_projection_q17 = np.array([], dtype=float)
@@ -998,11 +1030,7 @@ for site_id in nzd_sites_trial:
             year_values = slr_series_plot["year"].to_numpy(dtype=float)
             if year_values.min() <= custom_ref_year <= year_values.max():
                 has_baseline_year = bool(np.isclose(year_values, custom_ref_year).any())
-
-                for col in ["17_shifted", "50_shifted", "83_shifted"]:
-                    col_values = slr_series_plot[col].to_numpy(dtype=float)
-                    baseline_value = float(np.interp(custom_ref_year, year_values, col_values))
-                    slr_series_plot[col] = col_values - baseline_value
+                has_target_year = bool(np.isclose(year_values, target_year).any())
 
                 if not has_baseline_year:
                     slr_series_plot = pd.concat(
@@ -1010,12 +1038,28 @@ for site_id in nzd_sites_trial:
                             pd.DataFrame(
                                 [{
                                     "year": float(custom_ref_year),
-                                    "17_shifted": 0.0,
-                                    "50_shifted": 0.0,
-                                    "83_shifted": 0.0,
+                                    "17": float(np.interp(custom_ref_year, year_values, slr_series_plot["17"].to_numpy(dtype=float))),
+                                    "50": float(np.interp(custom_ref_year, year_values, slr_series_plot["50"].to_numpy(dtype=float))),
+                                    "83": float(np.interp(custom_ref_year, year_values, slr_series_plot["83"].to_numpy(dtype=float))),
                                 }]
                             ),
                             slr_series_plot,
+                        ],
+                        ignore_index=True,
+                    )
+
+                if not has_target_year and (year_values.min() <= target_year <= year_values.max()):
+                    slr_series_plot = pd.concat(
+                        [
+                            slr_series_plot,
+                            pd.DataFrame(
+                                [{
+                                    "year": float(target_year),
+                                    "17": float(np.interp(target_year, year_values, slr_series_plot["17"].to_numpy(dtype=float))),
+                                    "50": float(np.interp(target_year, year_values, slr_series_plot["50"].to_numpy(dtype=float))),
+                                    "83": float(np.interp(target_year, year_values, slr_series_plot["83"].to_numpy(dtype=float))),
+                                }]
+                            ),
                         ],
                         ignore_index=True,
                     )
@@ -1027,14 +1071,14 @@ for site_id in nzd_sites_trial:
                 )
 
                 slr_projection_years = slr_series_plot["year"].to_numpy(dtype=float)
-                slr_projection_q17 = slr_series_plot["17_shifted"].to_numpy(dtype=float)
-                slr_projection_q50 = slr_series_plot["50_shifted"].to_numpy(dtype=float)
-                slr_projection_q83 = slr_series_plot["83_shifted"].to_numpy(dtype=float)
+                slr_projection_q17 = slr_series_plot["17"].to_numpy(dtype=float)
+                slr_projection_q50 = slr_series_plot["50"].to_numpy(dtype=float)
+                slr_projection_q83 = slr_series_plot["83"].to_numpy(dtype=float)
 ########################
 
         print(
             f"{site_id} {transect_id}: tan_beta = {tan_beta}, "
-            f"delta_S_shifted(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
+            f"delta_S_2025_to_{int(target_year)}(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
             f"for {ssp_target}-{scenario_target}, year={target_year}"
         )
 
