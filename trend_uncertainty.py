@@ -38,7 +38,7 @@ loess_window = 10  # years, used for both LOESS smoothing
 #and block bootstrap window to match the timescale 
 # of variability captured by the smoothed trend.
 first_segment_recent_weight = 0.5
-recent_trend_window_years = 5.0
+recent_trend_window_years = 10.0
 # and min_span_years in filter_to_longest_consecutive_year_run 
 # to ensure a long enough record for stable trend estimation.
 
@@ -127,18 +127,28 @@ def filter_to_longest_consecutive_year_run(
     segment_starts = np.r_[0, break_indices]
     segment_ends = np.r_[break_indices, t.size]
 
+    target_year = 2024
     selected_segment = None
+    found_segment_with_target_year = False
     for start_idx, end_idx in zip(segment_starts[::-1], segment_ends[::-1]):
         if end_idx - start_idx < 2:
             continue
 
+        segment_dates = dates[start_idx:end_idx]
+        if not np.any(segment_dates.year == target_year):
+            continue
+
+        found_segment_with_target_year = True
         span_years = (dates[end_idx - 1] - dates[start_idx]).days / 365.25
         if span_years >= min_span_years:
             selected_segment = (start_idx, end_idx, span_years)
             break
 
     if selected_segment is None:
-        meta["status"] = "insufficient_recent_span"
+        if found_segment_with_target_year:
+            meta["status"] = "insufficient_recent_span_with_2024"
+        else:
+            meta["status"] = "no_segment_with_2024"
         meta["removed_years"] = all_years
         return t[:0], y[:0], meta
 
