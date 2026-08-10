@@ -42,6 +42,16 @@ recent_trend_window_years = 10.0
 # and min_span_years in filter_to_longest_consecutive_year_run 
 # to ensure a long enough record for stable trend estimation.
 
+# Constants
+CRS_WGS84 = 4326 # Lat/Lon
+custom_ref_year = 2025   # baseline year for projections
+historical_slr_start_year = 2005 #NZSearise SLR data is zero in 2005
+
+# Keep only the requested climate pathway for SLR extraction.
+scenario_target = "2.6"
+ssp_target = "ssp1"
+target_year = 2050  # projection horizon 
+
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
 def load_transect_data(site_id):
     url = (
@@ -322,11 +332,11 @@ def mc_shoreline_change(
     delta_S_q17,
     delta_S_q50,
     delta_S_q83,
+    dt,    # this should be difference between custom_ref_year and target_year
     r_recent_samples=None,
     first_segment_recent_weight=0.0,
     projection_start_year=None,
-    align_to_decades=False,
-    dt=25,                      # 2025 as baseline year, projections to 2100
+    align_to_decades=False,     
     n=200_000,
     return_delta_s_samples=True,
     return_r_segment_samples=True,
@@ -697,13 +707,7 @@ def select_sites_within_region(
     return nzd_sites_trial
 #% Define constants, load data, and merge datasets (similar to merge_slr_sat.py)
 
-# Constants
-CRS_WGS84 = 4326 # Lat/Lon
-custom_ref_year = 2025
-historical_slr_start_year = 2005
-
 #preprocessing files are in preprocessing directory 
-
 
 meta_data_fp = "preprocessing/NZ_VLM_final_May24.csv"
 slr_fp = "preprocessing/NZ_Searise_noVLM-2005.csv"
@@ -747,10 +751,7 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 all_merged["site_id"] = all_merged["coastsat_site_id"]
 all_merged["transect_id"] = all_merged["coastsat_transect_id"]
 
-# Keep only the requested climate pathway for SLR extraction.
-scenario_target = "2.6"
-ssp_target = "ssp1"
-target_year = custom_ref_year + 75  # 2025 baseline to 2100
+
 
 all_merged = all_merged[
     (all_merged["scenario"].astype(str) == scenario_target)
@@ -1116,6 +1117,7 @@ for site_id in nzd_sites_trial:
             delta_S_q17=delta_s_q17,
             delta_S_q50=delta_s_q50,
             delta_S_q83=delta_s_q83,
+            dt=target_year - custom_ref_year,
             projection_start_year=float(custom_ref_year),
             align_to_decades=True,
             n=n_mc_realizations_per_transect,
