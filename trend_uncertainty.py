@@ -30,27 +30,51 @@ nzd_sites = sorted(
 
 print(f"{len(nzd_sites)} NZD sites found")
 
-# Define random seed for reproducibility
-seed = 42 
-single_preview_random_state = seed
-n_mc_realizations_per_transect = 2000
-loess_window = 10  # years, used for both LOESS smoothing 
-#and block bootstrap window to match the timescale 
-# of variability captured by the smoothed trend.
-first_segment_recent_weight = 0.5
-recent_trend_window_years = 10.0
-# and min_span_years in filter_to_longest_consecutive_year_run 
-# to ensure a long enough record for stable trend estimation.
+# Key run settings.
+#
+# Keep the run-specific knobs here so the projection horizon, SLR horizon,
+# selected pathway, and site subset stay synchronized. In particular:
+# - `custom_ref_year` is the shoreline/SLR baseline year.
+# - `target_year` is the projection endpoint.
+# - Monte Carlo duration is derived later as `target_year - custom_ref_year`.
+# - `site_ids_override` limits execution to an explicit site list; set it to an
+#   empty list to use all sites returned by the region filter.
+RUN_CONFIG = {
+    "site_ids_override": ["nzd0131"],  # Non-empty list overrides region-based site selection.     
+    "target_region_name": "Auckland",  # Region filter applied before any explicit override.
+    "custom_ref_year": 2025,  # Baseline year for shoreline and SLR deltas.
+    "target_year": 2050,  # Projection endpoint for SLR and shoreline outputs.    
+    "historical_slr_start_year": 2005,  # NZ SeaRise zero-baseline year.
+    "scenario_target": "2.6",  # Sea-level scenario identifier.
+    "ssp_target": "ssp1",  # SSP family used with scenario_target.
+    "loess_window_years": 10,  # Shared smoothing/bootstrap window length.
+    "n_mc_realizations_per_transect": 2000,  # Monte Carlo draws per transect.    
+    "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
+    "recent_trend_window_years": 10.0,  # Look-back window for the recent trend pool.
+    "seed": 42,  # Reproducible bootstrap and Monte Carlo sampling.
+}
 
 # Constants
 CRS_WGS84 = 4326 # Lat/Lon
-custom_ref_year = 2025   # baseline year for projections
-historical_slr_start_year = 2005 #NZSearise SLR data is zero in 2005
+
+seed = RUN_CONFIG["seed"]
+single_preview_random_state = seed
+n_mc_realizations_per_transect = RUN_CONFIG["n_mc_realizations_per_transect"]
+loess_window = RUN_CONFIG["loess_window_years"]  # years, used for both LOESS smoothing
+#and block bootstrap window to match the timescale
+# of variability captured by the smoothed trend.
+first_segment_recent_weight = RUN_CONFIG["first_segment_recent_weight"]
+recent_trend_window_years = RUN_CONFIG["recent_trend_window_years"]
+# and min_span_years in filter_to_longest_consecutive_year_run
+# to ensure a long enough record for stable trend estimation.
+
+custom_ref_year = RUN_CONFIG["custom_ref_year"]   # baseline year for projections
+historical_slr_start_year = RUN_CONFIG["historical_slr_start_year"] #NZSearise SLR data is zero in 2005
 
 # Keep only the requested climate pathway for SLR extraction.
-scenario_target = "2.6"
-ssp_target = "ssp1"
-target_year = 2050  # projection horizon 
+scenario_target = RUN_CONFIG["scenario_target"]
+ssp_target = RUN_CONFIG["ssp_target"]
+target_year = RUN_CONFIG["target_year"]  # projection horizon
 
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
 def load_transect_data(site_id):
@@ -94,6 +118,7 @@ def filter_to_longest_consecutive_year_run(
     max_gap_months,
     site_id,
     transect_id,
+    custom_ref_year,
 ):
     # Convert to numpy arrays for easier processing
     t = np.asarray(t, dtype=float)
@@ -137,7 +162,7 @@ def filter_to_longest_consecutive_year_run(
     segment_starts = np.r_[0, break_indices]
     segment_ends = np.r_[break_indices, t.size]
 
-    must_bepresent_year = 2024
+    must_bepresent_year = custom_ref_year - 1
     selected_segment = None
     found_segment_with_must_bepresent_year = False
     for start_idx, end_idx in zip(segment_starts[::-1], segment_ends[::-1]):
@@ -762,10 +787,12 @@ all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 nzd_sites_trial = select_sites_within_region(
     all_merged=all_merged,
     nzd_sites=nzd_sites,
-    target_region_name="Auckland",
+    target_region_name=RUN_CONFIG["target_region_name"],
 )
 # nzd_sites_trial = nzd_sites_trial[16:]
-nzd_sites_trial = ["nzd0131"]
+site_ids_override = RUN_CONFIG["site_ids_override"]
+if site_ids_override:
+    nzd_sites_trial = site_ids_override
 # # Quick trial mode: sample up to 5 sites at random from the region selection.
 # trial_n_sites = min(5, len(nzd_sites_trial))
 # rng_trial = np.random.default_rng(seed)
@@ -841,6 +868,7 @@ for site_id in nzd_sites_trial:
             max_gap_months=10,
             site_id = site_id,
             transect_id = transect_id,
+            custom_ref_year=custom_ref_year,
         )
 
         meta_rows.append({
@@ -1101,7 +1129,7 @@ for site_id in nzd_sites_trial:
 
         print(
             f"{site_id} {transect_id}: tan_beta = {tan_beta}, tan_beta_adjusted = {tan_beta_adjusted}, "
-            f"delta_S_2025_to_{int(target_year)}(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
+            f"delta_S_{int(custom_ref_year)}_to_{int(target_year)}(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
             f"for {ssp_target}-{scenario_target}, year={target_year}"
         )
  
