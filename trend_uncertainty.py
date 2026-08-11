@@ -1069,6 +1069,28 @@ for site_id in nzd_sites_trial:
             print(f"Skipping {site_id} {transect_id}: invalid delta_S quantile ordering")
             continue
 
+        hist_years = float(custom_ref_year - historical_slr_start_year)
+        if hist_years <= 0.0:
+            skipped_site_transects.add((site_id, transect_id, "invalid historical SLR year span"))
+            print(
+                f"Skipping {site_id} {transect_id}: invalid historical SLR year span "
+                f"({historical_slr_start_year}->{custom_ref_year})"
+            )
+            continue
+
+        # Convert historical SLR rise into an equivalent constant trend-rate
+        # contribution and remove it from both trend pools.
+        r_slr_hist = (-(1.0 / tan_beta_adjusted) * delta_s_hist_q50) / hist_years
+        if not np.isfinite(r_slr_hist):
+            skipped_site_transects.add((site_id, transect_id, "non-finite historical SLR trend bias"))
+            print(f"Skipping {site_id} {transect_id}: non-finite historical SLR trend bias")
+            continue
+
+        boot_slopes_debiased = np.asarray(boot_slopes, dtype=float) - r_slr_hist
+        recent_boot_slopes_debiased = None
+        if recent_boot_slopes is not None:
+            recent_boot_slopes_debiased = np.asarray(recent_boot_slopes, dtype=float) - r_slr_hist
+
 ##########################
 
         slr_projection_years = np.array([], dtype=float)
@@ -1132,13 +1154,17 @@ for site_id in nzd_sites_trial:
             f"delta_S_{int(custom_ref_year)}_to_{int(target_year)}(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
             f"for {ssp_target}-{scenario_target}, year={target_year}"
         )
+        print(
+            f"{site_id} {transect_id}: historical delta_S_q50 (2005->{int(custom_ref_year)})="
+            f"{delta_s_hist_q50:.3f} m, r_slr_hist={r_slr_hist:.5f} m/yr"
+        )
  
         mc_result = mc_shoreline_change(
             c=1.0,
             tan_beta=tan_beta_adjusted,
             delta_S=delta_s_q50,
-            r_samples = boot_slopes,
-            r_recent_samples=recent_boot_slopes,
+            r_samples = boot_slopes_debiased,
+            r_recent_samples=recent_boot_slopes_debiased,
             first_segment_recent_weight=first_segment_recent_weight,
             segment_years= loess_window,  # Match the LOESS window for consistency
             random_state=single_preview_random_state,
@@ -1180,6 +1206,10 @@ for site_id in nzd_sites_trial:
                 "delta_S_q17_m": float(delta_s_q17),
                 "delta_S_q50_m": float(delta_s_q50),
                 "delta_S_q83_m": float(delta_s_q83),
+                "delta_S_hist_q50_m": float(delta_s_hist_q50),
+                "historical_slr_start_year": int(historical_slr_start_year),
+                "historical_slr_years": float(hist_years),
+                "r_slr_hist_m_per_yr": float(r_slr_hist),                
                 "delta_S_sigma_m": float(summ["delta_S_sigma_m"]),
                 "slr_year": int(target_year),
                 "scenario": scenario_target,
@@ -1239,8 +1269,8 @@ for site_id in nzd_sites_trial:
             site_id=site_id,
             transect_id=transect_id,
             out_fp=preview_ts_plot_fp,
-            trend_pool=boot_slopes,
-            recent_trend_pool=recent_boot_slopes,
+            trend_pool=boot_slopes_debiased,
+            recent_trend_pool=recent_boot_slopes_debiased,
             sampled_historic_trends=preview_sampled_first_segment_historic,
             sampled_recent_trends=preview_sampled_first_segment_recent,
             slr_only_dy_segments=preview_slr_only_dy,
