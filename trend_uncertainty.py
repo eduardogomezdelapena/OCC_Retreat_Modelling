@@ -39,9 +39,15 @@ print(f"{len(nzd_sites)} NZD sites found")
 # - Monte Carlo duration is derived later as `target_year - custom_ref_year`.
 # - `site_ids_override` limits execution to an explicit site list; set it to an
 #   empty list to use all sites returned by the region filter.
+# - `target_region_name` can be a single region name or a list of region names.
 RUN_CONFIG = {
-    "site_ids_override": [], # "nzd0325" # Non-empty list overrides region-based site selection.     
-    "target_region_name": "Wellington Region",  # Region filter applied before any explicit override.
+    "site_ids_override": [], # "nzd0325" # Non-empty list overrides region-based site selection.
+    "target_region_name": ["Auckland","Bay of Plenty Region",
+                           "Gisborne Region", "Hawke's Bay Region",
+                           "Manawatū-Whanganui Region",
+                           "Taranaki Region",
+                           "Waikato Region",
+                           "Northland Region"],  # Single name or list of names; region filter applied before any explicit override.
     "custom_ref_year": 2025,  # Baseline year for shoreline and SLR deltas.
     "target_year": 2050,  # Projection endpoint for SLR and shoreline outputs.    
     "historical_slr_start_year": 2005,  # NZ SeaRise zero-baseline year.
@@ -675,6 +681,19 @@ from utils import load_metadata_nzrise, load_slrdata_nzrise, load_and_merge_coas
 from pathlib import Path
 
 
+def normalize_target_regions(target_region_config):
+    """Return a cleaned list of target region names from config input."""
+    if isinstance(target_region_config, str):
+        regions = [target_region_config]
+    else:
+        regions = list(target_region_config)
+
+    regions = [str(r).strip() for r in regions if str(r).strip()]
+    if not regions:
+        raise ValueError("RUN_CONFIG['target_region_name'] must contain at least one region name.")
+    return regions
+
+
 def select_sites_within_region(
     all_merged,
     nzd_sites,
@@ -784,10 +803,21 @@ all_merged = all_merged[
 ].copy()
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 
-nzd_sites_trial = select_sites_within_region(
-    all_merged=all_merged,
-    nzd_sites=nzd_sites,
-    target_region_name=RUN_CONFIG["target_region_name"],
+# Build a multi-region site list when target_region_name is configured as a list.
+target_region_names = normalize_target_regions(RUN_CONFIG["target_region_name"])
+
+sites_by_region = {}
+for region_name in target_region_names:
+    sites_by_region[region_name] = select_sites_within_region(
+        all_merged=all_merged,
+        nzd_sites=nzd_sites,
+        target_region_name=region_name,
+    )
+
+nzd_sites_trial = sorted({sid for sites in sites_by_region.values() for sid in sites})
+print(
+    f"Combined site list across {len(target_region_names)} region(s) "
+    f"({len(nzd_sites_trial)} unique sites)."
 )
 # nzd_sites_trial = nzd_sites_trial[16:]
 site_ids_override = RUN_CONFIG["site_ids_override"]
