@@ -1,8 +1,9 @@
 """Write point-based shoreline projections to Oceanum DataMesh.
 
-This script flattens data/projections.json into a long table (transect/scenario/year),
-optionally joins point geometry from preprocessing/points_ref_shoreline_2025.geojson,
-and uploads the result as a DataMesh datasource.
+This script flattens the per-transect detail files under data/projections_details/
+into a long table (transect/scenario/year), optionally joins point geometry from
+preprocessing/points_ref_shoreline_2025.geojson, and uploads the result as a
+DataMesh datasource.
 """
 
 from __future__ import annotations
@@ -17,38 +18,74 @@ import pandas as pd
 from oceanum.datamesh import Connector
 
 
-DEFAULT_JSON_PATH = Path("data/projections.json")
+DEFAULT_JSON_PATH = Path("data/projections_details")
 DEFAULT_POINTS_PATH = Path("preprocessing/points_ref_shoreline_2025.geojson")
 
 
 def build_projection_table(json_path: Path) -> pd.DataFrame:
-    with json_path.open("r", encoding="utf-8") as f:
-        projections = json.load(f)
-
     records: list[dict] = []
-    for transect_id, transect_payload in projections.items():
-        site_id = transect_payload.get("site_id")
-        scenarios = transect_payload.get("scenarios", {})
+    payload_files = [json_path] if json_path.is_file() else sorted(json_path.glob("*.json"))
+    if not payload_files:
+        raise ValueError(f"No projection JSON files found in {json_path}")
 
-        for scenario, time_series in scenarios.items():
-            for row in time_series:
-                records.append(
-                    {
-                        "transect_id": transect_id,
-                        "site_id": site_id,
-                        "scenario": scenario,
-                        "year": row.get("year"),
-                        "proj_shoreline_mean": row.get("proj_shoreline_mean"),
-                        "proj_shoreline_q05": row.get("proj_shoreline_q05"),
-                        "proj_shoreline_q95": row.get("proj_shoreline_q95"),
-                        "slr_only_shoreline_mean": row.get("slr_only_shoreline_mean"),
-                        "slr_only_shoreline_q05": row.get("slr_only_shoreline_q05"),
-                        "slr_only_shoreline_q95": row.get("slr_only_shoreline_q95"),
-                        "trend_only_shoreline_mean": row.get("trend_only_shoreline_mean"),
-                        "trend_only_shoreline_q05": row.get("trend_only_shoreline_q05"),
-                        "trend_only_shoreline_q95": row.get("trend_only_shoreline_q95"),
-                    }
-                )
+    for payload_file in payload_files:
+        with payload_file.open("r", encoding="utf-8") as f:
+            projections = json.load(f)
+
+        if isinstance(projections, dict) and "transect_id" in projections and "scenarios" in projections:
+            transect_id = projections.get("transect_id") or payload_file.stem
+            site_id = projections.get("site_id")
+            scenarios = projections.get("scenarios", {})
+
+            for scenario, time_series in scenarios.items():
+                if not isinstance(time_series, list):
+                    continue
+                for row in time_series:
+                    records.append(
+                        {
+                            "transect_id": transect_id,
+                            "site_id": site_id,
+                            "scenario": scenario,
+                            "year": row.get("year"),
+                            "proj_shoreline_mean": row.get("proj_shoreline_mean"),
+                            "proj_shoreline_q05": row.get("proj_shoreline_q05"),
+                            "proj_shoreline_q95": row.get("proj_shoreline_q95"),
+                            "slr_only_shoreline_mean": row.get("slr_only_shoreline_mean"),
+                            "slr_only_shoreline_q05": row.get("slr_only_shoreline_q05"),
+                            "slr_only_shoreline_q95": row.get("slr_only_shoreline_q95"),
+                            "trend_only_shoreline_mean": row.get("trend_only_shoreline_mean"),
+                            "trend_only_shoreline_q05": row.get("trend_only_shoreline_q05"),
+                            "trend_only_shoreline_q95": row.get("trend_only_shoreline_q95"),
+                        }
+                    )
+            continue
+
+        if isinstance(projections, dict):
+            for transect_id, transect_payload in projections.items():
+                site_id = transect_payload.get("site_id")
+                scenarios = transect_payload.get("scenarios", {})
+
+                for scenario, time_series in scenarios.items():
+                    if not isinstance(time_series, list):
+                        continue
+                    for row in time_series:
+                        records.append(
+                            {
+                                "transect_id": transect_id,
+                                "site_id": site_id,
+                                "scenario": scenario,
+                                "year": row.get("year"),
+                                "proj_shoreline_mean": row.get("proj_shoreline_mean"),
+                                "proj_shoreline_q05": row.get("proj_shoreline_q05"),
+                                "proj_shoreline_q95": row.get("proj_shoreline_q95"),
+                                "slr_only_shoreline_mean": row.get("slr_only_shoreline_mean"),
+                                "slr_only_shoreline_q05": row.get("slr_only_shoreline_q05"),
+                                "slr_only_shoreline_q95": row.get("slr_only_shoreline_q95"),
+                                "trend_only_shoreline_mean": row.get("trend_only_shoreline_mean"),
+                                "trend_only_shoreline_q05": row.get("trend_only_shoreline_q05"),
+                                "trend_only_shoreline_q95": row.get("trend_only_shoreline_q95"),
+                            }
+                        )
 
     if not records:
         raise ValueError(f"No projection records found in {json_path}")
@@ -85,7 +122,7 @@ def parse_args() -> argparse.Namespace:
         "--json-path",
         type=Path,
         default=DEFAULT_JSON_PATH,
-        help=f"Path to projections JSON (default: {DEFAULT_JSON_PATH})",
+        help=f"Path to projection detail JSON files or directory (default: {DEFAULT_JSON_PATH})",
     )
     parser.add_argument(
         "--points-path",
@@ -115,7 +152,7 @@ def parse_args() -> argparse.Namespace:
         "--description",
         default=(
             "Point-level shoreline projections by transect, scenario, and year, "
-            "derived from data/projections.json."
+            "derived from data/projections_details/."
         ),
         help="DataMesh datasource description",
     )

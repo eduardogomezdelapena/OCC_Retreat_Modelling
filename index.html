@@ -279,10 +279,12 @@
     let map;
     let markers = {};
     let projectionsData = {};
+    let currentTransectData = null;
     let currentTransectId = null;
     let currentChart = null;
     let activeScenarioKey = null;
     let normalizedChangeByTransect = {};
+    let transectDetailCache = {};
     let colorScaleLimit = 10;
 
     const TARGET_SCENARIO_HINT = 'compound';
@@ -317,7 +319,7 @@
           activeScenarioKey = scenarioKey;
           normalizedChangeByTransect = computeNormalizedChangeForAllTransects(data, scenarioKey);
           colorScaleLimit = FIXED_COLOR_SCALE_LIMIT;
-          console.log('Loaded projections for', Object.keys(data).length, 'transects');
+          console.log('Loaded projection summary for', Object.keys(data).length, 'transects');
           console.log('Using scenario key for normalized mapping:', scenarioKey);
           console.log('Fixed symmetric color scale limit (+/-m):', colorScaleLimit);
         })
@@ -387,29 +389,30 @@
     function computeNormalizedChangeForAllTransects(data, scenarioKey) {
       const deltas = {};
       Object.entries(data).forEach(([transectId, transectData]) => {
-        const scenarioSeries = transectData.scenarios && transectData.scenarios[scenarioKey];
-        if (!scenarioSeries || !Array.isArray(scenarioSeries)) {
+        const scenarioSummary = transectData.scenarios && transectData.scenarios[scenarioKey];
+        if (!scenarioSummary) {
           return;
         }
-
-        const projectionSeries = scenarioSeries.filter(d => !d.series_type || d.series_type === 'projection');
-        if (projectionSeries.length === 0) {
-          return;
-        }
-
-        const baselineRecord = projectionSeries.find(d => Number(d.year) === BASELINE_YEAR);
-        const targetRecord = projectionSeries.find(d => Number(d.year) === TARGET_YEAR);
-        if (!baselineRecord || !targetRecord) {
-          return;
-        }
-
-        const baseline = Number(baselineRecord.proj_shoreline_mean);
-        const target = Number(targetRecord.proj_shoreline_mean);
-        if (Number.isFinite(baseline) && Number.isFinite(target)) {
-          deltas[transectId] = target - baseline;
+        const delta = Number(scenarioSummary.normalized_change_2025_2050);
+        if (Number.isFinite(delta)) {
+          deltas[transectId] = delta;
         }
       });
       return deltas;
+    }
+
+    function loadTransectDetail(transectSummary) {
+      const detailPath = transectSummary.detail_file || `data/projections_details/${transectSummary.transect_id}.json`;
+      if (transectDetailCache[detailPath]) {
+        return Promise.resolve(transectDetailCache[detailPath]);
+      }
+
+      return fetch(detailPath)
+        .then(response => response.json())
+        .then(data => {
+          transectDetailCache[detailPath] = data;
+          return data;
+        });
     }
 
     function clamp(value, min, max) {
@@ -477,8 +480,8 @@
     function showProjections(transectId, properties) {
       currentTransectId = transectId;
       
-      const transectData = projectionsData[transectId];
-      if (!transectData) {
+      const transectSummary = projectionsData[transectId];
+      if (!transectSummary) {
         alert('No projection data available for ' + transectId);
         return;
       }
@@ -491,28 +494,46 @@
         : 'n/a';
       document.getElementById('panelSubtitle').textContent = `Site: ${properties.site_id} | Normalized change 2025→2050: ${deltaLabel}`;
 
-      // Compound-first display (fallback already resolved in activeScenarioKey)
-      let html = '<div class="scenario-container">';
-      html += `<div class="scenario-title">Scenario: ${activeScenarioKey || 'n/a'}</div>`;
-      html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
-      html += '<table class="data-table" id="dataTable"></table>';
-      html += '<div class="legend">';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #2ca02c;"></div> Compound Projection</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(44, 160, 44, 0.30);"></div> Projection 5%-95% Range</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: deeppink;"></div> SLR Only</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(255, 20, 147, 0.22);"></div> SLR Only 5%-95% Range</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #000;"></div> Trend Only</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 0, 0, 0.16);"></div> Trend Only 5%-95% Range</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #1f77b4;"></div> Satellite Observations</div>';
-      html += '<div class="legend-item"><div class="legend-color" style="background: #ff7f0e;"></div> LOESS Historical Signal</div>';
-      html += '</div>';
-      html += '</div>';
-
-      document.getElementById('panelBody').innerHTML = html;
+      document.getElementById('panelBody').innerHTML = '<div class="scenario-container"><div class="chart-container" style="display:flex;align-items:center;justify-content:center;min-height:240px;">Loading transect details...</div></div>';
       document.getElementById('infoPanel').classList.remove('hidden');
 
-      // Update chart with compound/fallback scenario only
-      updateChart(activeScenarioKey);
+      loadTransectDetail(transectSummary)
+        .then(detailData => {
+          if (currentTransectId !== transectId) {
+            return;
+          }
+
+          currentTransectData = detailData;
+          const resolvedScenarioKey = resolveScenarioKey(detailData) || activeScenarioKey;
+          activeScenarioKey = resolvedScenarioKey;
+
+          // Compound-first display (fallback already resolved in activeScenarioKey)
+          let html = '<div class="scenario-container">';
+          html += `<div class="scenario-title">Scenario: ${activeScenarioKey || 'n/a'}</div>`;
+          html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
+          html += '<table class="data-table" id="dataTable"></table>';
+          html += '<div class="legend">';
+          html += '<div class="legend-item"><div class="legend-color" style="background: #2ca02c;"></div> Compound Projection</div>';
+          html += '<div class="legend-item"><div class="legend-color" style="background: rgba(44, 160, 44, 0.30);"></div> Projection 5%-95% Range</div>';
+          html += '<div class="legend-item"><div class="legend-color" style="background: deeppink;"></div> SLR Only</div>';
+          html += '<div class="legend-item"><div class="legend-color" style="background: rgba(255, 20, 147, 0.22);"></div> SLR Only 5%-95% Range</div>';
+          html += '<div class="legend-item"><div class="legend-color" style="background: #000;"></div> Trend Only</div>';
+          html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 0, 0, 0.16);"></div> Trend Only 5%-95% Range</div>';
+          html += '<div class="legend-item"><div class="legend-color" style="background: #1f77b4;"></div> Satellite Observations</div>';
+          html += '<div class="legend-item"><div class="legend-color" style="background: #ff7f0e;"></div> LOESS Historical Signal</div>';
+          html += '</div>';
+          html += '</div>';
+
+          document.getElementById('panelBody').innerHTML = html;
+          document.getElementById('infoPanel').classList.remove('hidden');
+
+          // Update chart with compound/fallback scenario only
+          updateChart(detailData, resolvedScenarioKey);
+        })
+        .catch(error => {
+          console.error('Error loading transect details:', error);
+          document.getElementById('panelBody').innerHTML = '<div class="scenario-container"><div class="chart-container" style="display:flex;align-items:center;justify-content:center;min-height:240px;">Unable to load transect details.</div></div>';
+        });
 
       // Highlight marker
       Object.values(markers).forEach(m => m.setStyle({ color: '#fff' }));
@@ -522,8 +543,7 @@
     }
 
     // Update chart based on selected scenario
-    function updateChart(scenario) {
-      const transectData = projectionsData[currentTransectId];
+    function updateChart(transectData, scenario) {
       const data = transectData.scenarios[scenario];
 
       if (!data || data.length === 0) {

@@ -21,3 +21,4 @@ contextily_cache/contextily/tile/_fetch_tile/84ddfc261c1ffea06e2563490f095e30/me
 data/projections.json
 data/projections_Wellington.json
 *.png
+*.json
