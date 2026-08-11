@@ -5,6 +5,8 @@ contextily_cache/contextily/tile/_fetch_tile/0b7895fa335e426a8aa6f2e9ce73c22a/ou
 #*.json
 
 outputs/ 
+# Ignore generated original time-series plot artifacts
+/original_plots_ts/
 original_plots_ts/**
 postprocessing/coverage_results
 # generated GeoPackage from merge_slr_sat.py (huge, ~1.7 GB)
