@@ -142,6 +142,30 @@
       margin-bottom: 8px;
     }
 
+    .compare-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: -2px;
+      margin-bottom: 8px;
+    }
+
+    .compare-cycle-btn {
+      border: 1px solid #c8d2dc;
+      background: #fff;
+      color: #2b4259;
+      border-radius: 4px;
+      font-size: 11px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+
+    .compare-cycle-btn:disabled {
+      cursor: not-allowed;
+      color: #9aa5b1;
+      background: #f2f4f7;
+      border-color: #dde3ea;
+    }
+
     .chart-container {
       position: relative;
       height: 250px;
@@ -543,8 +567,9 @@
           const scenarioKeys = getScenarioKeys(detailData);
           const resolvedScenarioKey = resolveScenarioKey(detailData) || activeScenarioKey || scenarioKeys[0] || null;
           activeScenarioKey = resolvedScenarioKey;
-          currentPrimaryScenario = resolvedScenarioKey;
-          currentSecondaryScenario = scenarioKeys.find(key => key !== currentPrimaryScenario) || currentPrimaryScenario;
+          const [defaultPrimaryScenario, defaultSecondaryScenario] = getDefaultScenarioPair(scenarioKeys);
+          currentPrimaryScenario = defaultPrimaryScenario || resolvedScenarioKey;
+          currentSecondaryScenario = defaultSecondaryScenario || scenarioKeys.find(key => key !== currentPrimaryScenario) || currentPrimaryScenario;
           isCompareMode = false;
 
           let html = '<div class="scenario-container">';
@@ -564,6 +589,7 @@
           html += '</div>';
           html += '</div>';
           html += '<div class="compare-note" id="compareNote"></div>';
+          html += '<div class="compare-actions"><button id="cycleCompareBtn" class="compare-cycle-btn" type="button">Next pair</button></div>';
           html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
           html += '<table class="data-table" id="dataTable"></table>';
           html += '<div class="legend" id="dynamicLegend"></div>';
@@ -577,15 +603,28 @@
           const secondarySelect = document.getElementById('secondaryScenarioSelect');
           const secondaryRow = document.getElementById('secondaryScenarioRow');
           const compareNote = document.getElementById('compareNote');
+          const cycleCompareBtn = document.getElementById('cycleCompareBtn');
 
           populateScenarioSelect(primarySelect, scenarioKeys, currentPrimaryScenario);
           populateScenarioSelect(secondarySelect, scenarioKeys, currentSecondaryScenario);
 
           const hasTwoScenarios = scenarioKeys.length > 1;
+          const scenarioPairs = getScenarioPairs(scenarioKeys);
           compareToggle.disabled = !hasTwoScenarios;
+          cycleCompareBtn.disabled = scenarioPairs.length === 0;
           compareNote.textContent = hasTwoScenarios
             ? 'Each scenario is normalized to its own 2025 baseline to compare trajectory differences.'
             : 'Only one scenario is available for this transect.';
+
+          function setPair(pair) {
+            if (!pair || pair.length !== 2) {
+              return;
+            }
+            currentPrimaryScenario = pair[0];
+            currentSecondaryScenario = pair[1];
+            primarySelect.value = currentPrimaryScenario;
+            secondarySelect.value = currentSecondaryScenario;
+          }
 
           function syncScenarioSelection(changedSelect) {
             currentPrimaryScenario = primarySelect.value;
@@ -626,6 +665,25 @@
             renderScenarioView();
           });
 
+          cycleCompareBtn.addEventListener('click', () => {
+            if (scenarioPairs.length === 0) {
+              return;
+            }
+            if (!isCompareMode) {
+              isCompareMode = true;
+              compareToggle.checked = true;
+            }
+
+            const currentIndex = scenarioPairs.findIndex(pair =>
+              pair[0] === currentPrimaryScenario && pair[1] === currentSecondaryScenario
+            );
+            const nextIndex = currentIndex >= 0
+              ? (currentIndex + 1) % scenarioPairs.length
+              : 0;
+            setPair(scenarioPairs[nextIndex]);
+            renderScenarioView();
+          });
+
           renderScenarioView();
         })
         .catch(error => {
@@ -641,12 +699,67 @@
     }
 
     function getScenarioKeys(transectData) {
-      return Object.keys((transectData && transectData.scenarios) || {}).sort();
+      return Object.keys((transectData && transectData.scenarios) || {}).sort((a, b) => {
+        const pa = parseScenarioKey(a);
+        const pb = parseScenarioKey(b);
+        if (Number.isFinite(pa.forcing) && Number.isFinite(pb.forcing) && pa.forcing !== pb.forcing) {
+          return pa.forcing - pb.forcing;
+        }
+        if (Number.isFinite(pa.ssp) && Number.isFinite(pb.ssp) && pa.ssp !== pb.ssp) {
+          return pa.ssp - pb.ssp;
+        }
+        return a.localeCompare(b);
+      });
+    }
+
+    function parseScenarioKey(scenarioKey) {
+      const normalized = String(scenarioKey || '').toLowerCase();
+      const match = normalized.match(/ssp\s*([0-9]+)[_\-\s]*([0-9]+(?:\.[0-9]+)?)/);
+      if (!match) {
+        return {
+          raw: scenarioKey,
+          ssp: NaN,
+          forcing: NaN
+        };
+      }
+      return {
+        raw: scenarioKey,
+        ssp: Number(match[1]),
+        forcing: Number(match[2])
+      };
+    }
+
+    function getScenarioPairs(scenarioKeys) {
+      const pairs = [];
+      for (let i = 0; i < scenarioKeys.length; i += 1) {
+        for (let j = i + 1; j < scenarioKeys.length; j += 1) {
+          pairs.push([scenarioKeys[i], scenarioKeys[j]]);
+        }
+      }
+      return pairs;
+    }
+
+    function getDefaultScenarioPair(scenarioKeys) {
+      if (scenarioKeys.length === 0) {
+        return [null, null];
+      }
+      if (scenarioKeys.length === 1) {
+        return [scenarioKeys[0], scenarioKeys[0]];
+      }
+
+      const parsed = scenarioKeys.map(key => ({ key, parsed: parseScenarioKey(key) }));
+      const finite = parsed.filter(item => Number.isFinite(item.parsed.forcing));
+      if (finite.length >= 2) {
+        const sorted = [...finite].sort((a, b) => a.parsed.forcing - b.parsed.forcing);
+        return [sorted[0].key, sorted[sorted.length - 1].key];
+      }
+
+      return [scenarioKeys[0], scenarioKeys[1]];
     }
 
     function populateScenarioSelect(selectElement, scenarioKeys, selectedKey) {
       selectElement.innerHTML = scenarioKeys
-        .map(key => `<option value="${key}">${key.replace(/_/g, ' ')}</option>`)
+        .map(key => `<option value="${key}">${formatScenarioLabel(key)}</option>`)
         .join('');
       if (selectedKey && scenarioKeys.includes(selectedKey)) {
         selectElement.value = selectedKey;
@@ -728,6 +841,10 @@
     }
 
     function formatScenarioLabel(scenarioKey) {
+      const parsed = parseScenarioKey(scenarioKey);
+      if (Number.isFinite(parsed.ssp) && Number.isFinite(parsed.forcing)) {
+        return `SSP${parsed.ssp}-${parsed.forcing.toFixed(1)}`;
+      }
       return (scenarioKey || 'n/a').replace(/_/g, ' ');
     }
 

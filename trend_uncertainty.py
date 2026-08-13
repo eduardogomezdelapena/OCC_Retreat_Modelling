@@ -46,8 +46,8 @@ RUN_CONFIG = {
     "custom_ref_year": 2025,  # Baseline year for shoreline and SLR deltas.
     "target_year": 2050,  # Projection endpoint for SLR and shoreline outputs.    
     "historical_slr_start_year": 2005,  # NZ SeaRise zero-baseline year.
-    "scenario_target": "4.5",  # Sea-level scenario identifier.
-    "ssp_target": "ssp2",  # SSP family used with scenario_target.
+    "scenario_target": "1.9",  # Sea-level scenario identifier.
+    "ssp_target": "ssp1",  # SSP family used with scenario_target.
     "loess_window_years": 10,  # Shared smoothing/bootstrap window length.
     "n_mc_realizations_per_transect": 2000,  # Monte Carlo draws per transect.    
     "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
