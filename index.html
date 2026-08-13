@@ -109,6 +109,39 @@
       font-size: 12px;
     }
 
+    .scenario-controls {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .scenario-control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .scenario-control-row label {
+      font-size: 11px;
+      color: #444;
+      font-weight: 600;
+    }
+
+    .compare-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #333;
+    }
+
+    .compare-note {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
     .chart-container {
       position: relative;
       height: 250px;
@@ -283,6 +316,9 @@
     let currentTransectId = null;
     let currentChart = null;
     let activeScenarioKey = null;
+    let currentPrimaryScenario = null;
+    let currentSecondaryScenario = null;
+    let isCompareMode = false;
     let normalizedChangeByTransect = {};
     let transectDetailCache = {};
     let colorScaleLimit = 10;
@@ -504,31 +540,93 @@
           }
 
           currentTransectData = detailData;
-          const resolvedScenarioKey = resolveScenarioKey(detailData) || activeScenarioKey;
+          const scenarioKeys = getScenarioKeys(detailData);
+          const resolvedScenarioKey = resolveScenarioKey(detailData) || activeScenarioKey || scenarioKeys[0] || null;
           activeScenarioKey = resolvedScenarioKey;
+          currentPrimaryScenario = resolvedScenarioKey;
+          currentSecondaryScenario = scenarioKeys.find(key => key !== currentPrimaryScenario) || currentPrimaryScenario;
+          isCompareMode = false;
 
-          // Compound-first display (fallback already resolved in activeScenarioKey)
           let html = '<div class="scenario-container">';
-          html += `<div class="scenario-title">Scenario: ${activeScenarioKey || 'n/a'}</div>`;
+          html += '<div class="scenario-title">Scenario view</div>';
+          html += '<div class="scenario-controls">';
+          html += '<div class="compare-toggle-row">';
+          html += '<input type="checkbox" id="compareToggle">';
+          html += '<label for="compareToggle">Compare two scenarios (overlay)</label>';
+          html += '</div>';
+          html += '<div class="scenario-control-row">';
+          html += '<label for="primaryScenarioSelect">Scenario A</label>';
+          html += '<select id="primaryScenarioSelect" class="scenario-select"></select>';
+          html += '</div>';
+          html += '<div class="scenario-control-row" id="secondaryScenarioRow" style="display:none;">';
+          html += '<label for="secondaryScenarioSelect">Scenario B</label>';
+          html += '<select id="secondaryScenarioSelect" class="scenario-select"></select>';
+          html += '</div>';
+          html += '</div>';
+          html += '<div class="compare-note" id="compareNote"></div>';
           html += '<div class="chart-container"><canvas id="projectionChart"></canvas></div>';
           html += '<table class="data-table" id="dataTable"></table>';
-          html += '<div class="legend">';
-          html += '<div class="legend-item"><div class="legend-color" style="background: #2ca02c;"></div> Compound Projection</div>';
-          html += '<div class="legend-item"><div class="legend-color" style="background: rgba(44, 160, 44, 0.30);"></div> Projection 5%-95% Range</div>';
-          html += '<div class="legend-item"><div class="legend-color" style="background: deeppink;"></div> SLR Only</div>';
-          html += '<div class="legend-item"><div class="legend-color" style="background: rgba(255, 20, 147, 0.22);"></div> SLR Only 5%-95% Range</div>';
-          html += '<div class="legend-item"><div class="legend-color" style="background: #000;"></div> Trend Only</div>';
-          html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 0, 0, 0.16);"></div> Trend Only 5%-95% Range</div>';
-          html += '<div class="legend-item"><div class="legend-color" style="background: #1f77b4;"></div> Satellite Observations</div>';
-          html += '<div class="legend-item"><div class="legend-color" style="background: #ff7f0e;"></div> LOESS Historical Signal</div>';
-          html += '</div>';
+          html += '<div class="legend" id="dynamicLegend"></div>';
           html += '</div>';
 
           document.getElementById('panelBody').innerHTML = html;
           document.getElementById('infoPanel').classList.remove('hidden');
 
-          // Update chart with compound/fallback scenario only
-          updateChart(detailData, resolvedScenarioKey);
+          const compareToggle = document.getElementById('compareToggle');
+          const primarySelect = document.getElementById('primaryScenarioSelect');
+          const secondarySelect = document.getElementById('secondaryScenarioSelect');
+          const secondaryRow = document.getElementById('secondaryScenarioRow');
+          const compareNote = document.getElementById('compareNote');
+
+          populateScenarioSelect(primarySelect, scenarioKeys, currentPrimaryScenario);
+          populateScenarioSelect(secondarySelect, scenarioKeys, currentSecondaryScenario);
+
+          const hasTwoScenarios = scenarioKeys.length > 1;
+          compareToggle.disabled = !hasTwoScenarios;
+          compareNote.textContent = hasTwoScenarios
+            ? 'Each scenario is normalized to its own 2025 baseline to compare trajectory differences.'
+            : 'Only one scenario is available for this transect.';
+
+          function syncScenarioSelection(changedSelect) {
+            currentPrimaryScenario = primarySelect.value;
+            currentSecondaryScenario = secondarySelect.value;
+
+            if (isCompareMode && currentPrimaryScenario === currentSecondaryScenario) {
+              const fallback = scenarioKeys.find(key => key !== currentPrimaryScenario);
+              if (fallback) {
+                if (changedSelect === secondarySelect) {
+                  currentPrimaryScenario = fallback;
+                  primarySelect.value = fallback;
+                } else {
+                  currentSecondaryScenario = fallback;
+                  secondarySelect.value = fallback;
+                }
+              }
+            }
+          }
+
+          function renderScenarioView() {
+            secondaryRow.style.display = isCompareMode ? 'flex' : 'none';
+            updateChart(detailData, currentPrimaryScenario, currentSecondaryScenario, isCompareMode);
+          }
+
+          primarySelect.addEventListener('change', () => {
+            syncScenarioSelection(primarySelect);
+            renderScenarioView();
+          });
+
+          secondarySelect.addEventListener('change', () => {
+            syncScenarioSelection(secondarySelect);
+            renderScenarioView();
+          });
+
+          compareToggle.addEventListener('change', () => {
+            isCompareMode = compareToggle.checked && hasTwoScenarios;
+            syncScenarioSelection(primarySelect);
+            renderScenarioView();
+          });
+
+          renderScenarioView();
         })
         .catch(error => {
           console.error('Error loading transect details:', error);
@@ -542,13 +640,23 @@
       }
     }
 
-    // Update chart based on selected scenario
-    function updateChart(transectData, scenario) {
-      const data = transectData.scenarios[scenario];
+    function getScenarioKeys(transectData) {
+      return Object.keys((transectData && transectData.scenarios) || {}).sort();
+    }
 
+    function populateScenarioSelect(selectElement, scenarioKeys, selectedKey) {
+      selectElement.innerHTML = scenarioKeys
+        .map(key => `<option value="${key}">${key.replace(/_/g, ' ')}</option>`)
+        .join('');
+      if (selectedKey && scenarioKeys.includes(selectedKey)) {
+        selectElement.value = selectedKey;
+      }
+    }
+
+    function buildScenarioSeries(transectData, scenarioKey) {
+      const data = transectData.scenarios[scenarioKey];
       if (!data || data.length === 0) {
-        console.error('No data for scenario:', scenario);
-        return;
+        return null;
       }
 
       const projectionData = data.filter(d => !d.series_type || d.series_type === 'projection');
@@ -556,11 +664,9 @@
       const loessData = data.filter(d => d.series_type === 'loess_historical');
 
       if (projectionData.length === 0) {
-        console.error('No projection rows found for scenario:', scenario);
-        return;
+        return null;
       }
 
-      // Prepare chart data
       const years = projectionData.map(d => Number(d.year));
       const baselineRow = projectionData.find(d => Number(d.year) === BASELINE_YEAR) || projectionData[0];
       const baselineProj = Number(baselineRow.proj_shoreline_mean);
@@ -599,136 +705,213 @@
         .filter(d => Number.isFinite(d.x) && Number.isFinite(d.y))
         .sort((a, b) => a.x - b.x);
 
-      const asXY = (values) => years.map((x, i) => ({ x, y: values[i] }));
+      return {
+        scenarioKey,
+        projectionData,
+        years,
+        projMean,
+        projQ05,
+        projQ95,
+        slrMean,
+        slrQ05,
+        slrQ95,
+        trendMean,
+        trendQ05,
+        trendQ95,
+        obsSeries,
+        loessSeries
+      };
+    }
 
-      // Destroy previous chart if exists
+    function asXY(years, values) {
+      return years.map((x, i) => ({ x, y: values[i] }));
+    }
+
+    function formatScenarioLabel(scenarioKey) {
+      return (scenarioKey || 'n/a').replace(/_/g, ' ');
+    }
+
+    function updateChart(transectData, scenarioA, scenarioB, compareMode) {
+      const primary = buildScenarioSeries(transectData, scenarioA);
+      if (!primary) {
+        console.error('No data for scenario:', scenarioA);
+        return;
+      }
+
+      const secondary = compareMode && scenarioB ? buildScenarioSeries(transectData, scenarioB) : null;
+      const datasets = [];
+
+      datasets.push(
+        {
+          label: '_Scenario A Q05',
+          data: asXY(primary.years, primary.projQ05),
+          borderColor: 'rgba(44, 160, 44, 0)',
+          backgroundColor: 'rgba(44, 160, 44, 0)',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          spanGaps: true
+        },
+        {
+          label: `${formatScenarioLabel(primary.scenarioKey)} 5%-95% Range`,
+          data: asXY(primary.years, primary.projQ95),
+          borderColor: 'rgba(44, 160, 44, 0)',
+          backgroundColor: 'rgba(44, 160, 44, 0.25)',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: '-1',
+          tension: 0,
+          spanGaps: true
+        },
+        {
+          label: `${formatScenarioLabel(primary.scenarioKey)} Projection (Mean)`,
+          data: asXY(primary.years, primary.projMean),
+          borderColor: '#2ca02c',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.1,
+          pointRadius: 2
+        }
+      );
+
+      if (secondary) {
+        datasets.push(
+          {
+            label: '_Scenario B Q05',
+            data: asXY(secondary.years, secondary.projQ05),
+            borderColor: 'rgba(31, 119, 180, 0)',
+            backgroundColor: 'rgba(31, 119, 180, 0)',
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            spanGaps: true
+          },
+          {
+            label: `${formatScenarioLabel(secondary.scenarioKey)} 5%-95% Range`,
+            data: asXY(secondary.years, secondary.projQ95),
+            borderColor: 'rgba(31, 119, 180, 0)',
+            backgroundColor: 'rgba(31, 119, 180, 0.22)',
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: '-1',
+            tension: 0,
+            spanGaps: true
+          },
+          {
+            label: `${formatScenarioLabel(secondary.scenarioKey)} Projection (Mean)`,
+            data: asXY(secondary.years, secondary.projMean),
+            borderColor: '#1f77b4',
+            borderWidth: 2,
+            fill: false,
+            tension: 0.1,
+            pointRadius: 2
+          }
+        );
+      } else {
+        datasets.push(
+          {
+            label: '_SLR Q05',
+            data: asXY(primary.years, primary.slrQ05),
+            borderColor: 'rgba(255, 20, 147, 0)',
+            backgroundColor: 'rgba(255, 20, 147, 0)',
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            spanGaps: true
+          },
+          {
+            label: 'SLR Only 5%-95% Range',
+            data: asXY(primary.years, primary.slrQ95),
+            borderColor: 'rgba(255, 20, 147, 0)',
+            backgroundColor: 'rgba(255, 20, 147, 0.22)',
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: '-1',
+            tension: 0,
+            spanGaps: true
+          },
+          {
+            label: '_Trend Q05',
+            data: asXY(primary.years, primary.trendQ05),
+            borderColor: 'rgba(0, 0, 0, 0)',
+            backgroundColor: 'rgba(0, 0, 0, 0)',
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            spanGaps: true
+          },
+          {
+            label: 'Trend Only 5%-95% Range',
+            data: asXY(primary.years, primary.trendQ95),
+            borderColor: 'rgba(0, 0, 0, 0)',
+            backgroundColor: 'rgba(0, 0, 0, 0.16)',
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: '-1',
+            tension: 0,
+            spanGaps: true
+          },
+          {
+            label: 'SLR Only (Mean)',
+            data: asXY(primary.years, primary.slrMean),
+            borderColor: 'deeppink',
+            borderWidth: 2,
+            fill: false,
+            tension: 0.1,
+            pointRadius: 1,
+            borderDash: [6, 3]
+          },
+          {
+            label: 'Trend Only (Mean)',
+            data: asXY(primary.years, primary.trendMean),
+            borderColor: '#000',
+            borderWidth: 2,
+            fill: false,
+            tension: 0.1,
+            pointRadius: 1,
+            borderDash: [3, 3]
+          }
+        );
+      }
+
+      datasets.push(
+        {
+          label: 'Satellite Observations',
+          data: primary.obsSeries,
+          borderColor: '#7f7f7f',
+          backgroundColor: '#7f7f7f',
+          borderWidth: 0,
+          showLine: false,
+          pointRadius: 2
+        },
+        {
+          label: 'LOESS Historical Signal',
+          data: primary.loessSeries,
+          borderColor: '#ff7f0e',
+          backgroundColor: '#ff7f0e',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.1,
+          pointRadius: 0
+        }
+      );
+
       if (currentChart) {
         currentChart.destroy();
       }
 
-      // Create new chart
+      const chartTitle = secondary
+        ? `Normalized Shoreline Change: ${formatScenarioLabel(primary.scenarioKey)} vs ${formatScenarioLabel(secondary.scenarioKey)}`
+        : `Normalized Shoreline Change: ${formatScenarioLabel(primary.scenarioKey)}`;
+
       const ctx = document.getElementById('projectionChart').getContext('2d');
       currentChart = new Chart(ctx, {
         type: 'line',
-        data: {
-          datasets: [
-            {
-              label: '_Projection Q05',
-              data: asXY(projQ05),
-              borderColor: 'rgba(44, 160, 44, 0)',
-              backgroundColor: 'rgba(44, 160, 44, 0)',
-              borderWidth: 0,
-              pointRadius: 0,
-              fill: false,
-              tension: 0,
-              spanGaps: true
-            },
-            {
-              label: '5%-95% Range',
-              data: asXY(projQ95),
-              borderColor: 'rgba(44, 160, 44, 0)',
-              backgroundColor: 'rgba(44, 160, 44, 0.30)',
-              borderWidth: 0,
-              pointRadius: 0,
-              fill: '-1',
-              tension: 0,
-              spanGaps: true
-            },
-            {
-              label: '_SLR Q05',
-              data: asXY(slrQ05),
-              borderColor: 'rgba(255, 20, 147, 0)',
-              backgroundColor: 'rgba(255, 20, 147, 0)',
-              borderWidth: 0,
-              pointRadius: 0,
-              fill: false,
-              tension: 0,
-              spanGaps: true
-            },
-            {
-              label: 'SLR Only 5%-95% Range',
-              data: asXY(slrQ95),
-              borderColor: 'rgba(255, 20, 147, 0)',
-              backgroundColor: 'rgba(255, 20, 147, 0.22)',
-              borderWidth: 0,
-              pointRadius: 0,
-              fill: '-1',
-              tension: 0,
-              spanGaps: true
-            },
-            {
-              label: '_Trend Q05',
-              data: asXY(trendQ05),
-              borderColor: 'rgba(0, 0, 0, 0)',
-              backgroundColor: 'rgba(0, 0, 0, 0)',
-              borderWidth: 0,
-              pointRadius: 0,
-              fill: false,
-              tension: 0,
-              spanGaps: true
-            },
-            {
-              label: 'Trend Only 5%-95% Range',
-              data: asXY(trendQ95),
-              borderColor: 'rgba(0, 0, 0, 0)',
-              backgroundColor: 'rgba(0, 0, 0, 0.16)',
-              borderWidth: 0,
-              pointRadius: 0,
-              fill: '-1',
-              tension: 0,
-              spanGaps: true
-            },
-            {
-              label: 'Compound Projection (Mean)',
-              data: asXY(projMean),
-              borderColor: '#2ca02c',
-              backgroundColor: 'rgba(44, 160, 44, 0.22)',
-              borderWidth: 2,
-              fill: false,
-              tension: 0.1,
-              pointRadius: 2
-            },
-            {
-              label: 'SLR Only (Mean)',
-              data: asXY(slrMean),
-              borderColor: 'deeppink',
-              borderWidth: 2,
-              fill: false,
-              tension: 0.1,
-              pointRadius: 1,
-              borderDash: [6, 3]
-            },
-            {
-              label: 'Trend Only (Mean)',
-              data: asXY(trendMean),
-              borderColor: '#000',
-              borderWidth: 2,
-              fill: false,
-              tension: 0.1,
-              pointRadius: 1,
-              borderDash: [3, 3]
-            },
-            {
-              label: 'Satellite Observations',
-              data: obsSeries,
-              borderColor: '#1f77b4',
-              backgroundColor: '#1f77b4',
-              borderWidth: 0,
-              showLine: false,
-              pointRadius: 2
-            },
-            {
-              label: 'LOESS Historical Signal',
-              data: loessSeries,
-              borderColor: '#ff7f0e',
-              backgroundColor: '#ff7f0e',
-              borderWidth: 2,
-              fill: false,
-              tension: 0.1,
-              pointRadius: 0
-            }
-          ]
-        },
+        data: { datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -736,14 +919,14 @@
             legend: {
               display: true,
               labels: {
-                filter: (item) => !item.text.startsWith('_'),
+                filter: item => !item.text.startsWith('_'),
                 font: { size: 10 },
                 boxWidth: 12
               }
             },
             title: {
               display: true,
-              text: 'Normalized Shoreline Change: ' + scenario.replace(/_/g, ' '),
+              text: chartTitle,
               font: { size: 12 }
             }
           },
@@ -772,21 +955,60 @@
         }
       });
 
-      // Update data table
-      updateDataTable(projectionData);
+      updateLegend(primary.scenarioKey, secondary ? secondary.scenarioKey : null);
+      updateDataTable(primary, secondary);
     }
 
-    // Update data table with projection values
-    function updateDataTable(data) {
-      const baselineRow = data.find(d => Number(d.year) === BASELINE_YEAR) || data[0];
+    function findProjectionAtYear(payload, year) {
+      return payload.projectionData.find(d => Number(d.year) === year) || null;
+    }
+
+    function projectionDeltaAtYear(payload, year) {
+      const baselineRow = payload.projectionData.find(d => Number(d.year) === BASELINE_YEAR) || payload.projectionData[0];
+      const targetRow = findProjectionAtYear(payload, year);
+      if (!baselineRow || !targetRow) {
+        return null;
+      }
+      const baseline = Number(baselineRow.proj_shoreline_mean);
+      const target = Number(targetRow.proj_shoreline_mean);
+      if (!Number.isFinite(baseline) || !Number.isFinite(target)) {
+        return null;
+      }
+      return target - baseline;
+    }
+
+    function updateDataTable(primary, secondary) {
+      const table = document.getElementById('dataTable');
+      if (!table) {
+        return;
+      }
+
+      if (secondary) {
+        const years = [2030, 2040, 2050];
+        let html = '<tr><th>Year</th><th>Scenario A (m)</th><th>Scenario B (m)</th><th>A - B (m)</th></tr>';
+        years.forEach(year => {
+          const a = projectionDeltaAtYear(primary, year);
+          const b = projectionDeltaAtYear(secondary, year);
+          const diff = Number.isFinite(a) && Number.isFinite(b) ? a - b : null;
+          html += `<tr>
+            <td>${year}</td>
+            <td>${Number.isFinite(a) ? a.toFixed(1) : 'n/a'}</td>
+            <td>${Number.isFinite(b) ? b.toFixed(1) : 'n/a'}</td>
+            <td>${Number.isFinite(diff) ? diff.toFixed(1) : 'n/a'}</td>
+          </tr>`;
+        });
+        table.innerHTML = html;
+        return;
+      }
+
+      const baselineRow = primary.projectionData.find(d => Number(d.year) === BASELINE_YEAR) || primary.projectionData[0];
       const baselineProj = Number(baselineRow.proj_shoreline_mean);
       const baselineQ05 = Number(baselineRow.proj_shoreline_q05);
       const baselineQ95 = Number(baselineRow.proj_shoreline_q95);
       let html = '<tr><th>Year</th><th>Mean</th><th>Q05</th><th>Q95</th></tr>';
-      // Show every 5 years or all if dataset is small
-      const step = data.length > 10 ? 5 : 1;
-      for (let i = 0; i < data.length; i += step) {
-        const d = data[i];
+      const step = primary.projectionData.length > 10 ? 5 : 1;
+      for (let i = 0; i < primary.projectionData.length; i += step) {
+        const d = primary.projectionData[i];
         const meanDelta = Number(d.proj_shoreline_mean) - baselineProj;
         const q05Delta = Number(d.proj_shoreline_q05) - baselineQ05;
         const q95Delta = Number(d.proj_shoreline_q95) - baselineQ95;
@@ -797,7 +1019,35 @@
           <td>${q95Delta.toFixed(1)}</td>
         </tr>`;
       }
-      document.getElementById('dataTable').innerHTML = html;
+      table.innerHTML = html;
+    }
+
+    function updateLegend(primaryScenario, secondaryScenario) {
+      const legend = document.getElementById('dynamicLegend');
+      if (!legend) {
+        return;
+      }
+
+      const primaryLabel = formatScenarioLabel(primaryScenario);
+      let html = '';
+      html += `<div class="legend-item"><div class="legend-color" style="background: #2ca02c;"></div>${primaryLabel} Projection</div>`;
+      html += '<div class="legend-item"><div class="legend-color" style="background: rgba(44, 160, 44, 0.25);"></div>Scenario A 5%-95% Range</div>';
+
+      if (secondaryScenario) {
+        const secondaryLabel = formatScenarioLabel(secondaryScenario);
+        html += `<div class="legend-item"><div class="legend-color" style="background: #1f77b4;"></div>${secondaryLabel} Projection</div>`;
+        html += '<div class="legend-item"><div class="legend-color" style="background: rgba(31, 119, 180, 0.22);"></div>Scenario B 5%-95% Range</div>';
+      } else {
+        html += '<div class="legend-item"><div class="legend-color" style="background: deeppink;"></div>SLR Only</div>';
+        html += '<div class="legend-item"><div class="legend-color" style="background: rgba(255, 20, 147, 0.22);"></div>SLR Only 5%-95% Range</div>';
+        html += '<div class="legend-item"><div class="legend-color" style="background: #000;"></div>Trend Only</div>';
+        html += '<div class="legend-item"><div class="legend-color" style="background: rgba(0, 0, 0, 0.16);"></div>Trend Only 5%-95% Range</div>';
+      }
+
+      html += '<div class="legend-item"><div class="legend-color" style="background: #7f7f7f;"></div>Satellite Observations</div>';
+      html += '<div class="legend-item"><div class="legend-color" style="background: #ff7f0e;"></div>LOESS Historical Signal</div>';
+
+      legend.innerHTML = html;
     }
 
     // Close info panel
