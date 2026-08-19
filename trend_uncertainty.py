@@ -4,6 +4,8 @@
 #%%
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # Non-interactive backend; required for figure saving in worker processes.
 import matplotlib.pyplot as plt
 from statistics import NormalDist
 from viz import (
@@ -838,11 +840,23 @@ debug_variance_plots = True
 
 # nzd_sites_trial is set from the target_region_name spatial filter above.
 
+import os
 import time
-start_time = time.perf_counter()
+from tqdm.contrib.concurrent import process_map
 
-#Try only 2 sites first
-for site_id in nzd_sites_trial:
+
+def process_site(site_id):
+    """Run the bootstrap/Monte Carlo pipeline for every transect of one site.
+
+    Returns a dict of per-site results so parallel workers avoid mutating
+    shared state; the caller merges these into the module-level containers.
+    """
+    site_start_time = time.perf_counter()
+
+    dy_rows_local = []
+    meta_rows_local = []
+    zero_spread_trend_site_transects_local = set()
+    skipped_site_transects_local = set()
 
     # Create output directory for this sites plots
     site_dir = out_dir / site_id
@@ -896,7 +910,7 @@ for site_id in nzd_sites_trial:
             custom_ref_year=custom_ref_year,
         )
 
-        meta_rows.append({
+        meta_rows_local.append({
             "site_id": site_id,
             "transect_id": transect_id,
             **meta
@@ -904,7 +918,7 @@ for site_id in nzd_sites_trial:
 
         # If not enough consecutive years, skip bootstrap for this transect
         if meta["status"] != "ok":
-            skipped_site_transects.add(
+            skipped_site_transects_local.add(
                 (site_id, transect_id, f"{meta['status']} (best_run_len={meta.get('best_run_len')})")
             )
             print(f"SKIP {site_id} {transect_id}: {meta['status']} (best_run_len={meta.get('best_run_len')})")
@@ -965,7 +979,7 @@ for site_id in nzd_sites_trial:
             boot_slopes_finite.size > 0
             and np.isclose(np.min(boot_slopes_finite), np.max(boot_slopes_finite))
         ):
-            zero_spread_trend_site_transects.add((site_id, transect_id))
+            zero_spread_trend_site_transects_local.add((site_id, transect_id))
 
         recent_boot_slopes = None
         recent_mask = t_smooth >= (float(np.max(t_smooth)) - recent_trend_window_years)
@@ -999,7 +1013,7 @@ for site_id in nzd_sites_trial:
             & (coastsat_merged["coastsat_transect_id"] == transect_id)
         )
         if not mask_tb.any():
-            skipped_site_transects.add((site_id, transect_id, "no matching tan_beta in coastsat_merged"))
+            skipped_site_transects_local.add((site_id, transect_id, "no matching tan_beta in coastsat_merged"))
             print(f"Skipping {site_id} {transect_id}: no matching tan_beta in coastsat_merged")
             continue
 
@@ -1025,7 +1039,7 @@ for site_id in nzd_sites_trial:
         )
 
         if not mask_slr.any():
-            skipped_site_transects.add((site_id, transect_id, "no matching SLR data in all_merged"))
+            skipped_site_transects_local.add((site_id, transect_id, "no matching SLR data in all_merged"))
             print(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
             continue
 
@@ -1041,7 +1055,7 @@ for site_id in nzd_sites_trial:
         )
 
         if slr_series.empty:
-            skipped_site_transects.add((site_id, transect_id, "missing SLR quantiles after filtering"))
+            skipped_site_transects_local.add((site_id, transect_id, "missing SLR quantiles after filtering"))
             print(f"Skipping {site_id} {transect_id}: missing SLR quantiles after filtering")
             continue
 
@@ -1050,7 +1064,7 @@ for site_id in nzd_sites_trial:
         max_year = float(np.max(year_values))
 
         if custom_ref_year < min_year or target_year > max_year:
-            skipped_site_transects.add(
+            skipped_site_transects_local.add(
                 (
                     site_id,
                     transect_id,
@@ -1085,12 +1099,12 @@ for site_id in nzd_sites_trial:
         delta_s_q83 = q83_target - q83_ref
 
         if not (np.isfinite(delta_s_q17) and np.isfinite(delta_s_q50) and np.isfinite(delta_s_q83)):
-            skipped_site_transects.add((site_id, transect_id, "non-finite delta_S quantiles"))
+            skipped_site_transects_local.add((site_id, transect_id, "non-finite delta_S quantiles"))
             print(f"Skipping {site_id} {transect_id}: non-finite delta_S quantiles")
             continue
 
         if not (delta_s_q17 <= delta_s_q50 <= delta_s_q83):
-            skipped_site_transects.add((site_id, transect_id, "invalid delta_S quantile ordering"))
+            skipped_site_transects_local.add((site_id, transect_id, "invalid delta_S quantile ordering"))
             print(f"Skipping {site_id} {transect_id}: invalid delta_S quantile ordering")
             continue
 
@@ -1193,7 +1207,7 @@ for site_id in nzd_sites_trial:
         ) = mc_result
 
         # Store results
-        dy_rows.append({
+        dy_rows_local.append({
                 "site_id": site_id,
                 "transect_id": transect_id,
                 "n_obs": int(y_clean.size),
@@ -1286,10 +1300,33 @@ for site_id in nzd_sites_trial:
         #Then save the CSV in the site-specific directory
         export_results_to_csv(prepared, meta_str)
 
-        end_time = time.perf_counter()
-        elapsed_time = end_time - start_time
-        minutes, seconds = divmod(elapsed_time, 60)
-        print(f"Elapsed time for {site_id} {transect_id}: {int(minutes)} minutes {seconds:.2f} seconds")
+        print(site_id, transect_id, "done")
+
+    site_elapsed_time = time.perf_counter() - site_start_time
+    minutes, seconds = divmod(site_elapsed_time, 60)
+    print(f"Elapsed time for site {site_id}: {int(minutes)} minutes {seconds:.2f} seconds")
+
+    return {
+        "dy_rows": dy_rows_local,
+        "meta_rows": meta_rows_local,
+        "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
+        "skipped_site_transects": skipped_site_transects_local,
+    }
+
+
+n_workers = min(len(nzd_sites_trial), os.cpu_count() or 1)
+site_results = process_map(
+    process_site,
+    nzd_sites_trial,
+    max_workers=n_workers,
+    desc="Processing sites",
+)
+
+for result in site_results:
+    dy_rows.extend(result["dy_rows"])
+    meta_rows.extend(result["meta_rows"])
+    zero_spread_trend_site_transects.update(result["zero_spread_trend_site_transects"])
+    skipped_site_transects.update(result["skipped_site_transects"])
 
 
 summary_site_transects = sorted(zero_spread_trend_site_transects)
