@@ -43,7 +43,7 @@ print(f"{len(nzd_sites)} NZD sites found")
 #   empty list to use all sites returned by the region filter.
 # - `target_region_name` can be a single region name or a list of region names.
 RUN_CONFIG = {
-    "site_ids_override": ["nzd0332", "nzd0325", "nzd0321"], # "nzd0325" # Non-empty list overrides region-based site selection.
+    "site_ids_override": ["nzd0338", "nzd0342"], # "nzd0325" # Non-empty list overrides region-based site selection.
     "target_region_name": ["Auckland"],  # Single name or list of names; region filter applied before any explicit override.
     "custom_ref_year": 2025,  # Baseline year for shoreline and SLR deltas.
     "target_year": 2050,  # Projection endpoint for SLR and shoreline outputs.    
@@ -55,6 +55,7 @@ RUN_CONFIG = {
     "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
     "recent_trend_window_years": 10.0,  # Look-back window for the recent trend pool.
     "seed": 42,  # Reproducible bootstrap and Monte Carlo sampling.
+    "max_workers": 2,  # Cap for parallel site workers; None uses all available CPU cores.
 }
 
 # Constants
@@ -843,6 +844,7 @@ debug_variance_plots = True
 import os
 import time
 from tqdm.contrib.concurrent import process_map
+from tqdm import tqdm
 
 
 def process_site(site_id):
@@ -857,6 +859,7 @@ def process_site(site_id):
     meta_rows_local = []
     zero_spread_trend_site_transects_local = set()
     skipped_site_transects_local = set()
+    log_lines_local = []
 
     # Create output directory for this sites plots
     site_dir = out_dir / site_id
@@ -921,7 +924,7 @@ def process_site(site_id):
             skipped_site_transects_local.add(
                 (site_id, transect_id, f"{meta['status']} (best_run_len={meta.get('best_run_len')})")
             )
-            print(f"SKIP {site_id} {transect_id}: {meta['status']} (best_run_len={meta.get('best_run_len')})")
+            log_lines_local.append(f"SKIP {site_id} {transect_id}: {meta['status']} (best_run_len={meta.get('best_run_len')})")
             continue
 
 #%
@@ -1014,7 +1017,7 @@ def process_site(site_id):
         )
         if not mask_tb.any():
             skipped_site_transects_local.add((site_id, transect_id, "no matching tan_beta in coastsat_merged"))
-            print(f"Skipping {site_id} {transect_id}: no matching tan_beta in coastsat_merged")
+            log_lines_local.append(f"Skipping {site_id} {transect_id}: no matching tan_beta in coastsat_merged")
             continue
 
         tan_vals = coastsat_merged.loc[mask_tb, "beach_slope"]
@@ -1040,7 +1043,7 @@ def process_site(site_id):
 
         if not mask_slr.any():
             skipped_site_transects_local.add((site_id, transect_id, "no matching SLR data in all_merged"))
-            print(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
+            log_lines_local.append(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
             continue
 
         slr_series = (
@@ -1056,7 +1059,7 @@ def process_site(site_id):
 
         if slr_series.empty:
             skipped_site_transects_local.add((site_id, transect_id, "missing SLR quantiles after filtering"))
-            print(f"Skipping {site_id} {transect_id}: missing SLR quantiles after filtering")
+            log_lines_local.append(f"Skipping {site_id} {transect_id}: missing SLR quantiles after filtering")
             continue
 
         year_values = slr_series["year"].to_numpy(dtype=float)
@@ -1071,7 +1074,7 @@ def process_site(site_id):
                     f"SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span baseline/target",
                 )
             )
-            print(
+            log_lines_local.append(
                 f"Skipping {site_id} {transect_id}: "
                 f"SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span "
                 f"baseline={custom_ref_year} and target={target_year}"
@@ -1100,12 +1103,12 @@ def process_site(site_id):
 
         if not (np.isfinite(delta_s_q17) and np.isfinite(delta_s_q50) and np.isfinite(delta_s_q83)):
             skipped_site_transects_local.add((site_id, transect_id, "non-finite delta_S quantiles"))
-            print(f"Skipping {site_id} {transect_id}: non-finite delta_S quantiles")
+            log_lines_local.append(f"Skipping {site_id} {transect_id}: non-finite delta_S quantiles")
             continue
 
         if not (delta_s_q17 <= delta_s_q50 <= delta_s_q83):
             skipped_site_transects_local.add((site_id, transect_id, "invalid delta_S quantile ordering"))
-            print(f"Skipping {site_id} {transect_id}: invalid delta_S quantile ordering")
+            log_lines_local.append(f"Skipping {site_id} {transect_id}: invalid delta_S quantile ordering")
             continue
 
 ##########################
@@ -1166,7 +1169,7 @@ def process_site(site_id):
                 slr_projection_q83 = slr_series_plot["83"].to_numpy(dtype=float)
 ########################
 
-        print(
+        log_lines_local.append(
             f"{site_id} {transect_id}: tan_beta = {tan_beta}, tan_beta_adjusted = {tan_beta_adjusted}, "
             f"delta_S_{int(custom_ref_year)}_to_{int(target_year)}(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
             f"for {ssp_target}-{scenario_target}, year={target_year}"
@@ -1286,8 +1289,6 @@ def process_site(site_id):
             trend_only_dy_segments=preview_trend_only_dy,
         )
 
-        print(site_id, transect_id)
-
         #create outputs directory if it doesn't exist
         output_dir = Path("outputs")
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1300,33 +1301,47 @@ def process_site(site_id):
         #Then save the CSV in the site-specific directory
         export_results_to_csv(prepared, meta_str)
 
-        print(site_id, transect_id, "done")
+        log_lines_local.append(f"{site_id} {transect_id}: done")
 
     site_elapsed_time = time.perf_counter() - site_start_time
     minutes, seconds = divmod(site_elapsed_time, 60)
-    print(f"Elapsed time for site {site_id}: {int(minutes)} minutes {seconds:.2f} seconds")
+    tqdm.write(f"Elapsed time for site {site_id}: {int(minutes)} minutes {seconds:.2f} seconds")
 
     return {
         "dy_rows": dy_rows_local,
         "meta_rows": meta_rows_local,
         "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
         "skipped_site_transects": skipped_site_transects_local,
+        "log_lines": log_lines_local,
     }
 
 
-n_workers = min(len(nzd_sites_trial), os.cpu_count() or 1)
+n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
+run_start_time = time.perf_counter()
 site_results = process_map(
     process_site,
     nzd_sites_trial,
     max_workers=n_workers,
     desc="Processing sites",
 )
+total_elapsed_time = time.perf_counter() - run_start_time
 
+site_log_lines = []
 for result in site_results:
     dy_rows.extend(result["dy_rows"])
     meta_rows.extend(result["meta_rows"])
     zero_spread_trend_site_transects.update(result["zero_spread_trend_site_transects"])
     skipped_site_transects.update(result["skipped_site_transects"])
+    site_log_lines.extend(result["log_lines"])
+
+total_minutes, total_seconds = divmod(total_elapsed_time, 60)
+print(f"Total elapsed time for {len(nzd_sites_trial)} site(s): {int(total_minutes)} minutes {total_seconds:.2f} seconds")
+
+site_processing_log_fp = Path("outputs") / "site_processing.log"
+site_processing_log_fp.parent.mkdir(parents=True, exist_ok=True)
+with open(site_processing_log_fp, "w", encoding="utf-8") as f:
+    f.write("\n".join(site_log_lines))
+print(f"Per-transect processing details written to {site_processing_log_fp}")
 
 
 summary_site_transects = sorted(zero_spread_trend_site_transects)
