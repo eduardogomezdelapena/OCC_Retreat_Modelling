@@ -43,7 +43,7 @@ print(f"{len(nzd_sites)} NZD sites found")
 #   empty list to use all sites returned by the region filter.
 # - `target_region_name` can be a single region name or a list of region names.
 RUN_CONFIG = {
-    "site_ids_override": ["nzd0338", "nzd0342"], # "nzd0325" # Non-empty list overrides region-based site selection.
+    "site_ids_override": [], # "nzd0325" # Non-empty list overrides region-based site selection.
     "target_region_name": ["Auckland"],  # Single name or list of names; region filter applied before any explicit override.
     "custom_ref_year": 2025,  # Baseline year for shoreline and SLR deltas.
     "target_year": 2050,  # Projection endpoint for SLR and shoreline outputs.    
@@ -55,7 +55,7 @@ RUN_CONFIG = {
     "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
     "recent_trend_window_years": 10.0,  # Look-back window for the recent trend pool.
     "seed": 42,  # Reproducible bootstrap and Monte Carlo sampling.
-    "max_workers": 2,  # Cap for parallel site workers; None uses all available CPU cores.
+    "max_workers": 16,  # Cap for parallel site workers; None uses all available CPU cores.
 }
 
 # Constants
