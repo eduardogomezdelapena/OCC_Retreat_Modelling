@@ -11,6 +11,8 @@ from statistics import NormalDist
 from viz import (
     plot_observed_and_projected_single_run
 )
+from numpy.polynomial import Polynomial
+
 #%% Read data, declare sites ID
 
 #Which directories exist under data/
@@ -290,7 +292,7 @@ def block_bootstrap_slopes(
             t_fit = np.append(t_fit, window_end)
             y_fit = np.append(y_fit, y_end)
 
-        slopes[i] = np.polyfit(t_fit, y_fit, 1)[0]  # linear fit
+        slopes[i] = Polynomial.fit(t_fit, y_fit, 1).convert().coef[1]  # linear fit
         date_ranges.append(f"{window_start:.2f} to {window_end:.2f}")
         window_lengths_years.append(block_years)
 
@@ -1307,26 +1309,13 @@ def process_site(site_id):
     minutes, seconds = divmod(site_elapsed_time, 60)
     tqdm.write(f"Elapsed time for site {site_id}: {int(minutes)} minutes {seconds:.2f} seconds")
 
-    # return {
-    #     "dy_rows": dy_rows_local,
-    #     "meta_rows": meta_rows_local,
-    #     "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
-    #     "skipped_site_transects": skipped_site_transects_local,
-    #     "log_lines": log_lines_local,
-    # }
-
-
-
-
-n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
-run_start_time = time.perf_counter()
-# site_results = 
-process_map(
-    process_site,
-    nzd_sites_trial,
-    max_workers=n_workers,
-    desc="Processing sites",
-)
+    return {
+        "dy_rows": dy_rows_local,
+        "meta_rows": meta_rows_local,
+        "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
+        "skipped_site_transects": skipped_site_transects_local,
+        "log_lines": log_lines_local,
+    }
 
 def create_log(site_results):
     total_elapsed_time = time.perf_counter() - run_start_time
@@ -1372,6 +1361,20 @@ def create_log(site_results):
     print(f"{skipped_header}:")
     print(summary_skipped_site_transects)
     print(f"Summary log written to {log_fp}")
+
+
+
+
+n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
+run_start_time = time.perf_counter()
+site_results = process_map(
+    process_site,
+    nzd_sites_trial,
+    max_workers=n_workers,
+    desc="Processing sites",
+    # max_tasks_per_child=1,
+)
+create_log(site_results)
 
 
 
