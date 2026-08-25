@@ -1326,6 +1326,7 @@ process_map(
     nzd_sites_trial,
     max_workers=n_workers,
     desc="Processing sites",
+    max_tasks_per_child=1,
 )
 
 def create_log(site_results):
