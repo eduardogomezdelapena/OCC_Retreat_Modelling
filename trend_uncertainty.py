@@ -1307,66 +1307,71 @@ def process_site(site_id):
     minutes, seconds = divmod(site_elapsed_time, 60)
     tqdm.write(f"Elapsed time for site {site_id}: {int(minutes)} minutes {seconds:.2f} seconds")
 
-    return {
-        "dy_rows": dy_rows_local,
-        "meta_rows": meta_rows_local,
-        "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
-        "skipped_site_transects": skipped_site_transects_local,
-        "log_lines": log_lines_local,
-    }
+    # return {
+    #     "dy_rows": dy_rows_local,
+    #     "meta_rows": meta_rows_local,
+    #     "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
+    #     "skipped_site_transects": skipped_site_transects_local,
+    #     "log_lines": log_lines_local,
+    # }
+
+
 
 
 n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
 run_start_time = time.perf_counter()
-site_results = process_map(
+# site_results = 
+process_map(
     process_site,
     nzd_sites_trial,
     max_workers=n_workers,
     desc="Processing sites",
 )
-total_elapsed_time = time.perf_counter() - run_start_time
 
-site_log_lines = []
-for result in site_results:
-    dy_rows.extend(result["dy_rows"])
-    meta_rows.extend(result["meta_rows"])
-    zero_spread_trend_site_transects.update(result["zero_spread_trend_site_transects"])
-    skipped_site_transects.update(result["skipped_site_transects"])
-    site_log_lines.extend(result["log_lines"])
+def create_log(site_results):
+    total_elapsed_time = time.perf_counter() - run_start_time
 
-total_minutes, total_seconds = divmod(total_elapsed_time, 60)
-print(f"Total elapsed time for {len(nzd_sites_trial)} site(s): {int(total_minutes)} minutes {total_seconds:.2f} seconds")
+    site_log_lines = []
+    for result in site_results:
+        dy_rows.extend(result["dy_rows"])
+        meta_rows.extend(result["meta_rows"])
+        zero_spread_trend_site_transects.update(result["zero_spread_trend_site_transects"])
+        skipped_site_transects.update(result["skipped_site_transects"])
+        site_log_lines.extend(result["log_lines"])
 
-site_processing_log_fp = Path("outputs") / "site_processing.log"
-site_processing_log_fp.parent.mkdir(parents=True, exist_ok=True)
-with open(site_processing_log_fp, "w", encoding="utf-8") as f:
-    f.write("\n".join(site_log_lines))
-print(f"Per-transect processing details written to {site_processing_log_fp}")
+    total_minutes, total_seconds = divmod(total_elapsed_time, 60)
+    print(f"Total elapsed time for {len(nzd_sites_trial)} site(s): {int(total_minutes)} minutes {total_seconds:.2f} seconds")
+
+    site_processing_log_fp = Path("outputs") / "site_processing.log"
+    site_processing_log_fp.parent.mkdir(parents=True, exist_ok=True)
+    with open(site_processing_log_fp, "w", encoding="utf-8") as f:
+        f.write("\n".join(site_log_lines))
+    print(f"Per-transect processing details written to {site_processing_log_fp}")
 
 
-summary_site_transects = sorted(zero_spread_trend_site_transects)
-summary_header = "Site+transect with zero-spread bootstrap trend samples"
-summary_skipped_site_transects = sorted(skipped_site_transects)
-skipped_header = "Skipped site+transect"
+    summary_site_transects = sorted(zero_spread_trend_site_transects)
+    summary_header = "Site+transect with zero-spread bootstrap trend samples"
+    summary_skipped_site_transects = sorted(skipped_site_transects)
+    skipped_header = "Skipped site+transect"
 
-log_dir = Path("outputs")
-log_dir.mkdir(parents=True, exist_ok=True)
-log_fp = log_dir / "zero_spread_trend_sites.log"
+    log_dir = Path("outputs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_fp = log_dir / "zero_spread_trend_sites.log"
 
-with open(log_fp, "w", encoding="utf-8") as f:
-    f.write(f"{summary_header}:\n")
-    for sid, tid in summary_site_transects:
-        f.write(f"{sid},{tid}\n")
-    f.write("\n")
-    f.write(f"{skipped_header}:\n")
-    for sid, tid, reason in summary_skipped_site_transects:
-        f.write(f"{sid},{tid},{reason}\n")
+    with open(log_fp, "w", encoding="utf-8") as f:
+        f.write(f"{summary_header}:\n")
+        for sid, tid in summary_site_transects:
+            f.write(f"{sid},{tid}\n")
+        f.write("\n")
+        f.write(f"{skipped_header}:\n")
+        for sid, tid, reason in summary_skipped_site_transects:
+            f.write(f"{sid},{tid},{reason}\n")
 
-print(f"{summary_header}:")
-print(summary_site_transects)
-print(f"{skipped_header}:")
-print(summary_skipped_site_transects)
-print(f"Summary log written to {log_fp}")
+    print(f"{summary_header}:")
+    print(summary_site_transects)
+    print(f"{skipped_header}:")
+    print(summary_skipped_site_transects)
+    print(f"Summary log written to {log_fp}")
 
 
 
