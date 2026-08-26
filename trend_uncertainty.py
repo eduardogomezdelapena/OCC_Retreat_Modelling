@@ -61,8 +61,7 @@ RUN_CONFIG = {
                            "Tasman Region",
                            "Waikato Region",
                            "Wellington Region",
-                           "West Coast Region",
-    ],  # Single name or list of names; region filter applied before any explicit override.
+                           "West Coast Region"],  # Single name or list of names; region filter applied before any explicit override.
     "custom_ref_year": 2025,  # Baseline year for shoreline and SLR deltas.
     "target_year": 2050,  # Projection endpoint for SLR and shoreline outputs.    
     "historical_slr_start_year": 2005,  # NZ SeaRise zero-baseline year.
@@ -78,7 +77,7 @@ RUN_CONFIG = {
     "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
     "recent_trend_window_years": 10.0,  # Look-back window for the recent trend pool.
     "seed": 42,  # Reproducible bootstrap and Monte Carlo sampling.
-    "max_workers": 7,  # Cap for parallel site workers; None uses all available CPU cores.
+    "max_workers": 16,  # Cap for parallel site workers; None uses all available CPU cores.
 }
 
 # Constants
@@ -1414,7 +1413,6 @@ site_results = process_map(
     desc="Processing sites",
     # max_tasks_per_child=1,
 )
-create_log(site_results)
 
 
 
