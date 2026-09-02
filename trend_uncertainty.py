@@ -11,6 +11,8 @@ from statistics import NormalDist
 from viz import (
     plot_observed_and_projected_single_run
 )
+from numpy.polynomial import Polynomial
+
 #%% Read data, declare sites ID
 
 #Which directories exist under data/
@@ -44,12 +46,32 @@ print(f"{len(nzd_sites)} NZD sites found")
 # - `target_region_name` can be a single region name or a list of region names.
 RUN_CONFIG = {
     "site_ids_override": [], # "nzd0325" # Non-empty list overrides region-based site selection.
-    "target_region_name": ["Auckland"],  # Single name or list of names; region filter applied before any explicit override.
+    "target_region_name": ["Auckland",
+                           "Bay of Plenty Region",
+                           "Canterbury Region",
+                           "Gisborne Region",
+                           "Hawke's Bay Region",
+                           "Manawatū-Whanganui Region",
+                           "Marlborough Region",
+                           "Nelson Region",
+                           "Northland Region",
+                           "Otago Region",
+                           "Southland Region",
+                           "Taranaki Region",
+                           "Tasman Region",
+                           "Waikato Region",
+                           "Wellington Region",
+                           "West Coast Region"],  # Single name or list of names; region filter applied before any explicit override.
     "custom_ref_year": 2025,  # Baseline year for shoreline and SLR deltas.
     "target_year": 2050,  # Projection endpoint for SLR and shoreline outputs.    
     "historical_slr_start_year": 2005,  # NZ SeaRise zero-baseline year.
-    "scenario_target": "8.5",  # Sea-level scenario identifier.
-    "ssp_target": "ssp5",  # SSP family used with scenario_target.
+    "scenarios": [
+        {"ssp_target": "ssp1", "scenario_target": "1.9"},
+        {"ssp_target": "ssp1", "scenario_target": "2.6"},
+        {"ssp_target": "ssp2", "scenario_target": "4.5"},
+        {"ssp_target": "ssp3", "scenario_target": "7.0"},
+        {"ssp_target": "ssp5", "scenario_target": "8.5"},
+    ],  # Each entry runs the full pipeline once with its own ssp/scenario pair.
     "loess_window_years": 10,  # Shared smoothing/bootstrap window length.
     "n_mc_realizations_per_transect": 2000,  # Monte Carlo draws per transect.    
     "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
@@ -75,9 +97,8 @@ recent_trend_window_years = RUN_CONFIG["recent_trend_window_years"]
 custom_ref_year = RUN_CONFIG["custom_ref_year"]   # baseline year for projections
 historical_slr_start_year = RUN_CONFIG["historical_slr_start_year"] #NZSearise SLR data is zero in 2005
 
-# Keep only the requested climate pathway for SLR extraction.
-scenario_target = RUN_CONFIG["scenario_target"]
-ssp_target = RUN_CONFIG["ssp_target"]
+# Scenarios to run; scenario_target/ssp_target are set per-iteration in the main scenario loop below.
+scenarios_to_run = RUN_CONFIG["scenarios"]
 target_year = RUN_CONFIG["target_year"]  # projection horizon
 
 #%% Download data for a given site, and convert to decimal years. Function DEFINITION
@@ -290,7 +311,7 @@ def block_bootstrap_slopes(
             t_fit = np.append(t_fit, window_end)
             y_fit = np.append(y_fit, y_end)
 
-        slopes[i] = np.polyfit(t_fit, y_fit, 1)[0]  # linear fit
+        slopes[i] = Polynomial.fit(t_fit, y_fit, 1).convert().coef[1]  # linear fit
         date_ranges.append(f"{window_start:.2f} to {window_end:.2f}")
         window_lengths_years.append(block_years)
 
@@ -793,21 +814,20 @@ all_merged = gpd.GeoDataFrame(all_merged,crs=f"EPSG:{CRS_WGS84}",
 all_merged["site_id"] = all_merged["coastsat_site_id"]
 all_merged["transect_id"] = all_merged["coastsat_transect_id"]
 
-
-
-all_merged = all_merged[
-    (all_merged["scenario"].astype(str) == scenario_target)
-    & (all_merged["SSP"].astype(str).str.lower() == ssp_target)
-].copy()
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 
+# Keep the unfiltered, all-scenario table; each scenario loop iteration below
+# filters this down to its own scenario_target/ssp_target pair.
+all_merged_unfiltered = all_merged.copy()
+
 # Build a multi-region site list when target_region_name is configured as a list.
+# Site geometry doesn't depend on scenario/SSP, so this is computed once and reused.
 target_region_names = normalize_target_regions(RUN_CONFIG["target_region_name"])
 
 sites_by_region = {}
 for region_name in target_region_names:
     sites_by_region[region_name] = select_sites_within_region(
-        all_merged=all_merged,
+        all_merged=all_merged_unfiltered,
         nzd_sites=nzd_sites,
         target_region_name=region_name,
     )
@@ -829,11 +849,6 @@ if site_ids_override:
 
 
 # %% Main loop: load data, apply filters, bootstrap, Monte Carlo
-
-dy_rows = []
-meta_rows = []
-zero_spread_trend_site_transects = set()
-skipped_site_transects = set()
 
 out_dir = Path("original_plots_ts")
 debug_slr_histograms = True
@@ -1307,29 +1322,41 @@ def process_site(site_id):
     minutes, seconds = divmod(site_elapsed_time, 60)
     tqdm.write(f"Elapsed time for site {site_id}: {int(minutes)} minutes {seconds:.2f} seconds")
 
-    # return {
-    #     "dy_rows": dy_rows_local,
-    #     "meta_rows": meta_rows_local,
-    #     "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
-    #     "skipped_site_transects": skipped_site_transects_local,
-    #     "log_lines": log_lines_local,
-    # }
+    return {
+        "dy_rows": dy_rows_local,
+        "meta_rows": meta_rows_local,
+        "zero_spread_trend_site_transects": zero_spread_trend_site_transects_local,
+        "skipped_site_transects": skipped_site_transects_local,
+        "log_lines": log_lines_local,
+    }
 
 
+# Run the full pipeline once per scenario; ssp_target/scenario_target and
+# all_merged are updated as module globals each iteration so process_site
+# (forked via process_map) picks up the right scenario in each worker.
+for scenario in scenarios_to_run:
+    ssp_target = scenario["ssp_target"]
+    scenario_target = scenario["scenario_target"]
+    print(f"\n=== Running scenario {ssp_target}-{scenario_target} ===")
 
+    all_merged = all_merged_unfiltered[
+        (all_merged_unfiltered["scenario"].astype(str) == scenario_target)
+        & (all_merged_unfiltered["SSP"].astype(str).str.lower() == ssp_target)
+    ].copy()
 
-n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
-run_start_time = time.perf_counter()
-# site_results = 
-process_map(
-    process_site,
-    nzd_sites_trial,
-    max_workers=n_workers,
-    desc="Processing sites",
-    max_tasks_per_child=1,
-)
+    dy_rows = []
+    meta_rows = []
+    zero_spread_trend_site_transects = set()
+    skipped_site_transects = set()
 
-def create_log(site_results):
+    n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
+    run_start_time = time.perf_counter()
+    site_results = process_map(
+        process_site,
+        nzd_sites_trial,
+        max_workers=n_workers,
+        desc=f"Processing sites ({ssp_target}-{scenario_target})",
+    )
     total_elapsed_time = time.perf_counter() - run_start_time
 
     site_log_lines = []
@@ -1343,12 +1370,12 @@ def create_log(site_results):
     total_minutes, total_seconds = divmod(total_elapsed_time, 60)
     print(f"Total elapsed time for {len(nzd_sites_trial)} site(s): {int(total_minutes)} minutes {total_seconds:.2f} seconds")
 
-    site_processing_log_fp = Path("outputs") / "site_processing.log"
+    scenario_tag = f"{ssp_target}_{scenario_target}"
+    site_processing_log_fp = Path("outputs") / f"site_processing_{scenario_tag}.log"
     site_processing_log_fp.parent.mkdir(parents=True, exist_ok=True)
     with open(site_processing_log_fp, "w", encoding="utf-8") as f:
         f.write("\n".join(site_log_lines))
     print(f"Per-transect processing details written to {site_processing_log_fp}")
-
 
     summary_site_transects = sorted(zero_spread_trend_site_transects)
     summary_header = "Site+transect with zero-spread bootstrap trend samples"
@@ -1357,7 +1384,7 @@ def create_log(site_results):
 
     log_dir = Path("outputs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_fp = log_dir / "zero_spread_trend_sites.log"
+    log_fp = log_dir / f"zero_spread_trend_sites_{scenario_tag}.log"
 
     with open(log_fp, "w", encoding="utf-8") as f:
         f.write(f"{summary_header}:\n")
@@ -1373,6 +1400,19 @@ def create_log(site_results):
     print(f"{skipped_header}:")
     print(summary_skipped_site_transects)
     print(f"Summary log written to {log_fp}")
+
+
+
+
+n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
+run_start_time = time.perf_counter()
+site_results = process_map(
+    process_site,
+    nzd_sites_trial,
+    max_workers=n_workers,
+    desc="Processing sites",
+    # max_tasks_per_child=1,
+)
 
 
 

@@ -83,3 +83,25 @@ r   ∼  p           (r),  k≥2
 
 
 diagnostic plots
+
+
+Notice observed recent trends (5 years) might not fall in  the 10 year trend pool
+
+this is a pragmatic, conservative correction for early-horizon bias, not a structural change to long-horizon dynamics.
+
+
+Now in the diagnostics plot: 
+
+nzd0137_nzd0137-0006_single_run_observed_projected.png
+
+any suggeston on how to plot better the trend distribution?
+This is, the recent sampled trends are outside of the historic distribution, and hence fall outside of the range. 
+Should I maybe just plot the recent trends samplings in red? so its clear they are different.
+
+In some sites, they fall within the historic distribution. 
+
+
+
+
+Cosmetics, spaece between 2025 and 2030, should be the same as 2030 and 2040.
+
