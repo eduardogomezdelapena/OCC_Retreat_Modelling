@@ -244,3 +244,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Dashboard data is published with the site (GitHub Pages serves it next to
+# index.html), so it is tracked despite the *.json rule above.
+!data/projections.json
+!data/projections_details/
+!data/projections_details/**
