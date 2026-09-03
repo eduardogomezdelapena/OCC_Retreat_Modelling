@@ -772,9 +772,14 @@
         return null;
       }
 
+      // Newer detail files store the scenario-independent historical series
+      // once at the top level; older files repeat it inside every scenario.
+      const historicalRows = (transectData.historical && transectData.historical.length > 0)
+        ? transectData.historical
+        : data;
       const projectionData = data.filter(d => !d.series_type || d.series_type === 'projection');
-      const observationData = data.filter(d => d.series_type === 'satellite_observation');
-      const loessData = data.filter(d => d.series_type === 'loess_historical');
+      const observationData = historicalRows.filter(d => d.series_type === 'satellite_observation');
+      const loessData = historicalRows.filter(d => d.series_type === 'loess_historical');
 
       if (projectionData.length === 0) {
         return null;

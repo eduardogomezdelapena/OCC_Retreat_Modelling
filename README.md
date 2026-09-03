@@ -251,3 +251,37 @@ Why it was not seen in section 4: this VM's system Python has numpy 1.26.4, whic
 | Python 3.13.5, **numpy 2.3.1**, pandas 2.3.1, mpl 3.10.0 (= `clean_OCC` pins) | 41.0 min | 0.34 → **8.19 GB** | **+7.9 GB** | **7.2 MB** | ≈ 3.6 KB |
 
 The growth is linear in the number of transects processed by the worker (≈ 190 MB/min at this workload) and never plateaus. Scaled to the all-regions run (30,730 bootstrapped transects × 7.2 MB ≈ **220 GB leaked in total**, ≈ 14 GB per worker with 16 long-lived workers, on top of the ≈ 8 GB baseline of section 4.4), a `clean_OCC` run with numpy 2.3.1 cannot finish all regions on any machine we have; a single region fits only while its transect count × 7.2 MB / `max_workers` stays below the free RAM (e.g. Auckland: 1,440 bootstrapped transects → ≈ 10 GB extra spread over the workers; Northland: 4,056 → ≈ 29 GB; Canterbury: 5,030 → ≈ 36 GB), which is exactly the "single region works, all regions eventually run out of memory" symptom.
+
+## 4.9 Committed optimised script: all regions × all 5 scenarios in 45 minutes
+
+Measured 2026-09-03 with the optimisations committed to `trend_uncertainty.py` (`1c547ce`, `935505d`), which keep `process_map` and its progress bar. What changed relative to the merged 5-scenario version: BLAS capped at 1 thread per worker; the scenario loop moved inside `process_site` so the gap filter, LOESS, both 1000-draw bootstraps and the two diagnostic plots run **once per transect instead of 5×** (only SLR extraction, Monte Carlo and exports are per-scenario); the projection figure rendered once instead of 5×; per-site slicing of the merged tables; the leftover duplicate `process_map` call after the scenario loop removed (it re-ran all 534 sites a sixth time and discarded the results); `max_workers=None` → all cores. Equivalence was verified on 2 sites × 5 scenarios: all 65 projection CSVs byte-identical to the pre-optimisation code, same log content (and 228 s → 39 s on that smoke test).
+
+| | Merged 5-scenario version (est.) | Committed optimised version (measured) |
+|---|---|---|
+| Wall-clock, 534 sites × 5 scenarios | ≈ 7.4 h (5 × ≈ 74 min per scenario + the duplicate 6th pass, 16 workers) | **45 min 6 s** (32 workers; script-internal 44 min 47 s) |
+| Sum of per-site times | ≈ 5,600 min | 1,180 min (median site 65 s · mean 133 s · p90 375 s · max 19.2 min, `nzd0451`) |
+| Effective parallelism | ≈ 15 of 16 | 26.4 of 32 (the 19-min site dominates the tail) |
+| System CPU / load | ≈ 72 % but load ≈ 30 from 512 BLAS threads | mean 78 %, peaks 100 % (exactly 33 single-threaded processes), load ≈ 27–39 |
+| Memory (real footprint, PSS) | ≈ 6–7 GB | 10.2–10.7 GB (parent 1.9 GB with the full 5-scenario table; workers 1.64 GB RSS / ≈ 0.3 GB private each); system peak 24.5 GB |
+| Exit | traceback + exit 1, no logs | exit 0, progress bar, all 10 per-scenario log files written |
+
+Outputs of the full run: **119,745 projection CSVs** (23,735–24,023 per scenario — a few hundred transects lack SLR-year coverage in some scenarios), 24,023 projection PNGs (one per transect), 31,609 + 30,730 diagnostic PNGs now all in `original_plots_ts/`, ≈ 206 k files / 37 GB in total.
+
+# 5. Dashboard data pipeline (`generate_dashboard_data.py`)
+
+The CSV → JSON → lazy-loading design is the right architecture for this dashboard, and it has been kept: a compact `data/projections.json` summary powers the initial map, and one detail file per transect under `data/projections_details/` is fetched only when a transect is clicked. What changed (2026-09-03) is how the JSON is produced and how much of it there is:
+
+1. **Parallel generation** with `tqdm.contrib.concurrent.process_map` (all CPU cores; each worker writes its transects' detail files directly instead of the parent accumulating every payload in memory before writing).
+2. **Historical series stored once per transect.** Each projection CSV repeats the identical satellite + LOESS history (hundreds of rows) for every scenario, while the projections themselves are only ~4–6 rows per scenario. Detail files now hold one top-level `historical` array plus projection-only rows per scenario; `index.html` reads it with a backward-compatible fallback for old files.
+3. **Compact JSON** (no `indent=2`), floats rounded to 4 decimals (0.1 mm), only `*_projection_results.csv` globbed, and the unused `row_count`/`detail_file` summary fields dropped (`index.html` derives the detail path).
+
+Measured on the full 5-scenario outputs (119,745 CSVs → 24,023 detail files), same machine as section 4:
+
+| | Old generator | New generator |
+|---|---|---|
+| Runtime | 2 h 10 min (single-threaded) | **5 min 30 s** (32 workers) |
+| Peak memory | **64 GB** (whole payload held in RAM) | 0.13 GB |
+| `data/projections_details/` size | 51.9 GB | **7.4 GB** (≈ 60–300 KB per transect) |
+| `data/projections.json` size | 18.6 MB | 8.7 MB |
+
+On dashboard loading itself: the summary + per-transect lazy fetch already is best practice at this scale — 24 k transects cannot ship their full series up front, and a per-click ~100 KB fetch (a few tens of KB gzipped; GitHub Pages and most static hosts gzip text automatically) renders instantly. The remaining load-time cost is the 8.7 MB summary index (~1–2 MB gzipped), which is fetched once at startup; if that ever feels slow, the next steps would be splitting the summary per region and/or dropping per-scenario deltas the map does not colour by — not a different architecture.
