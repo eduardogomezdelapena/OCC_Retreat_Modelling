@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 """Script for satellite trend bootsrapping, using Orewa as study case"""
 #%%
+import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")  # one BLAS thread per process; parallelism comes from the site-level worker pool
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -9,7 +12,8 @@ matplotlib.use("Agg")  # Non-interactive backend; required for figure saving in 
 import matplotlib.pyplot as plt
 from statistics import NormalDist
 from viz import (
-    plot_observed_and_projected_single_run
+    prepare_observed_and_projected_single_run_data,
+    plot_observed_and_projected_single_run_from_processed,
 )
 from numpy.polynomial import Polynomial
 
@@ -77,7 +81,7 @@ RUN_CONFIG = {
     "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
     "recent_trend_window_years": 10.0,  # Look-back window for the recent trend pool.
     "seed": 42,  # Reproducible bootstrap and Monte Carlo sampling.
-    "max_workers": 16,  # Cap for parallel site workers; None uses all available CPU cores.
+    "max_workers": None,  # Cap for parallel site workers; None uses all available CPU cores.
 }
 
 # Constants
@@ -816,10 +820,6 @@ all_merged["transect_id"] = all_merged["coastsat_transect_id"]
 
 all_merged["year"] = pd.to_numeric(all_merged["year"], errors="coerce")
 
-# Keep the unfiltered, all-scenario table; each scenario loop iteration below
-# filters this down to its own scenario_target/ssp_target pair.
-all_merged_unfiltered = all_merged.copy()
-
 # Build a multi-region site list when target_region_name is configured as a list.
 # Site geometry doesn't depend on scenario/SSP, so this is computed once and reused.
 target_region_names = normalize_target_regions(RUN_CONFIG["target_region_name"])
@@ -827,7 +827,7 @@ target_region_names = normalize_target_regions(RUN_CONFIG["target_region_name"])
 sites_by_region = {}
 for region_name in target_region_names:
     sites_by_region[region_name] = select_sites_within_region(
-        all_merged=all_merged_unfiltered,
+        all_merged=all_merged,
         nzd_sites=nzd_sites,
         target_region_name=region_name,
     )
@@ -883,6 +883,13 @@ def process_site(site_id):
     # Load data for the site (all transects), and convert to decimal years.
     # The function returns time in decimal years, and the full dataframe.
     t_years, df = load_transect_data(site_id)
+
+    # Slice the big merged tables down to this site once; the per-transect and
+    # per-scenario lookups below then scan ~10^4 rows instead of ~10^6.
+    site_all_merged = all_merged.loc[all_merged["site_id"] == site_id]
+    site_scenario_str = site_all_merged["scenario"].astype(str)
+    site_ssp_str = site_all_merged["SSP"].astype(str).str.lower()
+    site_coastsat = coastsat_merged.loc[coastsat_merged["coastsat_site_id"] == site_id]
 
     # Define transect columns (those that start with site_id + "-")
     transect_cols = [
@@ -1026,16 +1033,13 @@ def process_site(site_id):
         if "beach_slope" not in coastsat_merged.columns:
             raise KeyError("Expected 'beach_slope' column in coastsat_merged")
 
-        mask_tb = (
-            (coastsat_merged["coastsat_site_id"] == site_id)
-            & (coastsat_merged["coastsat_transect_id"] == transect_id)
-        )
+        mask_tb = site_coastsat["coastsat_transect_id"] == transect_id
         if not mask_tb.any():
             skipped_site_transects_local.add((site_id, transect_id, "no matching tan_beta in coastsat_merged"))
             log_lines_local.append(f"Skipping {site_id} {transect_id}: no matching tan_beta in coastsat_merged")
             continue
 
-        tan_vals = coastsat_merged.loc[mask_tb, "beach_slope"]
+        tan_vals = site_coastsat.loc[mask_tb, "beach_slope"]
         if len(tan_vals) > 1:
             # In case of duplicates, average them
             tan_beta = float(tan_vals.mean())
@@ -1048,275 +1052,293 @@ def process_site(site_id):
         # this matches with lidar measurements from LINZ 
         tan_beta_adjusted = tan_beta * 0.5
 
-        # Build per-transect SLR quantile series from original NZ SeaRise columns.
-        mask_slr = (
-            (all_merged["site_id"] == site_id)
-            & (all_merged["transect_id"] == transect_id)
-            & (all_merged["scenario"].astype(str) == scenario_target)
-            & (all_merged["SSP"].astype(str).str.lower() == ssp_target)
-        )
+        # ---- Scenario-dependent section ---------------------------------
+        # Everything above (plots, gap filter, LOESS, bootstraps, tan_beta) is
+        # identical for every scenario, so it runs once per transect; only the
+        # SLR extraction, Monte Carlo and exports below run once per scenario.
+        last_prepared = None
+        for scenario_cfg in scenarios_to_run:
+            ssp_target = scenario_cfg["ssp_target"]
+            scenario_target = scenario_cfg["scenario_target"]
+            scenario_tag = f"{ssp_target}_{scenario_target}"
 
-        if not mask_slr.any():
-            skipped_site_transects_local.add((site_id, transect_id, "no matching SLR data in all_merged"))
-            log_lines_local.append(f"Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
-            continue
-
-        slr_series = (
-            all_merged.loc[
-                mask_slr,
-                ["year", "17", "50", "83"],
-            ]
-            .dropna()
-            .groupby("year", as_index=False)[["17", "50", "83"]]
-            .mean()
-            .sort_values("year")
-        )
-
-        if slr_series.empty:
-            skipped_site_transects_local.add((site_id, transect_id, "missing SLR quantiles after filtering"))
-            log_lines_local.append(f"Skipping {site_id} {transect_id}: missing SLR quantiles after filtering")
-            continue
-
-        year_values = slr_series["year"].to_numpy(dtype=float)
-        min_year = float(np.min(year_values))
-        max_year = float(np.max(year_values))
-
-        if custom_ref_year < min_year or target_year > max_year:
-            skipped_site_transects_local.add(
-                (
-                    site_id,
-                    transect_id,
-                    f"SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span baseline/target",
-                )
+            # Build per-transect SLR quantile series from original NZ SeaRise columns.
+            mask_slr = (
+                (site_all_merged["transect_id"] == transect_id)
+                & (site_scenario_str == scenario_target)
+                & (site_ssp_str == ssp_target)
             )
+
+            if not mask_slr.any():
+                skipped_site_transects_local.add((site_id, transect_id, f"[{scenario_tag}] no matching SLR data in all_merged"))
+                log_lines_local.append(f"[{scenario_tag}] Skipping {site_id} {transect_id}: no matching SLR data in all_merged")
+                continue
+
+            slr_series = (
+                site_all_merged.loc[
+                    mask_slr,
+                    ["year", "17", "50", "83"],
+                ]
+                .dropna()
+                .groupby("year", as_index=False)[["17", "50", "83"]]
+                .mean()
+                .sort_values("year")
+            )
+
+            if slr_series.empty:
+                skipped_site_transects_local.add((site_id, transect_id, f"[{scenario_tag}] missing SLR quantiles after filtering"))
+                log_lines_local.append(f"[{scenario_tag}] Skipping {site_id} {transect_id}: missing SLR quantiles after filtering")
+                continue
+
+            year_values = slr_series["year"].to_numpy(dtype=float)
+            min_year = float(np.min(year_values))
+            max_year = float(np.max(year_values))
+
+            if custom_ref_year < min_year or target_year > max_year:
+                skipped_site_transects_local.add(
+                    (
+                        site_id,
+                        transect_id,
+                        f"[{scenario_tag}] SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span baseline/target",
+                    )
+                )
+                log_lines_local.append(
+                    f"[{scenario_tag}] Skipping {site_id} {transect_id}: "
+                    f"SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span "
+                    f"baseline={custom_ref_year} and target={target_year}"
+                )
+                continue
+
+            q17_values = slr_series["17"].to_numpy(dtype=float)
+            q50_values = slr_series["50"].to_numpy(dtype=float)
+            q83_values = slr_series["83"].to_numpy(dtype=float)
+
+            q17_ref = float(np.interp(custom_ref_year, year_values, q17_values))
+            q50_ref = float(np.interp(custom_ref_year, year_values, q50_values))
+            q83_ref = float(np.interp(custom_ref_year, year_values, q83_values))
+
+            # Under the linear 2005->reference-year assumption, historical median
+            # SLR rise is the reference-year median relative to the 2005 zero baseline.
+            delta_s_hist_q50 = q50_ref
+
+            q17_target = float(np.interp(target_year, year_values, q17_values))
+            q50_target = float(np.interp(target_year, year_values, q50_values))
+            q83_target = float(np.interp(target_year, year_values, q83_values))
+
+            delta_s_q17 = q17_target - q17_ref
+            delta_s_q50 = q50_target - q50_ref
+            delta_s_q83 = q83_target - q83_ref
+
+            if not (np.isfinite(delta_s_q17) and np.isfinite(delta_s_q50) and np.isfinite(delta_s_q83)):
+                skipped_site_transects_local.add((site_id, transect_id, f"[{scenario_tag}] non-finite delta_S quantiles"))
+                log_lines_local.append(f"[{scenario_tag}] Skipping {site_id} {transect_id}: non-finite delta_S quantiles")
+                continue
+
+            if not (delta_s_q17 <= delta_s_q50 <= delta_s_q83):
+                skipped_site_transects_local.add((site_id, transect_id, f"[{scenario_tag}] invalid delta_S quantile ordering"))
+                log_lines_local.append(f"[{scenario_tag}] Skipping {site_id} {transect_id}: invalid delta_S quantile ordering")
+                continue
+
+    ##########################
+
+            slr_projection_years = np.array([], dtype=float)
+            slr_projection_q17 = np.array([], dtype=float)
+            slr_projection_q50 = np.array([], dtype=float)
+            slr_projection_q83 = np.array([], dtype=float)
+
+            slr_series_plot = slr_series.loc[slr_series["year"] <= target_year].copy()
+            if not slr_series_plot.empty:
+                year_values = slr_series_plot["year"].to_numpy(dtype=float)
+                if year_values.min() <= custom_ref_year <= year_values.max():
+                    has_baseline_year = bool(np.isclose(year_values, custom_ref_year).any())
+                    has_target_year = bool(np.isclose(year_values, target_year).any())
+
+                    if not has_baseline_year:
+                        slr_series_plot = pd.concat(
+                            [
+                                pd.DataFrame(
+                                    [{
+                                        "year": float(custom_ref_year),
+                                        "17": float(np.interp(custom_ref_year, year_values, slr_series_plot["17"].to_numpy(dtype=float))),
+                                        "50": float(np.interp(custom_ref_year, year_values, slr_series_plot["50"].to_numpy(dtype=float))),
+                                        "83": float(np.interp(custom_ref_year, year_values, slr_series_plot["83"].to_numpy(dtype=float))),
+                                    }]
+                                ),
+                                slr_series_plot,
+                            ],
+                            ignore_index=True,
+                        )
+
+                    if not has_target_year and (year_values.min() <= target_year <= year_values.max()):
+                        slr_series_plot = pd.concat(
+                            [
+                                slr_series_plot,
+                                pd.DataFrame(
+                                    [{
+                                        "year": float(target_year),
+                                        "17": float(np.interp(target_year, year_values, slr_series_plot["17"].to_numpy(dtype=float))),
+                                        "50": float(np.interp(target_year, year_values, slr_series_plot["50"].to_numpy(dtype=float))),
+                                        "83": float(np.interp(target_year, year_values, slr_series_plot["83"].to_numpy(dtype=float))),
+                                    }]
+                                ),
+                            ],
+                            ignore_index=True,
+                        )
+
+                    slr_series_plot = (
+                        slr_series_plot.loc[slr_series_plot["year"] >= custom_ref_year]
+                        .sort_values("year")
+                        .reset_index(drop=True)
+                    )
+
+                    slr_projection_years = slr_series_plot["year"].to_numpy(dtype=float)
+                    slr_projection_q17 = slr_series_plot["17"].to_numpy(dtype=float)
+                    slr_projection_q50 = slr_series_plot["50"].to_numpy(dtype=float)
+                    slr_projection_q83 = slr_series_plot["83"].to_numpy(dtype=float)
+    ########################
+
             log_lines_local.append(
-                f"Skipping {site_id} {transect_id}: "
-                f"SLR year coverage [{min_year:.0f}, {max_year:.0f}] does not span "
-                f"baseline={custom_ref_year} and target={target_year}"
+                f"[{scenario_tag}] {site_id} {transect_id}: tan_beta = {tan_beta}, tan_beta_adjusted = {tan_beta_adjusted}, "
+                f"delta_S_{int(custom_ref_year)}_to_{int(target_year)}(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
+                f"for {ssp_target}-{scenario_target}, year={target_year}"
             )
-            continue
-
-        q17_values = slr_series["17"].to_numpy(dtype=float)
-        q50_values = slr_series["50"].to_numpy(dtype=float)
-        q83_values = slr_series["83"].to_numpy(dtype=float)
-
-        q17_ref = float(np.interp(custom_ref_year, year_values, q17_values))
-        q50_ref = float(np.interp(custom_ref_year, year_values, q50_values))
-        q83_ref = float(np.interp(custom_ref_year, year_values, q83_values))
-
-        # Under the linear 2005->reference-year assumption, historical median
-        # SLR rise is the reference-year median relative to the 2005 zero baseline.
-        delta_s_hist_q50 = q50_ref
-
-        q17_target = float(np.interp(target_year, year_values, q17_values))
-        q50_target = float(np.interp(target_year, year_values, q50_values))
-        q83_target = float(np.interp(target_year, year_values, q83_values))
-
-        delta_s_q17 = q17_target - q17_ref
-        delta_s_q50 = q50_target - q50_ref
-        delta_s_q83 = q83_target - q83_ref
-
-        if not (np.isfinite(delta_s_q17) and np.isfinite(delta_s_q50) and np.isfinite(delta_s_q83)):
-            skipped_site_transects_local.add((site_id, transect_id, "non-finite delta_S quantiles"))
-            log_lines_local.append(f"Skipping {site_id} {transect_id}: non-finite delta_S quantiles")
-            continue
-
-        if not (delta_s_q17 <= delta_s_q50 <= delta_s_q83):
-            skipped_site_transects_local.add((site_id, transect_id, "invalid delta_S quantile ordering"))
-            log_lines_local.append(f"Skipping {site_id} {transect_id}: invalid delta_S quantile ordering")
-            continue
-
-##########################
-
-        slr_projection_years = np.array([], dtype=float)
-        slr_projection_q17 = np.array([], dtype=float)
-        slr_projection_q50 = np.array([], dtype=float)
-        slr_projection_q83 = np.array([], dtype=float)
-
-        slr_series_plot = slr_series.loc[slr_series["year"] <= target_year].copy()
-        if not slr_series_plot.empty:
-            year_values = slr_series_plot["year"].to_numpy(dtype=float)
-            if year_values.min() <= custom_ref_year <= year_values.max():
-                has_baseline_year = bool(np.isclose(year_values, custom_ref_year).any())
-                has_target_year = bool(np.isclose(year_values, target_year).any())
-
-                if not has_baseline_year:
-                    slr_series_plot = pd.concat(
-                        [
-                            pd.DataFrame(
-                                [{
-                                    "year": float(custom_ref_year),
-                                    "17": float(np.interp(custom_ref_year, year_values, slr_series_plot["17"].to_numpy(dtype=float))),
-                                    "50": float(np.interp(custom_ref_year, year_values, slr_series_plot["50"].to_numpy(dtype=float))),
-                                    "83": float(np.interp(custom_ref_year, year_values, slr_series_plot["83"].to_numpy(dtype=float))),
-                                }]
-                            ),
-                            slr_series_plot,
-                        ],
-                        ignore_index=True,
-                    )
-
-                if not has_target_year and (year_values.min() <= target_year <= year_values.max()):
-                    slr_series_plot = pd.concat(
-                        [
-                            slr_series_plot,
-                            pd.DataFrame(
-                                [{
-                                    "year": float(target_year),
-                                    "17": float(np.interp(target_year, year_values, slr_series_plot["17"].to_numpy(dtype=float))),
-                                    "50": float(np.interp(target_year, year_values, slr_series_plot["50"].to_numpy(dtype=float))),
-                                    "83": float(np.interp(target_year, year_values, slr_series_plot["83"].to_numpy(dtype=float))),
-                                }]
-                            ),
-                        ],
-                        ignore_index=True,
-                    )
-
-                slr_series_plot = (
-                    slr_series_plot.loc[slr_series_plot["year"] >= custom_ref_year]
-                    .sort_values("year")
-                    .reset_index(drop=True)
-                )
-
-                slr_projection_years = slr_series_plot["year"].to_numpy(dtype=float)
-                slr_projection_q17 = slr_series_plot["17"].to_numpy(dtype=float)
-                slr_projection_q50 = slr_series_plot["50"].to_numpy(dtype=float)
-                slr_projection_q83 = slr_series_plot["83"].to_numpy(dtype=float)
-########################
-
-        log_lines_local.append(
-            f"{site_id} {transect_id}: tan_beta = {tan_beta}, tan_beta_adjusted = {tan_beta_adjusted}, "
-            f"delta_S_{int(custom_ref_year)}_to_{int(target_year)}(q17/q50/q83)=({delta_s_q17:.3f}, {delta_s_q50:.3f}, {delta_s_q83:.3f}) m "
-            f"for {ssp_target}-{scenario_target}, year={target_year}"
-        )
  
-        mc_result = mc_shoreline_change(
-            c=1.0,
-            tan_beta=tan_beta_adjusted,
-            delta_S=delta_s_q50,
-            r_samples = boot_slopes,
-            r_recent_samples=recent_boot_slopes,
-            first_segment_recent_weight=first_segment_recent_weight,
-            segment_years= loess_window,  # Match the LOESS window for consistency
-            random_state=single_preview_random_state,
-            delta_S_q17=delta_s_q17,
-            delta_S_q50=delta_s_q50,
-            delta_S_q83=delta_s_q83,
-            dt=target_year - custom_ref_year,
-            projection_start_year=float(custom_ref_year),
-            align_to_decades=True,
-            n=n_mc_realizations_per_transect,
-            return_delta_s_samples=True,
-            return_r_segment_samples=True,
-            return_slr_segment_samples=True,
-            return_trend_segment_samples=True,
-            return_first_segment_sampled_sources=True,
+            mc_result = mc_shoreline_change(
+                c=1.0,
+                tan_beta=tan_beta_adjusted,
+                delta_S=delta_s_q50,
+                r_samples = boot_slopes,
+                r_recent_samples=recent_boot_slopes,
+                first_segment_recent_weight=first_segment_recent_weight,
+                segment_years= loess_window,  # Match the LOESS window for consistency
+                random_state=single_preview_random_state,
+                delta_S_q17=delta_s_q17,
+                delta_S_q50=delta_s_q50,
+                delta_S_q83=delta_s_q83,
+                dt=target_year - custom_ref_year,
+                projection_start_year=float(custom_ref_year),
+                align_to_decades=True,
+                n=n_mc_realizations_per_transect,
+                return_delta_s_samples=True,
+                return_r_segment_samples=True,
+                return_slr_segment_samples=True,
+                return_trend_segment_samples=True,
+                return_first_segment_sampled_sources=True,
+                )
+        
+            (
+                dy,
+                summ,
+                sampled_delta_s,
+                sampled_r_all,
+                sampled_slr_dy,
+                sampled_trend_dy,
+                sampled_first_segment_historic,
+                sampled_first_segment_recent,
+            ) = mc_result
+
+            # Store results
+            dy_rows_local.append({
+                    "site_id": site_id,
+                    "transect_id": transect_id,
+                    "n_obs": int(y_clean.size),
+                    "n_boot": 1000,
+                "n_mc": n_mc_realizations_per_transect,
+                    "dt_years": float(summ["dt_years"]),
+                    "tan_beta": float(tan_beta),
+                    "tan_beta_adjusted": float(tan_beta_adjusted),
+                    "delta_S_q17_m": float(delta_s_q17),
+                    "delta_S_q50_m": float(delta_s_q50),
+                    "delta_S_q83_m": float(delta_s_q83),
+                    "delta_S_sigma_m": float(summ["delta_S_sigma_m"]),
+                    "slr_year": int(target_year),
+                    "scenario": scenario_target,
+                    "SSP": ssp_target,
+                    "base_term_m": float(summ["base_term_m"]),
+                    "dy_p05_m": float(summ["dy_p05_m"]),
+                    "dy_median_m": float(summ["dy_median_m"]),
+                    "dy_p95_m": float(summ["dy_p95_m"])
+
+                })
+
+            # Pass all sampled realizations so the plot can show mean + uncertainty envelope.
+            preview_dy = np.asarray(dy, dtype=float)
+            preview_r_samples = np.asarray(sampled_r_all, dtype=float)
+            preview_slr_only_dy = np.asarray(sampled_slr_dy, dtype=float)
+            preview_trend_only_dy = np.asarray(sampled_trend_dy, dtype=float)
+            preview_sampled_first_segment_historic = np.asarray(
+                sampled_first_segment_historic,
+                dtype=float,
             )
-        
-        (
-            dy,
-            summ,
-            sampled_delta_s,
-            sampled_r_all,
-            sampled_slr_dy,
-            sampled_trend_dy,
-            sampled_first_segment_historic,
-            sampled_first_segment_recent,
-        ) = mc_result
+            preview_sampled_first_segment_recent = np.asarray(
+                sampled_first_segment_recent,
+                dtype=float,
+            )
 
-        # Store results
-        dy_rows_local.append({
-                "site_id": site_id,
-                "transect_id": transect_id,
-                "n_obs": int(y_clean.size),
-                "n_boot": 1000,
-            "n_mc": n_mc_realizations_per_transect,
-                "dt_years": float(summ["dt_years"]),
-                "tan_beta": float(tan_beta),
-                "tan_beta_adjusted": float(tan_beta_adjusted),
-                "delta_S_q17_m": float(delta_s_q17),
-                "delta_S_q50_m": float(delta_s_q50),
-                "delta_S_q83_m": float(delta_s_q83),
-                "delta_S_sigma_m": float(summ["delta_S_sigma_m"]),
-                "slr_year": int(target_year),
-                "scenario": scenario_target,
-                "SSP": ssp_target,
-                "base_term_m": float(summ["base_term_m"]),
-                "dy_p05_m": float(summ["dy_p05_m"]),
-                "dy_median_m": float(summ["dy_median_m"]),
-                "dy_p95_m": float(summ["dy_p95_m"])
+            preview_segment_years = loess_window  # Match the Monte Carlo 
+            # segment length to the LOESS window for interpretability
 
-            })
+            # The overall projection time horizon is the same as
+            #  used in the Monte Carlo function, which is determined by 
+            # the "dt" parameter.
+            preview_dt = int(summ["dt_years"])
 
-        # Pass all sampled realizations so the plot can show mean + uncertainty envelope.
-        preview_dy = np.asarray(dy, dtype=float)
-        preview_r_samples = np.asarray(sampled_r_all, dtype=float)
-        preview_slr_only_dy = np.asarray(sampled_slr_dy, dtype=float)
-        preview_trend_only_dy = np.asarray(sampled_trend_dy, dtype=float)
-        preview_sampled_first_segment_historic = np.asarray(
-            sampled_first_segment_historic,
-            dtype=float,
-        )
-        preview_sampled_first_segment_recent = np.asarray(
-            sampled_first_segment_recent,
-            dtype=float,
-        )
+            if preview_r_samples.shape != preview_dy.shape:
+                raise ValueError("Preview r samples and dy segments must have matching shapes.")
+            if preview_slr_only_dy.shape != preview_dy.shape:
+                raise ValueError("Preview SLR-only segments and dy segments must have matching shapes.")
+            if preview_trend_only_dy.shape != preview_dy.shape:
+                raise ValueError("Preview trend-only segments and dy segments must have matching shapes.")
+            prepared = prepare_observed_and_projected_single_run_data(
+                t_obs=t_clean,
+                y_obs=y_clean,
+                t_loess=t_smooth,
+                y_loess=y_smooth,
+                projection_start_year=float(custom_ref_year),
+                dy_segments=preview_dy,
+                r_segments=preview_r_samples,
+                slr_years=slr_projection_years,
+                slr_q17_values=slr_projection_q17,
+                slr_q50_values=slr_projection_q50,
+                slr_q83_values=slr_projection_q83,
+                dt=preview_dt,
+                segment_years=preview_segment_years,
+                trend_pool=boot_slopes,
+                recent_trend_pool=recent_boot_slopes,
+                sampled_historic_trends=preview_sampled_first_segment_historic,
+                sampled_recent_trends=preview_sampled_first_segment_recent,
+                slr_only_dy_segments=preview_slr_only_dy,
+                trend_only_dy_segments=preview_trend_only_dy,
+            )
+            last_prepared = prepared
 
-        preview_segment_years = loess_window  # Match the Monte Carlo 
-        # segment length to the LOESS window for interpretability
+            #create outputs directory if it doesn't exist
+            output_dir = Path("outputs")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            #create site-specific directory if it doesn't exist
+            # (named csv_site_dir so the diagnostic PNGs keep going to
+            # original_plots_ts/<site>/ for every transect, not just the first)
+            csv_site_dir = output_dir / site_id
+            csv_site_dir.mkdir(parents=True, exist_ok=True)
 
-        # The overall projection time horizon is the same as
-        #  used in the Monte Carlo function, which is determined by 
-        # the "dt" parameter.
-        preview_dt = int(summ["dt_years"])
+            meta_str = csv_site_dir / f"{site_id}_{transect_id}_{ssp_target}_{scenario_target}"
 
-        if preview_r_samples.shape != preview_dy.shape:
-            raise ValueError("Preview r samples and dy segments must have matching shapes.")
-        if preview_slr_only_dy.shape != preview_dy.shape:
-            raise ValueError("Preview SLR-only segments and dy segments must have matching shapes.")
-        if preview_trend_only_dy.shape != preview_dy.shape:
-            raise ValueError("Preview trend-only segments and dy segments must have matching shapes.")
-        preview_ts_plot_fp = site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png"
-        
-        
-        prepared = plot_observed_and_projected_single_run(
-            t_obs=t_clean,
-            y_obs=y_clean,
-            t_loess=t_smooth,
-            y_loess=y_smooth,
-            projection_start_year=float(custom_ref_year),
-            dy_segments=preview_dy,
-            r_segments=preview_r_samples,
-            slr_years=slr_projection_years,
-            slr_q17_values=slr_projection_q17,
-            slr_q50_values=slr_projection_q50,
-            slr_q83_values=slr_projection_q83,
-            dt=preview_dt,
-            segment_years=preview_segment_years,
-            site_id=site_id,
-            transect_id=transect_id,
-            out_fp=preview_ts_plot_fp,
-            trend_pool=boot_slopes,
-            recent_trend_pool=recent_boot_slopes,
-            sampled_historic_trends=preview_sampled_first_segment_historic,
-            sampled_recent_trends=preview_sampled_first_segment_recent,
-            slr_only_dy_segments=preview_slr_only_dy,
-            trend_only_dy_segments=preview_trend_only_dy,
-        )
+            #Then save the CSV in the site-specific directory
+            export_results_to_csv(prepared, meta_str)
 
-        #create outputs directory if it doesn't exist
-        output_dir = Path("outputs")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        #create site-specific directory if it doesn't exist
-        site_dir = output_dir / site_id
-        site_dir.mkdir(parents=True, exist_ok=True)
+            log_lines_local.append(f"[{scenario_tag}] {site_id} {transect_id}: done")
 
-        meta_str =site_dir / f"{site_id}_{transect_id}_{ssp_target}_{scenario_target}"
-
-        #Then save the CSV in the site-specific directory
-        export_results_to_csv(prepared, meta_str)
-
-        log_lines_local.append(f"{site_id} {transect_id}: done")
+        # The projection figure's filename carries no scenario tag, so the old
+        # per-scenario runs each overwrote it and only the final scenario's
+        # figure survived. Render it once, from the last scenario that produced
+        # results, for the same on-disk outcome at a fifth of the cost.
+        if last_prepared is not None:
+            plot_observed_and_projected_single_run_from_processed(
+                prepared=last_prepared,
+                site_id=site_id,
+                transect_id=transect_id,
+                out_fp=site_dir / f"{site_id}_{transect_id}_single_run_observed_projected.png",
+            )
 
     site_elapsed_time = time.perf_counter() - site_start_time
     minutes, seconds = divmod(site_elapsed_time, 60)
@@ -1331,88 +1353,86 @@ def process_site(site_id):
     }
 
 
-# Run the full pipeline once per scenario; ssp_target/scenario_target and
-# all_merged are updated as module globals each iteration so process_site
-# (forked via process_map) picks up the right scenario in each worker.
-for scenario in scenarios_to_run:
-    ssp_target = scenario["ssp_target"]
-    scenario_target = scenario["scenario_target"]
-    print(f"\n=== Running scenario {ssp_target}-{scenario_target} ===")
-
-    all_merged = all_merged_unfiltered[
-        (all_merged_unfiltered["scenario"].astype(str) == scenario_target)
-        & (all_merged_unfiltered["SSP"].astype(str).str.lower() == ssp_target)
-    ].copy()
-
-    dy_rows = []
-    meta_rows = []
-    zero_spread_trend_site_transects = set()
-    skipped_site_transects = set()
-
-    n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
-    run_start_time = time.perf_counter()
-    site_results = process_map(
-        process_site,
-        nzd_sites_trial,
-        max_workers=n_workers,
-        desc=f"Processing sites ({ssp_target}-{scenario_target})",
-    )
-    total_elapsed_time = time.perf_counter() - run_start_time
-
-    site_log_lines = []
-    for result in site_results:
-        dy_rows.extend(result["dy_rows"])
-        meta_rows.extend(result["meta_rows"])
-        zero_spread_trend_site_transects.update(result["zero_spread_trend_site_transects"])
-        skipped_site_transects.update(result["skipped_site_transects"])
-        site_log_lines.extend(result["log_lines"])
-
-    total_minutes, total_seconds = divmod(total_elapsed_time, 60)
-    print(f"Total elapsed time for {len(nzd_sites_trial)} site(s): {int(total_minutes)} minutes {total_seconds:.2f} seconds")
-
-    scenario_tag = f"{ssp_target}_{scenario_target}"
-    site_processing_log_fp = Path("outputs") / f"site_processing_{scenario_tag}.log"
-    site_processing_log_fp.parent.mkdir(parents=True, exist_ok=True)
-    with open(site_processing_log_fp, "w", encoding="utf-8") as f:
-        f.write("\n".join(site_log_lines))
-    print(f"Per-transect processing details written to {site_processing_log_fp}")
-
-    summary_site_transects = sorted(zero_spread_trend_site_transects)
-    summary_header = "Site+transect with zero-spread bootstrap trend samples"
-    summary_skipped_site_transects = sorted(skipped_site_transects)
-    skipped_header = "Skipped site+transect"
-
-    log_dir = Path("outputs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_fp = log_dir / f"zero_spread_trend_sites_{scenario_tag}.log"
-
-    with open(log_fp, "w", encoding="utf-8") as f:
-        f.write(f"{summary_header}:\n")
-        for sid, tid in summary_site_transects:
-            f.write(f"{sid},{tid}\n")
-        f.write("\n")
-        f.write(f"{skipped_header}:\n")
-        for sid, tid, reason in summary_skipped_site_transects:
-            f.write(f"{sid},{tid},{reason}\n")
-
-    print(f"{summary_header}:")
-    print(summary_site_transects)
-    print(f"{skipped_header}:")
-    print(summary_skipped_site_transects)
-    print(f"Summary log written to {log_fp}")
-
-
-
-
+# One pass over all sites computes every scenario. process_site is forked via
+# process_map, so workers inherit the loaded tables through copy-on-write.
 n_workers = min(len(nzd_sites_trial), RUN_CONFIG["max_workers"] or os.cpu_count() or 1)
 run_start_time = time.perf_counter()
 site_results = process_map(
     process_site,
     nzd_sites_trial,
     max_workers=n_workers,
-    desc="Processing sites",
-    # max_tasks_per_child=1,
+    desc="Processing sites (all scenarios)",
 )
+total_elapsed_time = time.perf_counter() - run_start_time
+
+dy_rows = []
+meta_rows = []
+zero_spread_trend_site_transects = set()
+skipped_site_transects = set()
+site_log_lines = []
+for result in site_results:
+    dy_rows.extend(result["dy_rows"])
+    meta_rows.extend(result["meta_rows"])
+    zero_spread_trend_site_transects.update(result["zero_spread_trend_site_transects"])
+    skipped_site_transects.update(result["skipped_site_transects"])
+    site_log_lines.extend(result["log_lines"])
+
+total_minutes, total_seconds = divmod(total_elapsed_time, 60)
+print(
+    f"Total elapsed time for {len(nzd_sites_trial)} site(s) x "
+    f"{len(scenarios_to_run)} scenario(s): {int(total_minutes)} minutes {total_seconds:.2f} seconds"
+)
+
+
+def split_scenario_prefix(text):
+    """Split '[ssp..._...] rest' into (scenario_tag, rest); (None, text) if untagged."""
+    if text.startswith("["):
+        tag, sep, rest = text[1:].partition("] ")
+        if sep:
+            return tag, rest
+    return None, text
+
+
+# The single pass produced every scenario's log entries; write the same
+# per-scenario files as the previous per-scenario runs did. Entries without a
+# scenario tag (gap-filter and tan_beta skips) apply to every scenario.
+log_dir = Path("outputs")
+log_dir.mkdir(parents=True, exist_ok=True)
+summary_header = "Site+transect with zero-spread bootstrap trend samples"
+skipped_header = "Skipped site+transect"
+summary_site_transects = sorted(zero_spread_trend_site_transects)
+
+for scenario in scenarios_to_run:
+    scenario_tag = f"{scenario['ssp_target']}_{scenario['scenario_target']}"
+
+    scenario_log_lines = [
+        rest
+        for tag, rest in map(split_scenario_prefix, site_log_lines)
+        if tag in (None, scenario_tag)
+    ]
+    site_processing_log_fp = log_dir / f"site_processing_{scenario_tag}.log"
+    with open(site_processing_log_fp, "w", encoding="utf-8") as f:
+        f.write("\n".join(scenario_log_lines))
+    print(f"Per-transect processing details written to {site_processing_log_fp}")
+
+    scenario_skipped = sorted(
+        (sid, tid, rest)
+        for sid, tid, reason in skipped_site_transects
+        for tag, rest in [split_scenario_prefix(reason)]
+        if tag in (None, scenario_tag)
+    )
+    log_fp = log_dir / f"zero_spread_trend_sites_{scenario_tag}.log"
+    with open(log_fp, "w", encoding="utf-8") as f:
+        f.write(f"{summary_header}:\n")
+        for sid, tid in summary_site_transects:
+            f.write(f"{sid},{tid}\n")
+        f.write("\n")
+        f.write(f"{skipped_header}:\n")
+        for sid, tid, reason in scenario_skipped:
+            f.write(f"{sid},{tid},{reason}\n")
+    print(f"Summary log written to {log_fp} ({len(scenario_skipped)} skipped entries)")
+
+print(f"{summary_header}: {len(summary_site_transects)} site+transect(s)")
 
 
 
