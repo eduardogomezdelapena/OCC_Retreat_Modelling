@@ -81,7 +81,7 @@ RUN_CONFIG = {
     "first_segment_recent_weight": 0.5,  # Blend weight for recent-trend sampling in segment 1.
     "recent_trend_window_years": 10.0,  # Look-back window for the recent trend pool.
     "seed": 42,  # Reproducible bootstrap and Monte Carlo sampling.
-    "max_workers": 16,  # Cap for parallel site workers; None uses all available CPU cores.
+    "max_workers": None,  # Cap for parallel site workers; None uses all available CPU cores.
 }
 
 # Constants
