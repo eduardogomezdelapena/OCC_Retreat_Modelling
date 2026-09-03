@@ -90,3 +90,164 @@ where $y_{Lower Bound},y_{Median},y_{UpperBound}$ correspond to the shoreline ch
 
 
 
+
+# 4. Runtime and resource usage of `trend_uncertainty.py` (all regions)
+
+Measured on 2026-08-26 by running the script as committed (`ca78c29`, `max_tasks_per_child` trial) with the only change being `RUN_CONFIG["target_region_name"]` set to all 16 regional councils. Everything else was left at the committed values: `max_workers=16`, `n_mc_realizations_per_transect=2000`, `n_boot=1000`, baseline 2025 → target 2050, SSP5-8.5.
+
+## 4.1 Test machine and software
+
+| | |
+|---|---|
+| Machine | CeR VM, 32-core AMD EPYC-Milan (1 thread/core), 125 GB RAM, 2 GB swap, repo on a network-mounted 21 TB volume |
+| Python | 3.12.3 (system), numpy 1.26.4 (OpenBLAS), pandas 2.3.0, geopandas 1.1.1, matplotlib 3.10.3, tqdm 4.67.1, loess 2.1.2 |
+| Launch | `PYTHONPATH=. python3 trend_uncertainty.py` (non-interactive; stdout/stderr to a log file) |
+| Monitoring | `psutil` sampler every 5 s: system CPU %, system memory, RSS/PSS/USS of the parent and every worker, load average (`htop` was used to cross-check) |
+
+`reqs/OCC_environment.yml` (`clean_OCC`: Python 3.13.5, numpy 2.3.1, pandas 2.3.1) pins the same tqdm 4.67.1, so the tqdm behaviour described in 4.5 applies to that environment as well.
+
+## 4.2 Workload
+
+| | |
+|---|---|
+| Regions | 16 (all regional councils; "Area Outside Region" excluded) |
+| Sites (unique `nzd*` IDs inside the region polygons) | **534** |
+| Transects read from the CoastSat CSVs | 31,609 |
+| Transects passing the "longest consecutive run ≥ 10 yr" filter (LOESS + bootstrap run) | 30,730 |
+| Transects fully processed (Monte Carlo + projection CSV + projection plot) | **24,023** |
+| Sites per region | Northland 105 · Auckland 45 · Waikato 61 · Bay of Plenty 22 · Gisborne 23 · Hawke's Bay 24 · Taranaki 7 · Manawatū-Whanganui 9 · Wellington 17 · West Coast 60 · Canterbury 43 · Otago 57 · Southland 28 · Tasman 18 · Nelson 2 · Marlborough 13 |
+
+## 4.3 Runtime
+
+| | |
+|---|---|
+| Wall-clock, whole run (16 workers) | **73 min 56 s** (10:21:52 → 11:35:48) |
+| Sum of per-site processing times | 1,121.7 min (18.7 h of single-core-equivalent work) |
+| Effective parallelism | 1,121.7 / 73.9 = 15.2 of 16 workers busy on average (load balance is good; the tail is one 19-minute site) |
+| Per-site time | min 5 s · median 59 s · mean 126 s · p90 340 s · max 18.9 min (`nzd0451`; then `nzd0454` 15.9, `nzd0161` 12.9, `nzd0207` 12.6, `nzd0447` 12.6 min) |
+| Per-transect time (fully processed) | ≈ 2.8 s of worker time on average (1,121.7 min / 24,023), i.e. ≈ 5.4 transects/s across the pool |
+| Data download | negligible: one ≈ 60 KB CSV per site from GitHub raw (≈ 0.03 s) |
+
+Site-time per region (sum of per-site times, i.e. what a *serial* run of that region alone would cost):
+Northland 159 min · Auckland 59 · Waikato 64 · Bay of Plenty 81 · Gisborne 34 · Hawke's Bay 77 · Taranaki 10 · Manawatū-Whanganui 53 · Wellington 45 · West Coast 153 · Canterbury 191 · Otago 72 · Southland 71 · Tasman 15 · Nelson 3 · Marlborough 37.
+Divide by the number of workers (≈ 15 effective) for the expected wall-clock time of a single-region run.
+
+## 4.4 CPU and memory
+
+| Metric | Value |
+|---|---|
+| Processes | 1 parent + 16 forked workers (17 Python processes for the whole run; workers were *not* recycled — see 4.5) |
+| Threads per worker | 32 (OpenBLAS creates one thread per core in every worker; `OMP_NUM_THREADS`/`OPENBLAS_NUM_THREADS` are unset) → 16 × 32 = 512 compute threads on 32 cores |
+| System CPU | mean 72 %, frequently 76–81 %, with each worker at 145–215 % CPU; 1-min load average ≈ 30 (peak 37.6) on 32 cores → the machine is oversubscribed by the BLAS threads, not by the 16 workers |
+| Parent process | 1.33 GB RSS after loading the tables (`all_merged` alone is 1.12 M rows / 716 MB in memory; only the SSP5-8.5 rows are kept) |
+| Each worker | 1.25–1.30 GB RSS, of which only **≈ 0.31 GB is private (USS)**; the remaining ≈ 0.95 GB is the parent's data inherited copy-on-write via `fork` |
+| Whole process tree | summed RSS ≈ 21.3 GB (this is what adding up `htop`'s RES column gives) but real footprint (PSS) **5.9 GB at start → 6.8 GB at the end**, peak 7.0 GB |
+| System memory used | 7.8 GB before the run (idle host) → **peak 15.7 GB** during the run, i.e. the run needs ≈ 8 GB of RAM on this machine; 119 GB stayed available throughout, swap unused |
+| Memory growth over 74 min | +0.9 GB PSS in total (≈ +60 MB per worker, from copy-on-write pages of `all_merged` being touched by the per-transect boolean masks); no leak-like growth |
+
+So on this machine the all-regions run does **not** approach a memory limit. The sum-of-RSS figure (≈ 21 GB, ≈ 3× the true footprint) is the number that `htop` shows per process and is the one that looks alarming.
+
+## 4.5 Behaviour of the parallel section as committed (things to be aware of)
+
+1. **`max_tasks_per_child=1` is silently not applied.** `tqdm.contrib.concurrent.process_map` (tqdm 4.67.1) only forwards `max_workers` and `chunksize` to `ProcessPoolExecutor`; every other keyword goes to the `tqdm` progress-bar constructor. `tqdm` raises `TqdmKeyError: "Unknown argument(s): {'max_tasks_per_child': 1}"`, but only *after* all 534 sites have already been submitted to the pool, and leaving the `with` block waits for them. Net effect: the full run executes with the default `fork` start method and 16 long-lived workers, no progress bar is ever drawn, per-site "Elapsed time" lines only appear when the workers exit (buffered stdout), and the script ends with a traceback and exit code 1.
+2. Because `process_site` no longer returns its results and `create_log()` is never called, `outputs/site_processing.log` and `outputs/zero_spread_trend_sites.log` are not written, so the skip reasons are lost. (The fixed run in 4.7 restores them: of the 31,609 transects, 827 are skipped as `insufficient_recent_span_with_2024`, 52 as `no_segment_with_2024`, and **6,707 as `no matching tan_beta in coastsat_merged`** — i.e. 21 % of the transects in the CoastSat CSVs have no row in `preprocessing/transects_reindexed_Nickupdate.geojson`, which is a data-join gap worth looking at separately.)
+3. `site_dir` is reassigned to `outputs/<site>` after the first exported transect, so from the second transect on, the "original time series" and "LOESS" PNGs are written into `outputs/<site>/` rather than `original_plots_ts/<site>/`.
+4. If `max_tasks_per_child` *were* honoured — `ProcessPoolExecutor` switches to the `spawn` start method when it is set, and `spawn` is also the default on macOS/Windows — every worker would re-execute the whole module top level (GitHub API call, GeoJSON/CSV loads, ≈ 1.3 GB of tables) once per site, because the parallel call is not under `if __name__ == "__main__":`. That is the configuration in which memory really does grow with the number of sites, so please keep the `fork` start method (Linux) when changing the pool implementation.
+
+## 4.6 Disk output of the all-regions run
+
+| Files written | Count | Size |
+|---|---|---|
+| `*_original_timeseries.png` (dpi 300) | 31,609 | 7.5 GB |
+| `*_loess_smoothed.png` (dpi 200) | 30,730 | 5.0 GB |
+| `*_single_run_observed_projected.png` (dpi 300, 15 × 6.5 in) | 24,023 | 17.6 GB |
+| `*_projection_results.csv` | 24,023 | 1.4 GB |
+| **Total** | **110,385** | **31.4 GB** |
+
+Roughly 85 % of the disk output is diagnostic PNGs; the CSVs the dashboard needs are 1.4 GB.
+
+## 4.7 Same run with the parallel section fixed
+
+To check what the issues in 4.5 cost, the run was repeated with four changes (nothing in the science/statistics was touched; the 24,023 output CSVs/plots are produced for the same transects):
+
+1. one BLAS thread per worker (`OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS` = 1, set before `numpy` is imported);
+2. `tqdm.contrib.concurrent.process_map(..., max_tasks_per_child=1)` replaced by `multiprocessing.get_context("fork").Pool(processes=n_workers, maxtasksperchild=1)` + `pool.imap_unordered` wrapped in `tqdm` — this actually recycles each worker after one site and draws the progress bar;
+3. the `return {...}` of `process_site` restored and the pool call + `create_log(site_results)` placed under `if __name__ == "__main__":`;
+4. inside `process_site`, `all_merged` is sliced once per site (`site_all_merged = all_merged.loc[all_merged["site_id"] == site_id]`) and the per-transect `mask_slr` is built on that ≈ 2,000-row slice instead of on the full 1.12 M-row table.
+
+| | As committed | Fixed | Change |
+|---|---|---|---|
+| Wall-clock (16 workers) | 73 min 56 s | **54 min 21 s** | −27 % |
+| Sum of per-site times | 1,121.7 min | 824.5 min | −27 % (median per-site ratio 0.72) |
+| Per-site median / mean / p90 / max | 59 s / 126 s / 340 s / 18.9 min | 44 s / 93 s / 255 s / 14.0 min | |
+| System CPU (mean) | 72 % with load average ≈ 30 | 48 % with load average ≈ 16 (= 16 of 32 cores, nothing else) | 8 cores freed *and* faster |
+| Threads per worker | 32 | 1 | |
+| Worker RSS (mean / max) | 1.25 / 1.30 GB | 1.39 / 1.57 GB (fresh fork per site; still ≈ 1 GB shared) | |
+| Process-tree PSS (real footprint), start → end, peak | 5.9 → 6.8 GB, peak 7.0 GB | 4.6 → 4.4 GB, peak 5.9 GB | flat in both |
+| System memory used, peak | 15.7 GB | 14.0 GB | |
+| Progress bar / exit code / summary logs | none / 1 (`TqdmKeyError`) / not written | yes / 0 / `outputs/site_processing.log`, `outputs/zero_spread_trend_sites.log` written | |
+
+Take-aways:
+
+- **Memory is not the bottleneck on this machine in either configuration** (≈ 5–8 GB real footprint, no growth over 534 sites). A machine running out of memory with this script most likely (a) has far less RAM, (b) uses `max_workers=None` → `os.cpu_count()` workers on a many-core box, (c) runs with the `spawn` start method (see 4.5 item 4: every worker then loads its own ≈ 1.3 GB copy of the tables and, with `maxtasksperchild=1`, reloads them for every site), or (d) is being judged from the per-process RES column of `htop`, which triple-counts the copy-on-write pages. A rough budget for planning: **≈ 1.4 GB for the parent + ≈ 0.35 GB private per forked worker + ≈ 1–2 GB headroom for matplotlib rendering** — e.g. ≈ 8 GB for 16 workers, ≈ 4.5 GB for 8 workers.
+- The BLAS oversubscription is the single biggest inefficiency: capping threads to 1 makes the run 27 % faster while using half the CPU.
+- With the pool fixed the script terminates cleanly and the per-transect skip reasons are available again.
+
+Minimal replacement for the parallel call (fork context; keeps the already-loaded tables shared with the workers, unlike `spawn`):
+
+```python
+# at the very top of trend_uncertainty.py, before `import numpy`
+import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
+# ... process_site() must `return {...}` again ...
+
+def run_all_sites():
+    import multiprocessing as mp
+    ctx = mp.get_context("fork")
+    with ctx.Pool(processes=n_workers, maxtasksperchild=1) as pool:
+        return list(tqdm(pool.imap_unordered(process_site, nzd_sites_trial),
+                         total=len(nzd_sites_trial), desc="Processing sites"))
+
+if __name__ == "__main__":
+    site_results = run_all_sites()
+    create_log(site_results)
+```
+
+## 4.8 Confirmed: the memory leak is numpy 2.3.0 / 2.3.1 (`clean_OCC` pins numpy 2.3.1)
+
+Tested 2026-08-28 after Eduardo suggested `numpy=2.3.1` as the culprit. Result: **confirmed.**
+
+**Mechanism.** numpy 2.3.0 and 2.3.1 leak the output buffer of any reduction/accumulation called with an `out=` argument ([numpy issue #29355](https://github.com/numpy/numpy/issues/29355), fixed by PR #29414 in [numpy 2.3.2](https://numpy.org/devdocs/release/2.3.2-notes.html), "fix reference leakage for output arrays in reduction functions"). `np.vander` builds its result with `multiply.accumulate(tmp[:, 1:], out=tmp[:, 1:], axis=1)`, so **every `np.vander` call — and therefore every `np.polyfit` call — leaks its whole Vandermonde array**. `block_bootstrap_slopes()` calls `np.polyfit` once per bootstrap realisation: 1,000 for the historic pool and 1,000 for the recent pool, i.e. **2,000 leaked arrays per transect**, and the leak lives in whichever process runs the bootstrap (the workers), for as long as that process lives. With the committed `process_map` the workers live for the whole run (4.5 item 1), so the leaked memory accumulates across all ~1,500 transects each worker handles.
+
+**Micro-benchmarks** (single process, `OPENBLAS_NUM_THREADS=1`, RSS measured with psutil after `gc.collect()`):
+
+| Call (60-point window) | numpy 1.26.4 | numpy 2.3.1 (py 3.12) | numpy 2.3.1 (py 3.13.5) |
+|---|---|---|---|
+| `np.polyfit(t, y, 1)` | 0 B/call | **+1,265 B/call** (+350 MB per 300 k calls) | **+1,265 B/call** (+350 MB per 300 k calls) |
+| `np.vander(t, 2)` | 0 | +1,265 B/call | – |
+| `np.multiply.accumulate(a, out=view)` | 0 | +144 B/call | – |
+| `np.linalg.lstsq`, `solve`, `inv`, `svd`, `np.interp`, `np.append`, `accumulate` without `out=` | 0 | 0 | – |
+
+`tracemalloc` attributes the retained blocks to `numpy/lib/_twodim_base_impl.py` (`vander`: `empty(...)` and `multiply.accumulate(..., out=tmp[:, 1:])`), called from `_polynomial_impl.py:656` (`polyfit`). The leak is independent of the Python version (3.12.3 and 3.13.5 identical) and of the BLAS thread count.
+
+**numpy version sweep** (same test, ephemeral `uv` environments, Python 3.12):
+
+| numpy | 1.26.4 | 2.0.2 | 2.1.3 | 2.2.6 | **2.3.0** | **2.3.1** | 2.3.2 | 2.3.3 | 2.3.4 | 2.3.5 | 2.4.0 | 2.4.1 | 2.4.2 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `polyfit` leak per call | 0 | 0 | 0 | 0 | **1,203 B** | **1,202 B** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**Fix:** move `clean_OCC` to any numpy ≥ 2.3.2 (e.g. `conda install "numpy>=2.3.2"` or pin `numpy=2.3.5`; numpy 2.4.x also works with the rest of the pins). No code change is needed for this particular problem. The 4.5/4.7 issues (tqdm dropping `max_tasks_per_child`, BLAS oversubscription) are independent of it — but note that, once `maxtasksperchild=1` really recycles workers, even a leaking numpy could only accumulate one site's worth of leak (≤ 447 transects × ~7 MB ≈ 3 GB for the largest site) before the process is discarded.
+
+Why it was not seen in section 4: this VM's system Python has numpy 1.26.4, which does not leak.
+
+**End-to-end measurement with the real script.** The committed script (single worker, `max_workers=1`, `site_ids_override` = 10 mid-size sites: `nzd0004, 0062, 0156, 0239, 0286, 0332, 0369, 0409, 0449, 0489` → 1,105 transects, 1,094 bootstrapped, ≈ 2.19 M `polyfit` calls) was run to completion in three environments while sampling the worker's private memory (USS) every 5 s:
+
+| Environment | Runtime | Worker private memory (USS) start → end | Growth | Per transect | Per `polyfit` call |
+|---|---|---|---|---|---|
+| Python 3.12.3, **numpy 1.26.4**, pandas 2.3.0 (this VM) | 40.6 min | 0.29 → 0.34 GB (max 0.38) | +0.09 GB | 0.1 MB | ≈ 40 B (noise / allocator fragmentation) |
+| Python 3.12.3, **numpy 2.3.1**, pandas 2.3.1, mpl 3.10.0 | 43.6 min | 0.30 → **8.12 GB** | **+7.9 GB** | **7.2 MB** | ≈ 3.6 KB |
+| Python 3.13.5, **numpy 2.3.1**, pandas 2.3.1, mpl 3.10.0 (= `clean_OCC` pins) | 41.0 min | 0.34 → **8.19 GB** | **+7.9 GB** | **7.2 MB** | ≈ 3.6 KB |
+
+The growth is linear in the number of transects processed by the worker (≈ 190 MB/min at this workload) and never plateaus. Scaled to the all-regions run (30,730 bootstrapped transects × 7.2 MB ≈ **220 GB leaked in total**, ≈ 14 GB per worker with 16 long-lived workers, on top of the ≈ 8 GB baseline of section 4.4), a `clean_OCC` run with numpy 2.3.1 cannot finish all regions on any machine we have; a single region fits only while its transect count × 7.2 MB / `max_workers` stays below the free RAM (e.g. Auckland: 1,440 bootstrapped transects → ≈ 10 GB extra spread over the workers; Northland: 4,056 → ≈ 29 GB; Canterbury: 5,030 → ≈ 36 GB), which is exactly the "single region works, all regions eventually run out of memory" symptom.
