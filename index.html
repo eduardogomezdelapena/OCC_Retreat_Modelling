@@ -12,6 +12,13 @@
   <!-- Leaflet providers -->
   <script src="https://unpkg.com/leaflet-providers@latest/leaflet-providers.js"></script>
 
+  <!-- Leaflet.sidebar -->
+  <link href="https://cdn.jsdelivr.net/npm/leaflet-sidebar-v2@3.2.3/css/leaflet-sidebar.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-sidebar-v2@3.2.3/js/leaflet-sidebar.min.js"></script>
+
+  <!-- Font Awesome (for icons in sidebar) -->
+  <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css" rel="stylesheet">
+
   <!-- Chart.js for time series -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 
@@ -259,6 +266,19 @@
       margin-bottom: 10px;
     }
 
+    /* Cap sidebar to top half of the map so the bottomleft colorbar stays visible below it */
+    #sidebar.leaflet-sidebar-left,
+    #sidebar.leaflet-sidebar-right {
+      top: 0;
+      bottom: auto;
+      height: 50%;
+    }
+
+    /* Leaflet.sidebar shifts bottomleft controls to make room for itself; keep the colorbar flush left */
+    .leaflet-control-container .leaflet-bottom.leaflet-left {
+      left: 0 !important;
+    }
+
     .map-colorbar {
       background: rgba(255, 255, 255, 0.95);
       padding: 10px;
@@ -315,6 +335,31 @@
 
   <div class="map-container">
     <div id="map"></div>
+
+    <!-- Disclaimers / credits sidebar -->
+    <div id="sidebar" class="leaflet-sidebar collapsed">
+      <div class="leaflet-sidebar-tabs">
+        <ul role="tablist">
+          <li><a href="#home" role="tab"><i class="fa fa-bars"></i></a></li>
+          <li><a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling"><i class="fa fa-github"></i></a></li>
+        </ul>
+      </div>
+
+      <div class="leaflet-sidebar-content">
+        <div class="leaflet-sidebar-pane" id="home">
+          <div id="attribution">
+            <p>Shoreline change projections for Aotearoa New Zealand. Data processed by Eduardo Gomez-de la Pena. Change was estimated using the Bruun rule, see <a href="https://github.com/eduardogomezdelapena/OCC_Retreat_Modelling/blob/main/README.md">README</a> for more information.</p>
+            <p>This work is part of the <a href="https://searise.nz/">Our Changing Coasts</a> MBIE project, under the scope of the "Sedimentation and erosion" working group. Working group research co-leads: Profs. Karin Bryan and Giovanni Coco.</p>
+            <p><a href="https://uoa-eresearch.github.io/CoastSat/">NZ transect data</a> processed by Nick Young using the <a href="https://github.com/kvos/CoastSat/">CoastSat</a> toolbox and the NIWA Tide API. Shorelines corrected to MSL.</p>
+            <p>Sea-Level Rise projections taken from <a href="https://searise.takiwa.co/map/">the NZ SeaRise</a>: Te Tai Pari O Aotearoa programme.</p>
+            <p><strong>Caution:</strong> The Bruun rule assumes sediment balance. It may not be valid in places where sea walls are present, areas with significant alongshore transport, river mouths, sand spits, etc. If the shoreline hits a non-erodible limit, it will likely stop migrating following the Bruun rule.</p>
+            <p>Historical shoreline trends are derived from satellite observations. Uncertainties in trends and SLR are propagated with a Monte Carlo approach. </p>
+            <p>If you have any questions about this data, please contact  <a href="mailto:eduardo.gomez.dlp@gmail.com">Eduardo Gomez de la Pena</a>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="infoPanel" class="info-panel hidden">
       <div class="panel-header">
         <h2 id="panelTitle">Select a point</h2>
@@ -334,6 +379,7 @@
   <script>
     // Global state
     let map;
+    let sidebar;
     let markers = {};
     let projectionsData = {};
     let currentTransectData = null;
@@ -347,7 +393,7 @@
     let transectDetailCache = {};
     let colorScaleLimit = 10;
 
-    const TARGET_SCENARIO_HINT = 'compound';
+    const TARGET_SCENARIO_HINT = 'ssp3_7.0';
     const BASELINE_YEAR = 2025;
     const TARGET_YEAR = 2050;
     const STABILITY_THRESHOLD = 3;
@@ -359,6 +405,15 @@
       
       // Add base layer
       L.tileLayer.provider('Stadia.StamenTonerLite').addTo(map);
+
+      // Disclaimers / credits sidebar
+      sidebar = L.control.sidebar({
+        autopan: false,
+        closeButton: true,
+        container: 'sidebar',
+        position: 'left'
+      }).addTo(map);
+      sidebar.open('home');
 
       // Load data
       loadProjectionsData()
@@ -576,6 +631,7 @@
             </div>
           </div>
           <div class="map-colorbar-note">Stability threshold: ±${STABILITY_THRESHOLD} m</div>
+          <div class="map-colorbar-note">Default colors shown are for scenario SSP3-7.0</div>
         `;
         return div;
       };
@@ -585,7 +641,7 @@
     // Show projections when point is clicked
     function showProjections(transectId, properties) {
       currentTransectId = transectId;
-      
+
       const transectSummary = projectionsData[transectId];
       if (!transectSummary) {
         alert('No projection data available for ' + transectId);
