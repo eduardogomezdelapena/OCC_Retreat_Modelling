@@ -10,7 +10,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   
   <!-- Leaflet providers -->
-  <script src="https://unpkg.com/leaflet-providers@1.3.0/leaflet-providers.js"></script>
+  <script src="https://unpkg.com/leaflet-providers@latest/leaflet-providers.js"></script>
 
   <!-- Chart.js for time series -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
@@ -358,7 +358,7 @@
       map = L.map('map').setView([-40.5, 172.5], 6);
       
       // Add base layer
-      L.tileLayer.provider('CartoDB.Positron').addTo(map);
+      L.tileLayer.provider('Stadia.StamenTonerLite').addTo(map);
 
       // Load data
       loadProjectionsData()
@@ -461,8 +461,53 @@
       return deltas;
     }
 
+    // Detail files written by generate_dashboard_data.py store each series as
+    // columns ({column: [values]}) with the scenario-independent historical
+    // series kept once per transect. Expand that into the row-per-observation
+    // layout the chart code uses; older row-based files pass through unchanged.
+    function expandDetailPayload(detail) {
+      if (!detail || !detail.scenarios) {
+        return detail;
+      }
+      const firstScenario = Object.values(detail.scenarios)[0];
+      if (!firstScenario || Array.isArray(firstScenario)) {
+        return detail;
+      }
+
+      const columnsToRows = (columns, seriesType) => {
+        const keys = Object.keys(columns || {});
+        const length = keys.length ? (columns[keys[0]] || []).length : 0;
+        const rows = [];
+        for (let i = 0; i < length; i += 1) {
+          const row = { series_type: seriesType };
+          keys.forEach(key => { row[key] = columns[key][i]; });
+          if (row.year === undefined && Number.isFinite(Number(row.year_decimal))) {
+            row.year = Math.floor(Number(row.year_decimal));
+          }
+          if (row.year_decimal === undefined && row.year !== undefined) {
+            row.year_decimal = row.year;
+          }
+          rows.push(row);
+        }
+        return rows;
+      };
+
+      const historical = [];
+      Object.entries(detail.historical || {}).forEach(([seriesType, columns]) => {
+        historical.push(...columnsToRows(columns, seriesType));
+      });
+      const scenarios = {};
+      Object.entries(detail.scenarios).forEach(([scenarioKey, columns]) => {
+        scenarios[scenarioKey] = columnsToRows(columns, 'projection');
+      });
+      return Object.assign({}, detail, { historical, scenarios });
+    }
+
     function loadTransectDetail(transectSummary) {
-      const detailPath = transectSummary.detail_file || `data/projections_details/${transectSummary.transect_id}.json`;
+      const detailPath = transectSummary.detail_file
+        || (transectSummary.site_id
+          ? `data/projections_details/${transectSummary.site_id}/${transectSummary.transect_id}.json`
+          : `data/projections_details/${transectSummary.transect_id}.json`);
       if (transectDetailCache[detailPath]) {
         return Promise.resolve(transectDetailCache[detailPath]);
       }
@@ -470,8 +515,9 @@
       return fetch(detailPath)
         .then(response => response.json())
         .then(data => {
-          transectDetailCache[detailPath] = data;
-          return data;
+          const expanded = expandDetailPayload(data);
+          transectDetailCache[detailPath] = expanded;
+          return expanded;
         });
     }
 

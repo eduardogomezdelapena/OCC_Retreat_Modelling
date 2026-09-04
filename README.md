@@ -269,19 +269,21 @@ Outputs of the full run: **119,745 projection CSVs** (23,735–24,023 per scenar
 
 # 5. Dashboard data pipeline (`generate_dashboard_data.py`)
 
-The CSV → JSON → lazy-loading design is the right architecture for this dashboard, and it has been kept: a compact `data/projections.json` summary powers the initial map, and one detail file per transect under `data/projections_details/` is fetched only when a transect is clicked. What changed (2026-09-03) is how the JSON is produced and how much of it there is:
+The CSV → JSON → lazy-loading design is the right architecture for this dashboard and has been kept: a compact `data/projections.json` summary powers the initial map, and one detail file per transect is fetched only when a transect is clicked. What changed (2026-09-03/04) is how the JSON is produced, how much of it there is, and that it is now **committed with the repository** so GitHub Pages serves it next to `index.html`:
 
-1. **Parallel generation** with `tqdm.contrib.concurrent.process_map` (all CPU cores; each worker writes its transects' detail files directly instead of the parent accumulating every payload in memory before writing).
-2. **Historical series stored once per transect.** Each projection CSV repeats the identical satellite + LOESS history (hundreds of rows) for every scenario, while the projections themselves are only ~4–6 rows per scenario. Detail files now hold one top-level `historical` array plus projection-only rows per scenario; `index.html` reads it with a backward-compatible fallback for old files.
-3. **Compact JSON** (no `indent=2`), floats rounded to 4 decimals (0.1 mm), only `*_projection_results.csv` globbed, and the unused `row_count`/`detail_file` summary fields dropped (`index.html` derives the detail path).
+1. **Parallel generation** with `tqdm.contrib.concurrent.process_map` on all cores; each worker writes its transects' detail files directly instead of the parent accumulating every payload in memory.
+2. **Columnar detail files, sharded by site** (`data/projections_details/<site_id>/<transect_id>.json`): each series is stored as `{column: [values]}` rather than one object per row, empty CSV cells are not written, and the scenario-independent historical series (hundreds of satellite + LOESS rows, identical in all 5 scenario CSVs) is stored **once per transect**. Shoreline positions are rounded to 1 cm and decimal years to ~0.4 day. `index.html` expands this back into the row layout its chart code uses (`expandDetailPayload`) and still accepts the older row-based files.
+3. **Compact summary**: no pretty-printing, unused `row_count`/`detail_file` fields dropped (`index.html` derives the detail path from `site_id`/`transect_id`).
 
-Measured on the full 5-scenario outputs (119,745 CSVs → 24,023 detail files), same machine as section 4:
+Measured on the full 5-scenario outputs (119,745 CSVs → 24,023 transects), same machine as section 4:
 
-| | Old generator | New generator |
-|---|---|---|
-| Runtime | 2 h 10 min (single-threaded) | **5 min 30 s** (32 workers) |
-| Peak memory | **64 GB** (whole payload held in RAM) | 0.13 GB |
-| `data/projections_details/` size | 51.9 GB | **7.4 GB** (≈ 60–300 KB per transect) |
-| `data/projections.json` size | 18.6 MB | 8.7 MB |
+| | Old generator | New generator (row layout, 2026-09-03) | New generator (columnar, committed) |
+|---|---|---|---|
+| Runtime | 2 h 10 min (single-threaded) | 5.5 min (32 workers) | **16 s** (32 workers, warm cache) |
+| Peak memory | **64 GB** (whole payload held in RAM) | 0.13 GB | 0.13 GB |
+| `data/projections_details/` | 51.9 GB | 7.4 GB | **394 MB** (median 16 KB, max 34 KB per transect) |
+| `data/projections.json` | 18.6 MB | 8.7 MB | 8.5 MB (≈ 0.75 MB gzipped on the wire) |
 
-On dashboard loading itself: the summary + per-transect lazy fetch already is best practice at this scale — 24 k transects cannot ship their full series up front, and a per-click ~100 KB fetch (a few tens of KB gzipped; GitHub Pages and most static hosts gzip text automatically) renders instantly. The remaining load-time cost is the 8.7 MB summary index (~1–2 MB gzipped), which is fetched once at startup; if that ever feels slow, the next steps would be splitting the summary per region and/or dropping per-scenario deltas the map does not colour by — not a different architecture.
+Why the size matters: the data has to live in the repository for GitHub Pages (Eduardo's `main` builds the site from the repository root), and Pages sites are limited to 1 GB. 52 GB or 7.4 GB could never be committed; 394 MB can, and git stores it compressed. A `.nojekyll` file is included so Pages publishes the 24 k static JSON files without running them through Jekyll.
+
+On dashboard loading itself: the summary + per-transect lazy fetch is best practice at this scale — 24 k transects cannot ship their full series up front, and a per-click 16 KB fetch renders instantly. The one startup cost is the 8.5 MB summary index (≈ 0.75 MB gzipped, fetched once); if that ever feels slow, split it per region — not a different architecture.

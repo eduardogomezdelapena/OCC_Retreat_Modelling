@@ -3,22 +3,31 @@
 Generate dashboard data for the interactive Leaflet dashboard.
 
 Writes a compact summary index to data/projections.json for initial map loading,
-and one per-transect detail file under data/projections_details/ for on-demand
-chart rendering.
+and one per-transect detail file under data/projections_details/<site_id>/ for
+on-demand chart rendering. The data is committed with the repository so GitHub
+Pages serves it next to index.html, so it is kept as small as practical.
 
-Layout of a detail file (data/projections_details/<transect_id>.json):
+Layout of a detail file (data/projections_details/<site_id>/<transect_id>.json):
   {
-    "site_id": ...,
-    "transect_id": ...,
-    "historical": [rows with series_type satellite_observation / loess_historical],
-    "scenarios": {"ssp1_2.6": [projection rows only], ...}
+    "site_id": "nzd0004",
+    "transect_id": "nzd0004-0034",
+    "historical": {
+      "satellite_observation": {"year_decimal": [...], "shoreline_position": [...]},
+      "loess_historical":      {"year_decimal": [...], "shoreline_position": [...]}
+    },
+    "scenarios": {
+      "ssp1_1.9": {"year": [2025, 2030, ...], "proj_shoreline_mean": [...], ...},
+      ...
+    }
   }
-The historical series is identical for every scenario (it comes from the same
-satellite record), so it is stored once per transect instead of once per
-scenario; index.html falls back to per-scenario rows for older files.
+Columns are arrays (one entry per row) rather than one object per row, empty
+CSV cells are not written, and the historical series — identical for every
+scenario because it comes from the same satellite record — is stored once per
+transect instead of once per scenario. index.html expands this back into the
+row layout its chart code uses and still accepts the older row-based files.
 
-Transects are processed in parallel worker processes; floats are rounded to
-4 decimals (0.1 mm) and JSON is written compactly to keep payloads small.
+Transects are processed in parallel worker processes. Shoreline positions are
+rounded to 2 decimals (1 cm) and decimal years to 3 decimals (~0.4 day).
 """
 
 import csv
@@ -32,45 +41,79 @@ from tqdm.contrib.concurrent import process_map
 
 DEFAULT_SUMMARY_PATH = Path("data/projections.json")
 DEFAULT_DETAILS_DIR = Path("data/projections_details")
-FLOAT_DECIMALS = 4  # 0.1 mm for shoreline positions in metres
+POSITION_DECIMALS = 2  # 1 cm for shoreline positions in metres
+YEAR_DECIMALS = 3  # ~0.4 day for decimal years
 MAX_WORKERS = os.cpu_count() or 1
 
+HISTORICAL_SERIES = ("satellite_observation", "loess_historical")
+HISTORICAL_COLUMNS = ("year_decimal", "shoreline_position")
+PROJECTION_COLUMNS = (
+    "year",
+    "shoreline_position",
+    "proj_shoreline_mean",
+    "proj_shoreline_q05",
+    "proj_shoreline_q95",
+    "slr_only_shoreline_mean",
+    "slr_only_shoreline_q05",
+    "slr_only_shoreline_q95",
+    "trend_only_shoreline_mean",
+    "trend_only_shoreline_q05",
+    "trend_only_shoreline_q95",
+)
 
-def csv_to_records(csv_file):
-    """Read CSV file and return list of dictionaries with rounded floats."""
-    records = []
-    with open(csv_file, "r") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            converted_row = {}
-            for key, value in row.items():
-                try:
-                    converted_row[key] = round(float(value), FLOAT_DECIMALS)
-                except (ValueError, TypeError):
-                    converted_row[key] = value
-            records.append(converted_row)
-    return records
 
-
-def compute_normalized_change(projection_rows, baseline_year=2025, target_year=2050):
-    """Return the projection mean difference between the baseline and target year."""
-    if not projection_rows:
+def parse_value(column, value):
+    """Convert one CSV cell to a compact number, or None when empty/non-numeric."""
+    if value in (None, ""):
         return None
-
-    baseline_row = next((row for row in projection_rows if int(row.get("year", -1)) == baseline_year), None)
-    target_row = next((row for row in projection_rows if int(row.get("year", -1)) == target_year), None)
-    if not baseline_row or not target_row:
-        return None
-
-    baseline = baseline_row.get("proj_shoreline_mean")
-    target = target_row.get("proj_shoreline_mean")
-    if baseline is None or target is None:
-        return None
-
     try:
-        return round(float(target) - float(baseline), FLOAT_DECIMALS)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    if column == "year":
+        return int(number) if number.is_integer() else round(number, YEAR_DECIMALS)
+    if column == "year_decimal":
+        return round(number, YEAR_DECIMALS)
+    return round(number, POSITION_DECIMALS)
+
+
+def read_projection_csv(csv_file):
+    """Read one projection CSV into columnar series.
+
+    Returns (historical, projection) where historical maps series_type ->
+    {column: [values]} for the satellite/LOESS rows and projection is
+    {column: [values]} for the projection rows.
+    """
+    historical = {name: {col: [] for col in HISTORICAL_COLUMNS} for name in HISTORICAL_SERIES}
+    projection = {col: [] for col in PROJECTION_COLUMNS}
+
+    with open(csv_file, "r", newline="") as f:
+        for row in csv.DictReader(f):
+            series_type = row.get("series_type") or "projection"
+            if series_type in historical:
+                target, columns = historical[series_type], HISTORICAL_COLUMNS
+            elif series_type == "projection":
+                target, columns = projection, PROJECTION_COLUMNS
+            else:
+                continue
+            for col in columns:
+                target[col].append(parse_value(col, row.get(col)))
+
+    return historical, projection
+
+
+def compute_normalized_change(projection, baseline_year=2025, target_year=2050):
+    """Return the projection mean difference between the baseline and target year."""
+    years = projection.get("year") or []
+    means = projection.get("proj_shoreline_mean") or []
+    try:
+        baseline = means[years.index(baseline_year)]
+        target = means[years.index(target_year)]
+    except (ValueError, IndexError):
+        return None
+    if baseline is None or target is None:
+        return None
+    return round(target - baseline, POSITION_DECIMALS)
 
 
 def choose_default_scenario(scenarios):
@@ -103,29 +146,27 @@ def process_transect(job):
     """
     transect_id, site_id, scenario_files = job
 
-    historical = []
+    historical = None
     scenarios = {}
     summary_scenarios = {}
     errors = []
 
     for scenario, csv_file in sorted(scenario_files):
         try:
-            records = csv_to_records(csv_file)
+            scenario_historical, projection = read_projection_csv(csv_file)
         except Exception as e:  # keep going; report at the end
             errors.append(f"{csv_file}: {e}")
             continue
 
-        projection_rows = [r for r in records if r.get("series_type") in (None, "", "projection")]
-        historical_rows = [r for r in records if r.get("series_type") not in (None, "", "projection")]
+        # The historical series is scenario-independent; keep the longest copy
+        # seen in case one scenario's file is truncated.
+        n_hist = sum(len(cols["year_decimal"]) for cols in scenario_historical.values())
+        if historical is None or n_hist > sum(len(c["year_decimal"]) for c in historical.values()):
+            historical = scenario_historical
 
-        # The historical (satellite + LOESS) series is scenario-independent;
-        # keep the longest copy seen in case a scenario file is truncated.
-        if len(historical_rows) > len(historical):
-            historical = historical_rows
-
-        scenarios[scenario] = projection_rows
+        scenarios[scenario] = projection
         summary_scenarios[scenario] = {
-            "normalized_change_2025_2050": compute_normalized_change(projection_rows)
+            "normalized_change_2025_2050": compute_normalized_change(projection)
         }
 
     if not scenarios:
@@ -134,11 +175,12 @@ def process_transect(job):
     detail_payload = {
         "site_id": site_id,
         "transect_id": transect_id,
-        "historical": historical,
+        "historical": {name: cols for name, cols in historical.items() if cols["year_decimal"]},
         "scenarios": scenarios,
     }
-    detail_file = DEFAULT_DETAILS_DIR / f"{transect_id}.json"
-    with detail_file.open("w", encoding="utf-8") as f:
+    site_dir = DEFAULT_DETAILS_DIR / site_id
+    site_dir.mkdir(parents=True, exist_ok=True)
+    with (site_dir / f"{transect_id}.json").open("w", encoding="utf-8") as f:
         json.dump(detail_payload, f, separators=(",", ":"))
 
     summary_entry = {
@@ -154,7 +196,7 @@ def generate_projections_json(output_dir="outputs", output_file=str(DEFAULT_SUMM
     """
     Scan all projection CSV files in the outputs directory and consolidate them into:
     - a compact summary index at data/projections.json
-    - one full detail file per transect under data/projections_details/
+    - one detail file per transect under data/projections_details/<site_id>/
     """
     summary_path = Path(output_file)
     os.makedirs(summary_path.parent, exist_ok=True)
@@ -196,7 +238,7 @@ def generate_projections_json(output_dir="outputs", output_file=str(DEFAULT_SUMM
         json.dump(summary_data, f, separators=(",", ":"))
 
     print(f"\n✓ Saved {len(summary_data)} transects to {summary_path}")
-    print(f"✓ Saved {len(summary_data)} per-transect detail files to {DEFAULT_DETAILS_DIR}")
+    print(f"✓ Saved {len(summary_data)} per-transect detail files under {DEFAULT_DETAILS_DIR}/<site_id>/")
     if n_errors:
         print(f"✗ {n_errors} CSV file(s) failed to process")
     return summary_data
