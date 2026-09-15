@@ -23,6 +23,7 @@ SITE_ID = "nzd0135"
 TRANSECT_ID = "nzd0135-0004"
 CUSTOM_REF_YEAR = 2025
 LOESS_WINDOW_YEARS = 10  # also used as the block-bootstrap window length
+RECENT_TREND_WINDOW_YEARS = 10.0  # look-back window for the "recent" trend pool
 N_BOOT = 1000
 SEED = 42
 OUT_FP = "figures_methods/trend_extraction_example.png"
@@ -172,6 +173,28 @@ boot_slopes = block_bootstrap_slopes(
 )
 kde_x, kde_y = gaussian_kde_silverman(boot_slopes)
 
+#%% Block-bootstrap the "recent" trend-rate ensemble (most recent ~10 years),
+# mirroring the p_recent(r) mixture-weighting logic in trend_uncertainty.py.
+recent_boot_slopes = None
+recent_mask = t_smooth >= (float(np.max(t_smooth)) - RECENT_TREND_WINDOW_YEARS)
+t_recent = t_smooth[recent_mask]
+y_recent = y_smooth[recent_mask]
+
+if t_recent.size >= 2:
+    recent_span_years = float(np.max(t_recent) - np.min(t_recent))
+    if recent_span_years > 0.0:
+        recent_block_years = min(RECENT_TREND_WINDOW_YEARS, recent_span_years * 0.8)
+        if recent_block_years > 0.0:
+            try:
+                recent_boot_slopes = block_bootstrap_slopes(
+                    t_recent, y_recent,
+                    block_years=recent_block_years,
+                    n_boot=N_BOOT,
+                    random_state=SEED + 1,
+                )
+            except ValueError:
+                recent_boot_slopes = None
+
 #%% Figure: observations + LOESS (left), trend-rate distribution (right).
 fig, (ax_ts, ax_trend) = plt.subplots(1, 2, figsize=(12, 4.5))
 
@@ -192,7 +215,21 @@ ax_trend.hist(
     color="mediumseagreen", alpha=0.5, edgecolor="none",
     label="Historic trend samples",
 )
-ax_trend.plot(kde_x, kde_y, color="black", linewidth=2.0, label="KDE (Silverman bandwidth)")
+ax_trend.plot(kde_x, kde_y, color="black", linewidth=2.0, label="Historic KDE (Silverman)")
+
+if recent_boot_slopes is not None:
+    y_min, y_max = ax_trend.get_ylim()
+    rug_height = 0.08 * (y_max - y_min)
+    ax_trend.vlines(
+        recent_boot_slopes,
+        y_min,
+        y_min + rug_height,
+        color="darkorange",
+        alpha=0.45,
+        linewidth=0.8,
+        label=f"Recent trends (last {RECENT_TREND_WINDOW_YEARS:.0f} yr)",
+    )
+
 ax_trend.set_title(f"Historic trend distribution: {SITE_ID} {TRANSECT_ID}")
 ax_trend.set_xlabel("Trend [m/yr]")
 ax_trend.set_ylabel("Density")
