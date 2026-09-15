@@ -27,6 +27,21 @@ RECENT_TREND_WINDOW_YEARS = 10.0  # look-back window for the "recent" trend pool
 N_BOOT = 1000
 SEED = 42
 OUT_FP = "figures_methods/trend_extraction_example.png"
+OUT_PDF = "figures_methods/trend_extraction_example.pdf"
+
+plt.rcParams.update({
+    "font.family": "STIXGeneral",
+    "mathtext.fontset": "stix",
+    "font.size": 8,
+    "axes.labelsize": 8,
+    "axes.titlesize": 8,
+    "xtick.labelsize": 7,
+    "ytick.labelsize": 7,
+    "legend.fontsize": 7,
+    "axes.linewidth": 0.7,
+    "xtick.major.width": 0.6,
+    "ytick.major.width": 0.6,
+})
 
 
 def load_transect_data(site_id):
@@ -196,26 +211,29 @@ if t_recent.size >= 2:
                 recent_boot_slopes = None
 
 #%% Figure: observations + LOESS (left), trend-rate distribution (right).
-fig, (ax_ts, ax_trend) = plt.subplots(1, 2, figsize=(12, 4.5))
+fig, (ax_ts, ax_trend) = plt.subplots(1, 2, figsize=(7.1, 3.1), constrained_layout=True)
 
 ax_ts.plot(
     t_clean, y_clean, "o",
-    color="0.6", markersize=3.5, alpha=0.7, label="Satellite observations",
+    color="0.55", markersize=2.3, alpha=0.65, markeredgewidth=0,
+    label="Satellite observations",
 )
-ax_ts.plot(t_smooth, y_smooth, "-", color="black", linewidth=2.0, label="LOESS smoothed")
-ax_ts.axhline(0, color="0.6", linewidth=0.8, linestyle="--")
-ax_ts.axvline(CUSTOM_REF_YEAR, color="0.4", linewidth=0.8, linestyle=":")
-ax_ts.set_title("Historical")
-ax_ts.set_xlabel("")
-ax_ts.set_ylabel("Shoreline\nposition (m)")
-ax_ts.legend(loc="lower left", fontsize=8, frameon=False)
+ax_ts.plot(t_smooth, y_smooth, "-", color="black", linewidth=1.3, label="LOESS smoothed")
+ax_ts.axhline(0, color="0.65", linewidth=0.6, linestyle="--", zorder=0)
+ax_ts.axvline(CUSTOM_REF_YEAR, color="0.45", linewidth=0.6, linestyle=":")
+ax_ts.set_xlim(float(t_clean.min()), float(CUSTOM_REF_YEAR))
+ax_ts.set_title("(a) Historical shoreline", loc="left", fontweight="bold")
+ax_ts.set_xlabel("Year")
+ax_ts.set_ylabel("Shoreline position (m)\n nzd0135-0004")
+ax_ts.legend(loc="lower left", frameon=False, handlelength=2.0)
+ax_ts.grid(axis="y", color="0.88", linewidth=0.5)
 
 ax_trend.hist(
     boot_slopes, bins=25, density=True,
-    color="mediumseagreen", alpha=0.5, edgecolor="none",
+    color="#5ab47b", alpha=0.55, edgecolor="white", linewidth=0.25,
     label="Historic trend samples",
 )
-ax_trend.plot(kde_x, kde_y, color="black", linewidth=2.0, label="Historic KDE (Silverman)")
+ax_trend.plot(kde_x, kde_y, color="black", linewidth=1.3, label="Historic KDE")
 
 if recent_boot_slopes is not None:
     y_min, y_max = ax_trend.get_ylim()
@@ -224,18 +242,19 @@ if recent_boot_slopes is not None:
         recent_boot_slopes,
         y_min,
         y_min + rug_height,
-        color="darkorange",
-        alpha=0.45,
-        linewidth=0.8,
-        label=f"Recent trends (last {RECENT_TREND_WINDOW_YEARS:.0f} yr)",
+        color="#d97927",
+        alpha=0.65,
+        linewidth=0.55,
+        label="Recent trends",
     )
 
-ax_trend.set_title(f"Historic trend distribution: {SITE_ID} {TRANSECT_ID}")
-ax_trend.set_xlabel("Trend [m/yr]")
-ax_trend.set_ylabel("Density")
-ax_trend.legend(loc="upper right", fontsize=8, frameon=True)
+    ax_trend.set_title("(b) Historical trend rates", loc="left", fontweight="bold")
+    ax_trend.set_xlabel("Trend (m yr$^{-1}$)")
+    ax_trend.set_ylabel("Density")
+    ax_trend.legend(loc="upper right", frameon=False, handlelength=2.0)
+    ax_trend.grid(axis="y", color="0.88", linewidth=0.5)
 
-fig.tight_layout()
-fig.savefig(OUT_FP, dpi=300)
-print(f"Saved figure to {OUT_FP}")
+fig.savefig(OUT_FP, dpi=100)
+fig.savefig(OUT_PDF)
+print(f"Saved figures to {OUT_FP} and {OUT_PDF}")
 plt.close(fig)
