@@ -13,11 +13,11 @@ The workflow is designed to produce site-specific projections for future shoreli
 
 ## 2.1 Satellite-derived shorelines and beach slopes
 
-Shoreline positions and slopes extracted from satellite imagery using the CoastSatNZ workflow. 
+Shoreline positions and slopes extracted from satellite imagery using the [CoastSatNZ workflow](https://github.com/UoA-eResearch/CoastSat).
 
 ## 2.2 Sea-level-rise component
 
-Future sea-level rise is taken from NZ SeaRise projections for Aotearoa New Zealand. These projections provide location-specific estimates at coastal locations for multiple emissions pathways, including SSP1–1.9, SSP1–2.6, SSP2–4.5, SSP3–7.0 and SSP5–8.5.
+Future sea-level rise is taken from [NZ SeaRise projections](https://searise.nz/maps/) for Aotearoa New Zealand. These projections provide location-specific estimates at coastal locations for multiple emissions pathways, including SSP1–1.9, SSP1–2.6, SSP2–4.5, SSP3–7.0 and SSP5–8.5.
 
 For each scenario, the projections are reported as a distribution around the median estimate, using lower and upper percentiles. These percentiles are then used to propagate uncertainty in the future sea-level forcing into the shoreline-change estimates, through a Bruun rule type of response.
 
@@ -34,7 +34,7 @@ The current workflow follows a combined, site-based projection structure:
 5. Repeated realizations are propagated through time to produce cumulative shoreline change for future horizons such as 2030, 2040 and 2050.
 6. The final output is the median projected shoreline change with uncertainty bounds capturing the spread in the modelled outcomes.
 
-In practical terms, the method separates the forced sea-level component from the observed shoreline trend component, then combines them into a probabilistic estimate of future shoreline change at each transect or site. This allows the resulting coastal projections to reflect both the potential response to sea-level rise and the continuation of the local historical evolution of the shoreline.
+In practical terms, the method separates the forced sea-level component from the observed shoreline trend component, then combines them into a probabilistic estimate of future shoreline change at each transect. This allows the resulting coastal projections to reflect both the potential response to sea-level rise and the continuation of the local historical evolution of the shoreline.
 
 ## 3.1 Uncertainty representation
 
