@@ -23,6 +23,8 @@ data/projections_Wellington.json
 *.png
 *.json
 data/projections_details.zip
+# Methods-figure outputs are tracked despite the *.png rule above.
+!figures_methods/*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
