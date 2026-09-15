@@ -157,10 +157,10 @@ x_smooth, y_smooth, _ = loess_1d(
 )
 t_smooth = x_smooth + t_origin
 
-# Reference shoreline position = mean of the most recent year of record
-# (proxy for the 2024-2025 baseline described in the methods).
-ref_mask = t_clean >= (t_clean.max() - 1.0)
-ref_position = float(np.mean(y_clean[ref_mask]))
+# Use the LOESS shoreline position at 2025 as the zero-reference datum.
+if not (t_smooth.min() <= CUSTOM_REF_YEAR <= t_smooth.max()):
+    raise ValueError("The LOESS time series does not span the 2025 reference year.")
+ref_position = float(np.interp(CUSTOM_REF_YEAR, t_smooth, y_smooth))
 y_clean = y_clean - ref_position
 y_smooth = y_smooth - ref_position
 
