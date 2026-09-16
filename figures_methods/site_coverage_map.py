@@ -12,7 +12,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch
 from shapely.ops import unary_union
 
@@ -20,6 +19,7 @@ from shapely.ops import unary_union
 ROOT = Path(__file__).resolve().parents[1]
 SITE_POINTS_PATH = ROOT / "preprocessing" / "points_ref_shoreline_2025_Nickupdate.geojson"
 REGIONS_PATH = ROOT / "Olds" / "postprocessing" / "regions" / "regional-council-2025.gpkg"
+COASTLINE_PATH = ROOT / "Olds" / "postprocessing" / "regions" / "nz-coastlines-topo-150k.gpkg"
 OUTPUT_DIR = Path(__file__).resolve().parent
 SITE_CRS = "EPSG:2193"
 EXPECTED_SITE_COUNT = 534
@@ -68,7 +68,7 @@ def add_scale_bar(ax, length_km=100):
     """Add a simple scale bar in the projected NZTM coordinate system."""
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
-    x0 = xmin + 0.07 * (xmax - xmin)
+    x0 = xmin + 0.68 * (xmax - xmin)
     y0 = ymin + 0.06 * (ymax - ymin)
     length = length_km * 1000
     ax.plot([x0, x0 + length], [y0, y0], color="#20252b", linewidth=2.2, solid_capstyle="butt")
@@ -103,9 +103,11 @@ def build_map():
     sites = load_site_centroids().to_crs(SITE_CRS)
     regions = gpd.read_file(REGIONS_PATH).to_crs(SITE_CRS)
     regions = regions[regions["REGC2025_V1_00_NAME"].isin(ANALYSIS_REGIONS)]
+    coastline = gpd.read_file(COASTLINE_PATH).to_crs(SITE_CRS)
 
     fig, ax = plt.subplots(figsize=(5.8, 8.8))
     regions.plot(ax=ax, facecolor="#f3f4f1", edgecolor="#9aa0a6", linewidth=0.45, zorder=1)
+    coastline.plot(ax=ax, color="#50565c", linewidth=0.7, alpha=0.7, zorder=2)
     sites.plot(
         ax=ax,
         color="#176b87",
@@ -124,41 +126,9 @@ def build_map():
     ax.set_aspect("equal")
     ax.axis("off")
 
-    legend = [
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="none",
-            markerfacecolor="#176b87",
-            markeredgecolor="white",
-            markeredgewidth=0.25,
-            markersize=6.5,
-            label=f"Analysis site (n = {len(sites)})",
-        )
-    ]
-    ax.legend(
-        handles=legend,
-        loc="upper left",
-        bbox_to_anchor=(0.02, 0.89),
-        frameon=True,
-        framealpha=0.95,
-        facecolor="white",
-        edgecolor="#c7cbd0",
-        fontsize=8.5,
-        handletextpad=0.5,
-        borderpad=0.6,
-    )
-    fig.suptitle(
-        "Sandy-beach sites included in the shoreline-projection analysis",
-        fontsize=10,
-        fontweight="bold",
-        color="#20252b",
-        y=0.995,
-    )
     add_scale_bar(ax)
     add_north_arrow(ax)
-    fig.tight_layout(rect=(0, 0, 1, 0.975), pad=0.2)
+    fig.tight_layout(pad=0.2)
     return fig
 
 
