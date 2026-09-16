@@ -254,7 +254,7 @@ if recent_boot_slopes is not None:
     ax_trend.legend(loc="upper right", frameon=False, handlelength=2.0)
     ax_trend.grid(axis="y", color="0.88", linewidth=0.5)
 
-fig.savefig(OUT_FP, dpi=100)
+fig.savefig(OUT_FP, dpi=300)
 fig.savefig(OUT_PDF)
 print(f"Saved figures to {OUT_FP} and {OUT_PDF}")
 plt.close(fig)
