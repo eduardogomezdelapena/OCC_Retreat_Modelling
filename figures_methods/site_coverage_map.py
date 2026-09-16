@@ -71,31 +71,31 @@ def add_scale_bar(ax, length_km=100):
     x0 = xmin + 0.68 * (xmax - xmin)
     y0 = ymin + 0.06 * (ymax - ymin)
     length = length_km * 1000
-    ax.plot([x0, x0 + length], [y0, y0], color="#20252b", linewidth=2.2, solid_capstyle="butt")
-    ax.plot([x0, x0], [y0 - 0.006 * (ymax - ymin), y0 + 0.006 * (ymax - ymin)], color="#20252b", linewidth=1)
+    ax.plot([x0, x0 + length], [y0, y0], color="#20252b", linewidth=1.5, solid_capstyle="butt")
+    ax.plot([x0, x0], [y0 - 0.006 * (ymax - ymin), y0 + 0.006 * (ymax - ymin)], color="#20252b", linewidth=0.8)
     ax.plot(
         [x0 + length, x0 + length],
         [y0 - 0.006 * (ymax - ymin), y0 + 0.006 * (ymax - ymin)],
         color="#20252b",
-        linewidth=1,
+        linewidth=0.8,
     )
-    ax.text(x0 + length / 2, y0 + 0.018 * (ymax - ymin), f"{length_km} km", ha="center", va="bottom", fontsize=8)
+    ax.text(x0 + length / 2, y0 + 0.018 * (ymax - ymin), f"{length_km} km", ha="center", va="bottom", fontsize=7)
 
 
 
 def add_north_arrow(ax):
     """Add a north arrow in axes coordinates."""
     arrow = FancyArrowPatch(
-        (0.93, 0.12),
-        (0.93, 0.22),
+        (0.73, 0.16),
+        (0.73, 0.24),
         transform=ax.transAxes,
         arrowstyle="-|>",
-        mutation_scale=14,
-        linewidth=0.9,
+        mutation_scale=10,
+        linewidth=0.8,
         color="#20252b",
     )
     ax.add_patch(arrow)
-    ax.text(0.93, 0.235, "N", transform=ax.transAxes, ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax.text(0.73, 0.255, "N", transform=ax.transAxes, ha="center", va="bottom", fontsize=8, fontweight="bold")
 
 
 
@@ -105,16 +105,16 @@ def build_map():
     regions = regions[regions["REGC2025_V1_00_NAME"].isin(ANALYSIS_REGIONS)]
     coastline = gpd.read_file(COASTLINE_PATH).to_crs(SITE_CRS)
 
-    fig, ax = plt.subplots(figsize=(5.8, 8.8))
-    regions.plot(ax=ax, facecolor="#f3f4f1", edgecolor="#9aa0a6", linewidth=0.45, zorder=1)
-    coastline.plot(ax=ax, color="#50565c", linewidth=0.7, alpha=0.7, zorder=2)
+    fig, ax = plt.subplots(figsize=(5.0, 7.6))
+    regions.plot(ax=ax, facecolor="#f7f7f5", edgecolor="#b8bec3", linewidth=0.35, zorder=1)
+    coastline.plot(ax=ax, color="#4c5359", linewidth=0.6, alpha=0.8, zorder=2)
     sites.plot(
         ax=ax,
-        color="#176b87",
+        color="#1f6680",
         edgecolor="white",
-        linewidth=0.25,
-        markersize=9,
-        alpha=0.9,
+        linewidth=0.18,
+        markersize=6,
+        alpha=0.88,
         zorder=3,
     )
 
