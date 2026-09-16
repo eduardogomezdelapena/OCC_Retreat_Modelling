@@ -74,8 +74,8 @@ def right(b):
 
 def build_diagram():
     fig, ax = plt.subplots(figsize=(8.5, 11))
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 22.4)
+    ax.set_xlim(0.65, 9.95)
+    ax.set_ylim(2.55, 22.2)
     ax.axis("off")
 
     ax.text(5, 21.9, "Decadal shoreline-projection workflow", ha="center",
